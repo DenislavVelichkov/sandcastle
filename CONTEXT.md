@@ -87,8 +87,32 @@ A single invocation of the **agent** inside the **sandbox**, producing at most o
 _Avoid_: "run" (ambiguous with the JS `run()` function), "cycle", "loop"
 
 **Task**:
-A work item from the **issue tracker** that the **agent** selects and works on during an **iteration**.
+A work item from the **issue tracker** selected for an **agent** to work on during an **iteration**.
 _Avoid_: "job", "work item", "ticket"
+
+**Workflow controller**:
+The coordinator of selected **tasks**, their **iterations**, required reviews, **project acceptance**, and integration, including unfinished work carried across interruptions.
+_Avoid_: "setup" (environment preparation), "planner" (only one workflow responsibility)
+
+**Workflow installation**:
+A project's configured copy of the **workflow controller** and its connection to **project acceptance**. An installation can be current while still lacking the readiness required to execute a **task**.
+_Avoid_: "source checkout" (does not identify installed project behavior), "setup" (an operation on an installation)
+
+**Candidate**:
+The specific version of a **task**'s changes and evidence submitted for **project acceptance**. Acceptance of one candidate does not extend to changed work.
+_Avoid_: "branch" (can change), "result" (ambiguous with an iteration's output)
+
+**Project acceptance**:
+The project-owned determination that an exact **candidate** satisfies its required checks, reviews, and applicable human approvals. Distinct from a **completion signal** or the existence of commits.
+_Avoid_: "agent completion", "tests passed" (only one possible acceptance requirement)
+
+**Routing policy**:
+The recorded rules that select a model and effort for a **task**'s next implementation **iteration**, using the task's requirements, observed outcomes, and remaining execution allowances.
+_Avoid_: "model ranking" (does not determine the next permitted action)
+
+**Benchmark evaluation**:
+One execution of a fixed **task** fixture under a selected configuration or **routing policy**, including its implementation **iterations**, required reviews, verification, and outcome against **project acceptance**.
+_Avoid_: "iteration" (only one agent invocation), "benchmark" (the full comparison)
 
 **Completion signal**:
 The `<promise>COMPLETE</promise>` marker in the **agent**'s output indicating all actionable tasks are finished. A pure termination signal -- carries no payload. Distinct from **structured output**.
