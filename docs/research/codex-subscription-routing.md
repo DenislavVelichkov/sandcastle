@@ -1,6 +1,6 @@
 # Codex subscription measurements and execution controls
 
-Research for [question #3](https://github.com/DenislavVelichkov/sandcastle/issues/3), 2026-09-23. The objective is to conserve included Codex subscription allowance with acceptance gates unchanged. This note identifies evidence for a later routing decision; it chooses no model, quality threshold, or stopping reserve.
+Research for [Establish Codex subscription usage measurements and execution controls](https://github.com/DenislavVelichkov/sandcastle/issues/3), 2026-09-23. The objective is to conserve included Codex subscription allowance with acceptance gates unchanged. This note identifies evidence for a later routing decision; it chooses no model, quality threshold, or stopping reserve.
 
 ## Evidence boundary
 
