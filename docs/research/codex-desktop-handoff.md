@@ -1,6 +1,6 @@
 # Codex Desktop approval and shutdown capabilities
 
-Research for [issue #4](https://github.com/DenislavVelichkov/sandcastle/issues/4), 2026-09-23. Read-only investigation; no controller, paid agent, live approval, or shutdown experiment ran.
+Research for [Establish Codex Desktop approval and shutdown capabilities](https://github.com/DenislavVelichkov/sandcastle/issues/4), 2026-09-23. Read-only investigation; no controller, paid agent, live approval, or shutdown experiment ran.
 
 The requested policy is checkpoint and stop when the app closes, then resume when the user returns. The controller has checkpoint and cancellation mechanisms, but the inspected interfaces do not establish automatic Desktop-close delivery. Keep this requirement unverified until the actual launch chain passes the validation below. A visible supervising Codex task, its command or terminal process, the outer supervisor, and the Sandcastle worker are separate lifecycles.
 
@@ -12,7 +12,7 @@ Command/file permission requests have request IDs and explicit replies. `item/to
 
 The [integrated terminal documentation](https://learn.chatgpt.com/docs/integrated-terminal) establishes a terminal per chat/project or worktree and the assistant's ability to read its output. It does not specify quit signals, terminal lifetime after app exit, or cleanup grace periods. [Long-running work documentation](https://learn.chatgpt.com/docs/long-running-work) advises pausing a goal before expected connectivity loss. Goal persistence does not establish command survival, controller cancellation, or delivery after app closure.
 
-The tools exposed to this research task provide narrower local evidence: `exec_command` returns command output and a session ID; `write_stdin` writes or polls that session; `read_thread_terminal` reads the app terminal; `open_in_codex` displays files/reviews. `read_thread` permits truncated history, and `wait_threads` reports task status. No exposed tool schema provides an app-close subscription or an authenticated Sandcastle answer channel. Tool availability is schema inspection, not a successful connection exercise. The question tool available here is Plan-mode-only and cannot serve as this Default-mode approval transport.
+The tools exposed to this research task provide narrower local evidence: `exec_command` returns command output and a session ID; `write_stdin` writes or polls that session; `read_thread_terminal` reads the app terminal; `open_in_codex` displays files/reviews. `read_thread` permits truncated history, and `wait_threads` reports task status. No exposed tool schema provides an app-close subscription or an authenticated Sandcastle answer channel. Tool availability is schema inspection, not a successful connection exercise. The synchronous `request_user_input` tool is Plan-mode-only. The coordinating task successfully used `request_user_input_async` in Default mode and received the user's choices. That observed exchange proves answer collection only; it does not establish a durable, authenticated binding to a Sandcastle request or controller.
 
 ## Locally inspected controller
 
