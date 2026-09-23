@@ -1,0 +1,58 @@
+# Codex Desktop approval and shutdown capabilities
+
+Research for [issue #4](https://github.com/DenislavVelichkov/sandcastle/issues/4), 2026-09-23. Read-only investigation; no controller, paid agent, live approval, or shutdown experiment ran.
+
+The requested policy is checkpoint and stop when the app closes, then resume when the user returns. The controller has checkpoint and cancellation mechanisms, but the inspected interfaces do not establish automatic Desktop-close delivery. Keep this requirement unverified until the actual launch chain passes the validation below. A visible supervising Codex task, its command or terminal process, the outer supervisor, and the Sandcastle worker are separate lifecycles.
+
+## Documented Codex interfaces
+
+[App-server](https://learn.chatgpt.com/docs/app-server) exposes JSON-RPC over default stdio, experimental WebSocket, and Unix socket transports. The documentation labels app-server and WebSocket experimental and unsupported for production workloads. Clients initialize each connection, start or resume a thread, and read streamed item/turn events. `turn/interrupt` requests cancellation; `turn/completed` reports an interrupted turn. `command/exec/write` and `command/exec/terminate` control command sessions. These are separate operations.
+
+Command/file permission requests have request IDs and explicit replies. `item/tool/requestUserInput` carries human questions; `serverRequest/resolved` also fires when interruption clears a request, so it does not prove approval. `thread/read` can retrieve stored turns; `turn/diff/updated` carries a changing aggregate diff. None of these documented operations proves that this Desktop instance exposes its connection to an external controller, sends an app-close event, or waits for that controller's checkpoint. A separate app-server client is an integration option, not an installed bridge.
+
+The [integrated terminal documentation](https://learn.chatgpt.com/docs/integrated-terminal) establishes a terminal per chat/project or worktree and the assistant's ability to read its output. It does not specify quit signals, terminal lifetime after app exit, or cleanup grace periods. [Long-running work documentation](https://learn.chatgpt.com/docs/long-running-work) advises pausing a goal before expected connectivity loss. Goal persistence does not establish command survival, controller cancellation, or delivery after app closure.
+
+The tools exposed to this research task provide narrower local evidence: `exec_command` returns command output and a session ID; `write_stdin` writes or polls that session; `read_thread_terminal` reads the app terminal; `open_in_codex` displays files/reviews. `read_thread` permits truncated history, and `wait_threads` reports task status. No exposed tool schema provides an app-close subscription or an authenticated Sandcastle answer channel. Tool availability is schema inspection, not a successful connection exercise. The question tool available here is Plan-mode-only and cannot serve as this Default-mode approval transport.
+
+## Locally inspected controller
+
+The maintained plugin source was clean at `7db11edb78f0bc20e70a9da811e89ef0ab9b6b0e`. Its `main.mjs`, `supervise.mjs`, `checkpoint.mjs`, and execution contract matched the installed `dv8-codex` copy inspected in this session. These files are an integration template and owner obligations, not proof that a target project's generated entry implements them.
+
+- [The invocation lock](https://github.com/DenislavVelichkov/dv8-codex/blob/7db11edb78f0bc20e70a9da811e89ef0ab9b6b0e/custom/skills/quality/sandcastle-personal-setup/assets/main.mjs#L73) is acquired before both `status` at line 117 and `respond` at line 123. A concurrent invocation fails at lock creation. Independent work may continue after another issue becomes pending, but neither mode can use this entry until the active invocation releases its lock.
+- [Persistence](https://github.com/DenislavVelichkov/dv8-codex/blob/7db11edb78f0bc20e70a9da811e89ef0ab9b6b0e/custom/skills/quality/sandcastle-personal-setup/assets/main.mjs#L16) writes and syncs a temporary file, renames it, then syncs its directory. A supervisor can read `.sandcastle/setup-invocation.json` directly for the last persisted snapshot while execution holds the lock. This is a read-only file observation, not a live `status` API. It can lag work and must not be edited by a second writer.
+- [Pending requests and answers](https://github.com/DenislavVelichkov/dv8-codex/blob/7db11edb78f0bc20e70a9da811e89ef0ab9b6b0e/custom/skills/quality/sandcastle-personal-setup/assets/main.mjs#L123) bind request ID, issue, phase, branch, owner, scope, question, candidate, evidence, and response command. Checkpoint verification precedes publication and host output. Answers require exact `Approve` or `Reject`, matching request/candidate, owner authentication, and current checkpoint/evidence checks. Duplicate answers are rejected.
+
+The [execution contract](https://github.com/DenislavVelichkov/dv8-codex/blob/7db11edb78f0bc20e70a9da811e89ef0ab9b6b0e/custom/skills/quality/sandcastle-personal-setup/references/execution-contract.md) permits a verified host terminal/file response path without a Desktop bridge. Desktop/chat delivery requires an observed response exercise. `authorizeAnswer` must authenticate the real path; user-supplied owner text is insufficient.
+
+For a later workflow, the visible supervisor should reproduce the pending request verbatim and open its actual comparison evidence. Relay the exact human response through the bound owner command and retain its source reference with request/candidate identity. Pin review evidence to a commit or hashed checkpoint artifact; a changing diff, truncated task summary, or paraphrased answer cannot establish the reviewed candidate. Runtime permission to execute that response command remains separate from project acceptance. A runtime permission grant must never manufacture `Approve`. If independent work still holds the invocation lock, wait until it settles or explicitly cancel and checkpoint before responding. Concurrent answer submission requires an owner-approved controller change.
+
+## What each stop signal establishes
+
+| Event | Established behavior and limit |
+| --- | --- |
+| Graceful Desktop quit or window close | No inspected documented event maps it to Sandcastle cancellation. Closing a window and quitting the app must be tested separately. Neither implies completed cleanup. |
+| Stop a Codex turn | App-server reports interruption. Whether Desktop also cancels this command, and which signal reaches its descendants, remains unverified. A turn interruption is not a checkpoint receipt. |
+| Terminal or transport disconnect | Node's `disconnect` means a Node IPC channel closed. It is not terminal EOF or an app-server socket event. Losing any one transport does not identify why the app disappeared. |
+| Supervisor receives SIGINT/SIGTERM | The inspected supervisor queues an IPC cancellation until worker readiness, then waits for worker exit. The worker must implement that message and disconnect handler and pass an AbortSignal throughout the actual entry. |
+| Abrupt crash, forced kill, or power loss | No fresh checkpoint guarantee. Recover from the last verified durable checkpoint and inspect retained work and locks. Do not infer that a missing final message means rollback or success. |
+
+The [supervisor source](https://github.com/DenislavVelichkov/dv8-codex/blob/7db11edb78f0bc20e70a9da811e89ef0ab9b6b0e/custom/skills/quality/sandcastle-personal-setup/scripts/supervise.mjs) detaches the worker on POSIX, inherits standard streams, and creates a separate Node IPC channel. It handles SIGINT/SIGTERM and IPC disconnect/messages, but has no SIGHUP or terminal-stream-close handler. A normal shell launch need not give the supervisor an IPC parent. The ready/disconnect worker behavior is required by [launch safety](https://github.com/DenislavVelichkov/dv8-codex/blob/7db11edb78f0bc20e70a9da811e89ef0ab9b6b0e/custom/skills/quality/sandcastle-personal-setup/references/launch-safety.md#L52); this investigation did not verify a generated worker implementing it.
+
+[Node documentation](https://nodejs.org/api/process.html#event-disconnect) defines IPC disconnection separately from process exit. Exit listeners cannot complete asynchronous work; SIGKILL cannot be handled. The base [Sandcastle shutdown registry](https://github.com/DenislavVelichkov/sandcastle/blob/e99f832f26dc9d245c019a9ddd19fa5dee792427/src/shutdownRegistry.ts#L38) runs synchronous teardown and exits on SIGINT/SIGTERM. The outer IPC supervisor therefore matters. [ADR 0004](../adr/0004-abort-signal-on-run-and-interactive.md) gives operation cancellation to AbortSignal while leaving resource cleanup to its caller.
+
+[Controller cancellation](https://github.com/DenislavVelichkov/dv8-codex/blob/7db11edb78f0bc20e70a9da811e89ef0ab9b6b0e/custom/skills/quality/sandcastle-personal-setup/assets/main.mjs#L351) attempts checkpoint verification before closing a sandbox, drains active pipelines, and retains the invocation lock on failed checkpoint/cleanup. [Checkpoint transfer](https://github.com/DenislavVelichkov/dv8-codex/blob/7db11edb78f0bc20e70a9da811e89ef0ab9b6b0e/custom/skills/quality/sandcastle-personal-setup/scripts/checkpoint.mjs#L53) hashes work archives and available session files; restore checks branch/head and refuses intervening dirty work. Pending-human suspension requires captured session identity/path. Cancellation during an in-flight phase does not, by source inspection alone, prove that its latest session was captured. Report preserved files and resumable agent context separately.
+
+## Consequence for the later human decision
+
+Retain the accepted checkpoint-and-stop preference. Before promising automatic behavior, choose and prove the launch/disconnect contract. Until then, an explicit stop-and-wait-for-checkpoint action before quitting is the defensible operating procedure. It is a fallback, not fulfillment of automatic app-close handling.
+
+One sharper decision remains for the human workflow: must answers be accepted while independent work is still running? The current exclusive entry requires waiting or cancelling first. A concurrent response path would be additional controller work, not something a Desktop Goal supplies.
+
+## Small future validation recipe
+
+1. Use a disposable project and deterministic phase results through the actual generated entry. Record process relationships, IPC availability, entry version, and checkpoint receipts without inspecting unrelated app state.
+2. Hold one phase open. Verify direct snapshot reads, the expected lock failure for concurrent `status`/`respond`, exact pending evidence, and authenticated Approve/Reject handling after settlement. Check stale, duplicate, wrong-owner, and changed-candidate responses.
+3. Separately exercise explicit controller cancellation, Codex task Stop, terminal closure, transport loss, window closure, and full app quit. Record observed signals, worker settlement, final checkpoint verification, sandbox cleanup, lock state, and absence of later integration. An event passes only for the tested launch chain.
+4. Kill only the disposable worker during checkpoint creation and repeat with cleanup failure. Inspect retained state, then restore only a verified checkpoint without resetting counters. Confirm which session can resume and which uncheckpointed work requires recovery.
+
+No typecheck is needed for this research-only note. Static source comparison and document review establish the findings above; runtime cases remain deliberately unverified.
