@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Approval and recovery prototype</title>
+  <style>
+    :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+    body { max-width: 960px; margin: auto; padding: 24px; }
+    h1 { font-size: 1.8rem; } h2 { font-size: 1.2rem; }
+    button, select { font: inherit; padding: 8px 12px; margin: 4px 4px 4px 0; }
+    button[aria-selected="true"] { outline: 2px solid #5987b9; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; vertical-align: top; padding: 6px 12px 6px 0; border-bottom: 1px solid #8886; overflow-wrap: anywhere; }
+    th { font-weight: 500; width: 35%; }
+    .comparison { display: flex; flex-wrap: wrap; gap: 24px; }
+    .sample { border: 1px solid #8886; padding: 16px; flex: 1; min-width: 180px; }
+    .sample button { pointer-events: none; }
+    #notice { border-left: 3px solid #5987b9; padding: 10px; min-height: 48px; }
+    small { display: block; } ol { padding-left: 24px; }
+  </style>
+  <h1>Approve one candidate. Keep a recoverable record.</h1>
+  <p>
+    Throwaway behavior prototype for Sandcastle issue #5. Task A needs a visual
+    decision while independent Task B runs checks. Explore rejection, duplicate
+    replies and restarting with the same remaining allowance. All candidates,
+    people, sessions and evidence below are simulated. This selects no production UI.
+  </p>
+  <label for="policy">When an answer arrives</label>
+  <select id="policy">
+    <option value="concurrent">Process it while permitted independent work runs</option>
+    <option value="stop-first">Checkpoint and stop all work first</option>
+  </select>
+  <p id="notice" role="status" aria-live="polite"></p>
+  <table aria-label="Current controller state"><tbody id="state"></tbody></table>
+  <section id="evidence" hidden>
+    <h2>Pending visual decision</h2>
+    <p id="question"></p>
+    <div class="comparison">
+      <div class="sample">Saved reference<br /><button disabled>Save</button></div>
+      <div class="sample"><span id="candidate-label"></span><br /><button disabled>Save changes</button></div>
+    </div>
+    <small>Illustrative comparison only. The real request opens immutable project evidence.</small>
+  </section>
+  <h2>Try any action</h2>
+  <div id="actions"></div>
+  <h2>Guided walkthroughs</h2>
+  <div id="tabs" role="tablist" aria-label="Walkthrough"></div>
+  <section id="walkthrough" role="tabpanel">
+    <p id="scenario"></p><div id="steps"></div>
+  </section>
+  <details><summary>Interaction record</summary><ol id="history"></ol></details>
+  <p>
+    Checkpointing in this page is an in-memory simulation. Reloading starts over.
+    The companion proof exercises disk recovery and a real supervisor signal;
+    neither establishes automatic Codex app-close handling.
+  </p>
+  <script id="model">
+    // PROTOTYPE: deterministic identifiers and a fake authenticated transport.
+    // This answers the interaction question, not production authorization.
+    const initial = (policy = "concurrent") => ({
+      schema: 1, run: "demo-run-1", task: "visual-A", contract: "demo-contract-1",
+      policy, controller: "running", status: "implementing", other: "running",
+      candidate: "candidate-A", evidence: "evidence-A", checks: false,
+      sequence: 0, pending: null, receipts: {}, approval: null,
+      used: 1, limit: 3, integrations: 0, lease: "reserved for Task A",
+      artifacts: "branch A + dirty files + session A + logs + evidence A",
+      checkpoint: 0, note: "Task A is implementing. Task B runs independently.",
+    });
+    const answer = (s, decision = "Approve", overrides = {}) => ({
+      id: `response-${s.sequence}-${decision}`, run: s.run, task: s.task,
+      request: s.pending?.id, candidate: s.pending?.candidate,
+      evidence: s.pending?.evidence, contract: s.contract, decision,
+      actor: "demo-owner", source: `demo-chat/message-${s.sequence}-${decision}`,
+      ...overrides,
+    });
+    function step(state, action) {
+      const s = structuredClone(state);
+      const note = (message) => ({ ...s, note: message });
+      if (action.type === "status") return note("Read the latest durable snapshot without taking the execution lock.");
+      if (action.type === "deliver") {
+        const fields = ["id", "run", "task", "request", "candidate", "evidence", "contract", "decision", "actor", "source"];
+        if (!fields.every(key => typeof action.answer?.[key] === "string" && action.answer[key].length > 0))
+          return note("No decision recorded: missing identity, provenance or explicit decision.");
+        const a = Object.fromEntries(fields.map(key => [key, action.answer[key]]));
+        if (a.actor !== "demo-owner" || !["Approve", "Reject"].includes(a.decision))
+          return note("No decision recorded: missing identity, provenance or explicit decision.");
+        const existing = s.receipts[a.id];
+        if (existing) return note(JSON.stringify(existing.answer) === JSON.stringify(a)
+          ? `Duplicate delivery: original receipt is ${existing.outcome}; no new effect.`
+          : "Conflicting reuse of a response ID: rejected.");
+        s.receipts[a.id] = { answer: a, outcome: "queued" };
+        return note("Answer queued durably. Task B need not stop. Queued is not accepted.");
+      }
+      if (action.type === "apply") {
+        if (s.controller === "recovery-required") return note("Verify recovery before applying any answer.");
+        if (s.policy === "stop-first" && s.controller !== "stopped")
+          return note("This policy requires checkpoint-and-stop before applying answers.");
+        for (const receipt of Object.values(s.receipts)) {
+          if (receipt.outcome !== "queued") continue;
+          const a = receipt.answer, p = s.pending;
+          if (!p || a.run !== s.run || a.task !== s.task || a.contract !== s.contract ||
+              a.request !== p.id || a.candidate !== p.candidate || a.evidence !== p.evidence ||
+              s.candidate !== p.candidate || s.evidence !== p.evidence || s.status !== "waiting-for-human") {
+            receipt.outcome = "stale-or-conflicting";
+            continue;
+          }
+          receipt.outcome = "applied";
+          s.approval = a;
+          s.pending = null;
+          s.status = a.decision === "Approve" ? "accepted" : "rejected";
+        }
+        return note("Controller committed each applicable decision once. Rejection spends no attempt; acceptance does not integrate.");
+      }
+      if (action.type === "stop") {
+        if (s.controller === "recovery-required") return note("A crash needs recovery, not a new checkpoint claim.");
+        s.controller = "stopped"; s.other = "stopped"; s.checkpoint++;
+        return note("Checkpoint verified; workers stopped. Same pending request, files, sessions, evidence and allowance remain.");
+      }
+      if (action.type === "crash") {
+        s.controller = "recovery-required"; s.other = "unknown";
+        return note("No final checkpoint is promised. The last durable state remains; inspect retained work and process ownership.");
+      }
+      if (action.type === "recover") {
+        if (s.controller !== "recovery-required") return note("No crash recovery is pending.");
+        s.controller = "stopped"; s.other = "stopped";
+        return note("Demo recovery verified retained files and no surviving writer. No counters or decisions were reset.");
+      }
+      if (action.type === "restart") {
+        if (s.controller !== "stopped") return note("First checkpoint-and-stop, or verify crash recovery.");
+        s.controller = "running"; s.other = "running";
+        return note("Explicit restart. Waiting, rejected, capped and cancelled tasks do not start automatically.");
+      }
+      if (s.controller !== "running") return note("Execution is stopped. Status and answer delivery remain available.");
+      if (action.type === "checks" && s.status === "implementing") {
+        s.checks = true; s.status = "checks-passed";
+        return note("Required checks and review passed for this candidate. Human acceptance is still missing.");
+      }
+      if (action.type === "request" && s.status === "checks-passed") {
+        s.sequence++;
+        s.pending = { id: `request-${s.sequence}`, candidate: s.candidate, evidence: s.evidence };
+        s.status = "waiting-for-human"; s.checkpoint++;
+        return note("Task A is frozen at a verified checkpoint. Task B may continue only within project rules.");
+      }
+      if (action.type === "rework" && s.status === "rejected") {
+        if (s.used >= s.limit) { s.status = "capped"; return note("No attempts remain. Rejection and restart never replenish them."); }
+        s.used++; s.candidate = `candidate-${String.fromCharCode(64 + s.used)}`;
+        s.evidence = `evidence-${String.fromCharCode(64 + s.used)}`;
+        s.artifacts = `branch A + dirty files + session A + logs + ${s.evidence}`;
+        s.checks = false; s.approval = null; s.status = "implementing";
+        return note("Explicit rework reserved an attempt before dispatch. New candidate needs fresh checks and a new request.");
+      }
+      if (action.type === "integrate" && s.status === "accepted") {
+        s.status = "integrated"; s.integrations++; s.lease = "released after verified integration";
+        return note("Simulated serialized integration rechecked the exact accepted candidate and target. Baseline promotion is separate.");
+      }
+      if (action.type === "block" && s.status === "implementing") {
+        s.status = "environment-blocked";
+        return note("Environment failure preserved work. No automatic retry or free attempt.");
+      }
+      if (action.type === "cancel" && s.status !== "integrated") {
+        s.status = "cancelled"; s.pending = null; s.checkpoint++;
+        return note("Task A cancelled and checkpointed. Task B is unaffected. Restart does not reactivate A.");
+      }
+      return note("This action has no effect in the current state.");
+    }
+  </script>
+  <script>
+    let state = initial(), lastAnswer, firstAnswer;
+    const labels = {
+      checks: "Checks pass", request: "Ask for visual decision", approve: "Send Approve",
+      reject: "Send Reject", apply: "Process queued answers", duplicate: "Resend last answer",
+      stale: "Send old approval", rework: "Revise rejected candidate", status: "Read status",
+      stop: "Checkpoint and stop", restart: "Restart", crash: "Simulate abrupt death",
+      recover: "Verify recovery", integrate: "Integrate accepted candidate",
+      block: "Environment fails", cancel: "Cancel Task A",
+    };
+    const scenarios = [
+      ["Accept", "Checks pass, a human accepts one candidate, then integration is separately verified.", ["checks", "request", "approve", "apply", "duplicate", "integrate", "integrate"]],
+      ["Reject", "Reject A, reserve one remaining attempt for B, then try an old approval. It cannot approve B.", ["checks", "request", "reject", "apply", "rework", "checks", "request", "stale", "apply"]],
+      ["Stop and return", "Checkpoint while a request waits. Restart preserves its identity and remaining attempts.", ["checks", "request", "stop", "status", "approve", "restart", "apply"]],
+      ["Abrupt death", "A crash promises no new checkpoint. Recover before executing; a repeated answer has no new effect.", ["checks", "request", "approve", "apply", "crash", "recover", "duplicate", "restart", "integrate"]],
+    ];
+    const byId = (id) => document.getElementById(id);
+    function act(type) {
+      let action = { type };
+      if (["approve", "reject"].includes(type)) {
+        lastAnswer = answer(state, type === "approve" ? "Approve" : "Reject");
+        firstAnswer ||= { ...lastAnswer, decision: "Approve", id: "old-approval" };
+        action = { type: "deliver", answer: lastAnswer };
+      }
+      if (type === "duplicate") action = { type: "deliver", answer: lastAnswer };
+      if (type === "stale") action = { type: "deliver", answer: firstAnswer };
+      state = step(state, action);
+      const item = document.createElement("li"); item.textContent = `${labels[type]}: ${state.note}`;
+      byId("history").append(item); render();
+    }
+    function render() {
+      byId("notice").textContent = state.note;
+      const rows = [
+        ["Controller / independent Task B", `${state.controller} / ${state.other}`],
+        ["Task A outcome", state.status], ["Exact candidate / evidence", `${state.candidate} / ${state.evidence}`],
+        ["Run / task / acceptance contract", `${state.run} / ${state.task} / ${state.contract}`],
+        ["Pending request", state.pending?.id || "None"],
+        ["Decision provenance", state.approval ? `${state.approval.decision}, ${state.approval.actor}, ${state.approval.source}` : "No applied decision"],
+        ["Answer receipts", Object.values(state.receipts).map(r => `${r.answer.id}: ${r.outcome}`).join("; ") || "None"],
+        ["Remaining attempts", `${state.limit - state.used} of ${state.limit}; ${state.used} reserved`],
+        ["Preserved work", state.artifacts], ["Scope ownership", state.lease],
+        ["Verified checkpoints / integrations", `${state.checkpoint} / ${state.integrations}`],
+      ];
+      byId("state").replaceChildren(...rows.map(([key, value]) => {
+        const row = document.createElement("tr"), th = document.createElement("th"), td = document.createElement("td");
+        th.scope = "row"; th.textContent = key; td.textContent = value; row.append(th, td); return row;
+      }));
+      byId("evidence").hidden = !state.pending;
+      byId("question").textContent = `Approve only ${state.pending?.candidate}, evidence ${state.pending?.evidence}, request ${state.pending?.id}?`;
+      byId("candidate-label").textContent = state.candidate;
+    }
+    function button(label, click) { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.onclick = click; return b; }
+    function choose(index) {
+      state = initial(byId("policy").value); lastAnswer = firstAnswer = undefined; byId("history").replaceChildren();
+      const [, description, steps] = scenarios[index]; byId("scenario").textContent = description;
+      byId("steps").replaceChildren(...steps.map((type, i) => button(`${i + 1}. ${labels[type]}`, () => act(type))));
+      [...byId("tabs").children].forEach((tab, i) => tab.setAttribute("aria-selected", String(i === index)));
+      byId("walkthrough").setAttribute("aria-labelledby", `tab-${index}`); render();
+    }
+    for (const [type, label] of Object.entries(labels)) byId("actions").append(button(label, () => act(type)));
+    scenarios.forEach(([name], i) => {
+      const tab = button(name, () => choose(i)); tab.id = `tab-${i}`; tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-controls", "walkthrough"); byId("tabs").append(tab);
+    });
+    byId("policy").onchange = () => choose(0); choose(0);
+  </script>
+</html>
