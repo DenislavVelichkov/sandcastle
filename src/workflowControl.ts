@@ -582,6 +582,13 @@ export const runDurableWorkflow = async (
 ): Promise<WorkflowSnapshot> => {
   if (!validId(options.projectId) || !validId(options.invocationId))
     throw new Error("Invalid project or invocation identity");
+  if (
+    !isAbsolute(options.directory) ||
+    typeof options.project.validateHumanRequest !== "function"
+  )
+    throw new Error(
+      "Durable workflow requires an absolute host state directory and project request validator",
+    );
   const first = options.worktrees[options.selected[0]?.id ?? ""];
   if (!first) throw new Error("Every selected task needs a worktree");
   const admission = await inspectWorkflow({ ...options, worktree: first });
