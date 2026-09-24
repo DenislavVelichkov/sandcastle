@@ -115,6 +115,20 @@ it("carries measurement time, calls and the original account baseline into score
   ).toThrow(/measurement allowance/);
   expect(() =>
     beginPilotInvocation(
+      { ...settled, measurementCalls: 5 },
+      measurement,
+      "calibration-2",
+      "worker-image-cli-home-account",
+      fresh,
+      task,
+      2,
+      requested,
+      now,
+      now,
+    ),
+  ).toThrow(/remaining measurement allowance/);
+  expect(() =>
+    beginPilotInvocation(
       { ...settled, evaluations: 64 },
       pilot,
       "scored-65",

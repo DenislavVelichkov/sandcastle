@@ -68,6 +68,31 @@ it("admits only the seven named pilot implementation choices", () => {
   ).toThrow(/Sol High/);
 });
 
+it("rejects a role set that cannot fit the activity call allowance", () => {
+  const now = Date.now();
+  const reading: AccountObservation = {
+    accountId: "account-a",
+    observedAt: now,
+    denied: false,
+    windows: { primary: { usedPercent: 20, resetsAt: now + 60_000 } },
+  };
+  expect(() =>
+    initialWorkflowUsage(
+      {
+        policyId: "fixed",
+        activity: "library-proof",
+        readAccount: async () => reading,
+        listModels: async () => ({ data: [] }),
+      },
+      "worker",
+      reading,
+      [{ id: "task", requiredRoles: ["review", "audit", "supervision"] }],
+      2,
+      {},
+    ),
+  ).toThrow(/invocation allowance/);
+});
+
 it("blocks denied, stale, reset and exhausted account readings", () => {
   const now = 1_000_000;
   const baseline: AccountObservation = {

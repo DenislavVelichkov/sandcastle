@@ -280,6 +280,14 @@ export const initialWorkflowUsage = (
     throw new Error(
       "Guarded workflow needs a fixed policy, runtime and at most two implementation attempts",
     );
+  const reservedCalls = tasks.reduce(
+    (total, task) => total + iterations + task.requiredRoles.length,
+    0,
+  );
+  const limits = activityLimits[options.activity];
+  const callLimit = "calls" in limits ? limits.calls : undefined;
+  if (callLimit !== undefined && reservedCalls > callLimit)
+    throw new Error("Required roles exceed the activity invocation allowance");
   if (options.activity === "pilot" && tasks.length > 64)
     throw new Error("Pilot permits at most 64 evaluations");
   const reason = accountGuardReason(baseline, baseline, Date.now());

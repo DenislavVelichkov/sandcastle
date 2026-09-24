@@ -89,6 +89,17 @@ export const beginPilotInvocation = (
       (prior?.activeMs ?? 0) >= 15 * 60_000
     )
       throw new Error("Pilot measurement allowance is exhausted");
+    if (
+      (prior?.measurementCalls ?? 0) +
+        tasks.reduce(
+          (total, task) => total + iterations + task.requiredRoles.length,
+          0,
+        ) >
+      6
+    )
+      throw new Error(
+        "Required roles exceed the remaining measurement allowance",
+      );
   } else if (
     !prior ||
     !Object.values(prior.episodes).some(
