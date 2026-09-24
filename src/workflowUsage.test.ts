@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import {
   accountGuardReason,
+  continueAfterAccountReset,
   discoverConfiguredModels,
   recordTokenCounter,
   finishWorkflowInvocation,
@@ -131,6 +132,70 @@ it("blocks denied, stale, reset and exhausted account readings", () => {
       now,
     ),
   ).toMatch(/20%/);
+});
+
+it("continues only an explicit reset and retains spent allowances and original baseline", () => {
+  const now = Date.now();
+  const original: AccountObservation = {
+    accountId: "account-a",
+    observedAt: now,
+    denied: false,
+    windows: {
+      short: { usedPercent: 30, resetsAt: now + 10_000 },
+      weekly: { usedPercent: 40, resetsAt: now + 100_000 },
+    },
+  };
+  const options = {
+    policyId: "fixed",
+    activity: "library-proof" as const,
+    readAccount: async () => original,
+    listModels: async () => ({ data: [] }),
+  };
+  const initial = initialWorkflowUsage(
+    options,
+    "worker",
+    original,
+    [{ id: "task", requiredRoles: [] }],
+    2,
+    {},
+  );
+  const reset = {
+    ...original,
+    observedAt: now + 1_000,
+    windows: {
+      ...original.windows,
+      short: { usedPercent: 1, resetsAt: now + 200_000 },
+    },
+  };
+  const stopped = observeWorkflowUsage(initial, reset, now + 1_000);
+  expect(stopped.stopReason).toMatch(/changed/);
+  const continued = continueAfterAccountReset(stopped, reset, now + 1_000, {
+    id: "owner-reset-1",
+    reason: "Continue after recorded reset",
+  });
+  expect(continued.baseline).toBe(original);
+  expect(continued.guardBaseline).toBe(reset);
+  expect(continued.remaining).toEqual(stopped.remaining);
+  expect(continued.activeMs).toBe(stopped.activeMs);
+  expect(continued.resetContinuations).toHaveLength(1);
+  expect(continued.stopReason).toBeUndefined();
+  expect(() =>
+    continueAfterAccountReset(continued, reset, now + 1_000, {
+      id: "owner-reset-1",
+      reason: "Replay",
+    }),
+  ).toThrow(/new decision/);
+  expect(() =>
+    continueAfterAccountReset(
+      stopped,
+      { ...reset, denied: true },
+      now + 1_000,
+      {
+        id: "owner-reset-2",
+        reason: "Unsafe",
+      },
+    ),
+  ).toThrow(/No account-window reset/);
 });
 
 it("deduplicates cumulative resumed counters and leaves overlap unknown", () => {

@@ -200,6 +200,56 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
     expect(resumed.usage?.baseline.windows.short?.usedPercent).toBe(20);
     expect(resumed.usage?.remaining.one?.implementation).toBe(1);
     expect(dispatched).toBe(2);
+    let resetReads = 0;
+    const resetAccount = async () => ({
+      accountId: "account-a",
+      observedAt: Date.now(),
+      denied: false,
+      windows: {
+        short: {
+          usedPercent: ++resetReads === 1 ? 20 : 1,
+          resetsAt: now + (resetReads === 1 ? 1_000_000 : 3_000_000),
+        },
+        weekly: { usedPercent: 30, resetsAt: now + 2_000_000 },
+      },
+    });
+    const resetOptions = {
+      ...options,
+      directory: join(root, "reset-state"),
+      invocationId: "reset",
+      usage: { ...usage, readAccount: resetAccount },
+    };
+    const resetStopped = await runDurableWorkflow(resetOptions);
+    expect(resetStopped.usage?.stopReason).toMatch(/changed/);
+    expect(dispatched).toBe(2);
+    const resetResumed = await resumeDurableWorkflow({
+      ...resetOptions,
+      project: {
+        ...resetOptions.project,
+        getTask: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 75));
+          return task;
+        },
+      },
+      usage: {
+        ...resetOptions.usage,
+        resetContinuation: {
+          id: "owner-reset-1",
+          reason: "Continue after recorded account reset",
+        },
+      },
+    });
+    expect(resetResumed.tasks.one?.status).toBe("accepted");
+    expect(resetResumed.usage?.baseline.windows.short?.usedPercent).toBe(20);
+    expect(resetResumed.usage?.guardBaseline.windows.short?.usedPercent).toBe(
+      1,
+    );
+    expect(resetResumed.usage?.resetContinuations).toHaveLength(1);
+    expect(resetResumed.usage?.remaining.one?.implementation).toBe(1);
+    expect(
+      (resetResumed.usage?.activeMs ?? 0) - (resetStopped.usage?.activeMs ?? 0),
+    ).toBeGreaterThanOrEqual(75);
+    expect(dispatched).toBe(3);
   } finally {
     await real.close();
     await rm(root, { recursive: true, force: true });

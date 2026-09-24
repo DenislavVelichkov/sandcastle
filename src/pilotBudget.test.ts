@@ -161,4 +161,34 @@ it("carries measurement time, calls and the original account baseline into score
       now,
     ),
   ).toThrow(/changed or is invalid/);
+  const resetReading = {
+    ...fresh,
+    windows: {
+      ...fresh.windows,
+      short: { usedPercent: 0, resetsAt: now + 6 * 60 * 60_000 },
+    },
+  };
+  const afterDecision = beginPilotInvocation(
+    settled,
+    {
+      ...pilot,
+      resetContinuation: {
+        id: "owner-reset-1",
+        reason: "Continue with split account intervals",
+      },
+    },
+    "after-reset",
+    "worker-image-cli-home-account",
+    resetReading,
+    [{ id: "score", requiredRoles: [] }],
+    2,
+    requested,
+    now - 1_000,
+    now,
+  );
+  expect(afterDecision.budget.baseline).toBe(baseline);
+  expect(afterDecision.budget.guardBaseline).toBe(resetReading);
+  expect(afterDecision.budget.measurementCalls).toBe(1);
+  expect(afterDecision.budget.activeMs).toBe(settled.activeMs + 1_000);
+  expect(afterDecision.budget.resetContinuations).toHaveLength(1);
 });

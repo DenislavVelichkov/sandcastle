@@ -140,6 +140,8 @@ export interface WorkflowUsageOptions {
   readonly activity: "library-proof" | "pilot" | "measurement";
   /** Shared host-only budget for every measurement and evaluation in one pilot. */
   readonly pilot?: { readonly id: string; readonly directory: string };
+  /** Explicit owner decision to continue after an account-window reset. */
+  readonly resetContinuation?: { readonly id: string; readonly reason: string };
   /** Read both applicable windows from the worker's ordinary account. */
   readonly readAccount: () => Promise<AccountObservation>;
   /** Run model/list in the same isolated Codex Home, CLI, image and account as the worker. */
@@ -210,12 +212,22 @@ export interface WorkflowUsageState {
   readonly observed: null;
   /** Original account reading retained across resumes. */
   readonly baseline: AccountObservation;
+  /** Current guard interval; the original baseline above is never replaced. */
+  readonly guardBaseline: AccountObservation;
   /** Most recent account reading. */
   readonly latest: AccountObservation;
   /** Account readings retained for delayed usage and comparison audit. */
   readonly accountHistory: readonly {
     readonly taskId?: string;
+    readonly resetDecisionId?: string;
     readonly reading: AccountObservation;
+  }[];
+  /** Reset crossings invalidate comparison of the joined account intervals. */
+  readonly resetContinuations: readonly {
+    readonly id: string;
+    readonly reason: string;
+    readonly from: AccountObservation;
+    readonly to: AccountObservation;
   }[];
   /** Unused provider calls by task and role. */
   readonly remaining: Readonly<
@@ -279,8 +291,10 @@ export const initialWorkflowUsage = (
     effective: null,
     observed: null,
     baseline,
+    guardBaseline: baseline,
     latest: baseline,
     accountHistory: [{ reading: baseline }],
+    resetContinuations: [],
     remaining: Object.fromEntries(
       tasks.map((task) => [
         task.id,
@@ -360,7 +374,7 @@ export const observeWorkflowUsage = (
       activeElapsed
     : 0;
   const reason =
-    accountGuardReason(state.baseline, reading, now) ??
+    accountGuardReason(state.guardBaseline ?? state.baseline, reading, now) ??
     state.stopReason ??
     (state.currentTask &&
     (state.taskMs[state.currentTask] ?? 0) >=
@@ -464,13 +478,82 @@ export const finishWorkflowInvocation = (
   return observeWorkflowUsage(next, state.latest, now);
 };
 
+/** Reset continuation retains the original baseline, spent calls and active time. */
+export const continueAfterAccountReset = (
+  state: WorkflowUsageState,
+  reading: AccountObservation,
+  now: number,
+  decision: { id: string; reason: string },
+): WorkflowUsageState => {
+  const guardBaseline = state.guardBaseline ?? state.baseline;
+  if (
+    !decision.id?.trim() ||
+    !decision.reason?.trim() ||
+    state.active ||
+    state.resetContinuations?.some((item) => item.id === decision.id) ||
+    (state.stopReason && !/changed or is invalid/.test(state.stopReason)) ||
+    reading.accountId !== state.baseline.accountId ||
+    !Object.keys(guardBaseline.windows).some(
+      (name) =>
+        guardBaseline.windows[name]?.resetsAt !==
+        reading.windows?.[name]?.resetsAt,
+    )
+  )
+    throw new Error(
+      "Reset continuation needs a new decision and matching account",
+    );
+  const changed = accountGuardReason(guardBaseline, reading, now);
+  if (!changed?.includes("changed or is invalid"))
+    throw new Error("No account-window reset is awaiting continuation");
+  const reconciled = {
+    ...guardBaseline,
+    windows: Object.fromEntries(
+      Object.entries(guardBaseline.windows).map(([name, before]) => [
+        name,
+        before.resetsAt === reading.windows[name]?.resetsAt
+          ? before
+          : reading.windows[name],
+      ]),
+    ),
+  } as AccountObservation;
+  const reason = accountGuardReason(reconciled, reading, now);
+  if (reason) throw new Error(reason);
+  return {
+    ...state,
+    guardBaseline: reading,
+    latest: reading,
+    accountHistory: [
+      ...state.accountHistory,
+      { reading, resetDecisionId: decision.id },
+    ],
+    resetContinuations: [
+      ...(state.resetContinuations ?? []),
+      {
+        id: decision.id,
+        reason: decision.reason,
+        from: guardBaseline,
+        to: reading,
+      },
+    ],
+    stopReason: undefined,
+    activeUpdatedAt: now,
+  };
+};
+
 /** An explicit resume may clear a transient account stop, never a spent allowance. */
 export const resumeWorkflowUsage = (
   state: WorkflowUsageState,
   reading: AccountObservation,
   now: number,
+  resetContinuation?: { id: string; reason: string },
 ): WorkflowUsageState => {
-  const reason = accountGuardReason(state.baseline, reading, now);
+  if (resetContinuation)
+    return continueAfterAccountReset(state, reading, now, resetContinuation);
+  const reason = accountGuardReason(
+    state.guardBaseline ?? state.baseline,
+    reading,
+    now,
+  );
   const observed = {
     ...state,
     latest: reading,

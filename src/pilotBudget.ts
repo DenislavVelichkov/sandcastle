@@ -1,5 +1,7 @@
 import {
   accountGuardReason,
+  accrueWorkflowTime,
+  continueAfterAccountReset,
   initialWorkflowUsage,
   type AccountObservation,
   type WorkflowUsageOptions,
@@ -8,12 +10,14 @@ import {
 
 /** One pilot spans separate, sequential durable workflow invocations. */
 export interface PilotBudgetState {
-  readonly version: 1;
+  readonly version: 2;
   readonly id: string;
   readonly policyId: string;
   readonly runtimeIdentity: string;
   readonly baseline: AccountObservation;
+  readonly guardBaseline: AccountObservation;
   readonly latest: AccountObservation;
+  readonly resetContinuations: WorkflowUsageState["resetContinuations"];
   readonly activeMs: number;
   readonly measurementCalls: number;
   readonly evaluations: number;
@@ -53,7 +57,7 @@ export const beginPilotInvocation = (
     throw new Error("Pilot activity needs a shared pilot identity and tasks");
   if (
     prior &&
-    (prior.version !== 1 ||
+    (prior.version !== 2 ||
       !Number.isSafeInteger(prior.activeMs) ||
       prior.activeMs < 0 ||
       !Number.isSafeInteger(prior.measurementCalls) ||
@@ -63,6 +67,8 @@ export const beginPilotInvocation = (
       prior.evaluations < 0 ||
       prior.evaluations > 64 ||
       !prior.baseline?.accountId ||
+      !prior.guardBaseline ||
+      !Array.isArray(prior.resetContinuations) ||
       !prior.episodes ||
       prior.id !== id ||
       prior.policyId !== options.policyId ||
@@ -96,8 +102,9 @@ export const beginPilotInvocation = (
   )
     throw new Error("Pilot permits at most 64 evaluations");
   const baseline = prior?.baseline ?? reading;
-  const reason = accountGuardReason(baseline, reading, now);
-  if (reason) throw new Error(reason);
+  const guardBaseline = prior?.guardBaseline ?? reading;
+  const reason = accountGuardReason(guardBaseline, reading, now);
+  if (reason && !options.resetContinuation) throw new Error(reason);
   const fresh = initialWorkflowUsage(
     options,
     runtimeIdentity,
@@ -106,9 +113,10 @@ export const beginPilotInvocation = (
     iterations,
     requested,
   );
-  const usage: WorkflowUsageState = {
+  let usage: WorkflowUsageState = {
     ...fresh,
     baseline,
+    guardBaseline,
     latest: reading,
     accountHistory:
       baseline === reading
@@ -118,14 +126,27 @@ export const beginPilotInvocation = (
     activeUpdatedAt: startedAt,
     invocations:
       options.activity === "measurement" ? (prior?.measurementCalls ?? 0) : 0,
+    resetContinuations: prior?.resetContinuations ?? [],
   };
+  if (options.resetContinuation)
+    usage = continueAfterAccountReset(
+      accrueWorkflowTime(
+        { ...usage, ...(reason ? { stopReason: reason } : {}) },
+        now,
+      ),
+      reading,
+      now,
+      options.resetContinuation,
+    );
   const budget: PilotBudgetState = {
-    version: 1,
+    version: 2,
     id,
     policyId: options.policyId,
     runtimeIdentity,
     baseline,
+    guardBaseline: usage.guardBaseline,
     latest: reading,
+    resetContinuations: usage.resetContinuations,
     activeMs: usage.activeMs,
     measurementCalls: prior?.measurementCalls ?? 0,
     evaluations:
@@ -157,6 +178,14 @@ export const recordPilotUsage = (
     usage.policyId !== budget.policyId ||
     usage.runtimeIdentity !== budget.runtimeIdentity ||
     JSON.stringify(usage.baseline) !== JSON.stringify(budget.baseline) ||
+    !Array.isArray(usage.resetContinuations) ||
+    !Array.isArray(budget.resetContinuations) ||
+    JSON.stringify(
+      usage.resetContinuations.slice(0, budget.resetContinuations.length),
+    ) !== JSON.stringify(budget.resetContinuations) ||
+    (usage.resetContinuations.length === budget.resetContinuations.length &&
+      JSON.stringify(usage.guardBaseline) !==
+        JSON.stringify(budget.guardBaseline)) ||
     !Number.isSafeInteger(usage.activeMs) ||
     !Number.isSafeInteger(usage.invocations) ||
     usage.activeMs < budget.activeMs ||
@@ -167,6 +196,8 @@ export const recordPilotUsage = (
   return {
     ...budget,
     latest: usage.latest,
+    guardBaseline: usage.guardBaseline,
+    resetContinuations: usage.resetContinuations,
     activeMs: usage.activeMs,
     measurementCalls:
       episode.activity === "measurement"

@@ -1196,6 +1196,7 @@ const driveDurableWorkflow = async (
     startedAt: number;
     budget?: PilotBudgetState;
   },
+  operationStartedAt = Date.now(),
 ): Promise<WorkflowSnapshot> => {
   if (!validId(options.projectId) || !validId(options.invocationId))
     throw new Error("Invalid project or invocation identity");
@@ -1284,14 +1285,17 @@ const driveDurableWorkflow = async (
         pilotContext.budget = begun.budget;
         initialUsage = begun.usage;
       } else
-        initialUsage = initialWorkflowUsage(
-          options.usage,
-          options.runtimeIdentity,
-          reading,
-          admission.tasks,
-          options.policy.iterations,
-          requested,
-        );
+        initialUsage = {
+          ...initialWorkflowUsage(
+            options.usage,
+            options.runtimeIdentity,
+            reading,
+            admission.tasks,
+            options.policy.iterations,
+            requested,
+          ),
+          activeUpdatedAt: operationStartedAt,
+        };
     }
   }
   if (options.project.capabilities.includes("recovery")) {
@@ -1462,9 +1466,18 @@ const driveDurableWorkflow = async (
             ) !== digest(usageState))
         )
           throw new Error("Pilot ledger and durable usage state disagree");
+        usageState = accrueWorkflowTime(
+          { ...usageState, activeUpdatedAt: operationStartedAt },
+          Date.now(),
+        );
         const priorStop = usageState.stopReason;
         const reading = await readGuardedAccount(options.usage!);
-        usageState = resumeWorkflowUsage(usageState, reading, Date.now());
+        usageState = resumeWorkflowUsage(
+          usageState,
+          reading,
+          Date.now(),
+          options.usage?.resetContinuation,
+        );
         if (priorStop && !usageState.stopReason) recoveredGuardStop = priorStop;
         if (pilotContext) {
           pilotContext.budget = recordPilotUsage(
@@ -2337,12 +2350,13 @@ export const integrateWorkflowTask = async (
 const driveWithPilotBudget = async (
   options: DurableWorkflowOptions,
   resume = false,
+  startedAt = Date.now(),
 ): Promise<WorkflowSnapshot> => {
   const usage = options.usage;
   if (!usage || usage.activity === "library-proof") {
     if (usage?.pilot)
       throw new Error("Library proof cannot consume a pilot budget");
-    return driveDurableWorkflow(options, resume);
+    return driveDurableWorkflow(options, resume, undefined, startedAt);
   }
   const pilot = usage.pilot;
   if (!pilot || !validId(pilot.id) || !isAbsolute(pilot.directory))
@@ -2356,7 +2370,6 @@ const driveWithPilotBudget = async (
   await mkdir(lockPath(pilot.directory));
   try {
     await writeLockOwner(pilot.directory);
-    const startedAt = Date.now();
     let budget: PilotBudgetState | undefined;
     try {
       budget = JSON.parse(
@@ -2365,11 +2378,12 @@ const driveWithPilotBudget = async (
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-    return await driveDurableWorkflow(options, resume, {
-      path: pilotBudgetPath(pilot.directory),
+    return await driveDurableWorkflow(
+      options,
+      resume,
+      { path: pilotBudgetPath(pilot.directory), startedAt, budget },
       startedAt,
-      budget,
-    });
+    );
   } finally {
     await rm(lockPath(pilot.directory), { recursive: true, force: true });
   }
@@ -2491,6 +2505,7 @@ export const recoverDurableWorkflow = async (
         await readFile(usagePath(options.directory), "utf8"),
       ) as WorkflowUsageState;
       if (
+        budget.version !== 2 ||
         budget.id !== pilot.id ||
         budget.policyId !== options.usage.policyId ||
         budget.runtimeIdentity !== options.runtimeIdentity ||
@@ -2588,8 +2603,9 @@ export const recoverDurableWorkflow = async (
 export const resumeDurableWorkflow = async (
   options: DurableWorkflowOptions,
 ): Promise<WorkflowSnapshot> => {
+  const startedAt = Date.now();
   const recovered = await recoverDurableWorkflow(options);
   if (recovered.lifecycle !== "stopped")
     throw new Error(recovered.failure ?? "Workflow requires recovery");
-  return driveWithPilotBudget(options, true);
+  return driveWithPilotBudget(options, true, startedAt);
 };
