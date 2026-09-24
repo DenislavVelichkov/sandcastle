@@ -194,20 +194,9 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
     expect(completed.usage?.remaining.one?.implementation).toBe(1);
     expect(completed.usage?.tokens.deltas["session-1"]?.inputTokens).toBe(10);
     expect(completed.usage?.tokens.attributableTotal?.inputTokens).toBe(15);
-    const manifest = JSON.parse(
-      await readFile(
-        join(
-          options.directory,
-          "checkpoints",
-          completed.checkpoint!.id,
-          "manifest.json",
-        ),
-        "utf8",
-      ),
-    ) as { artifacts: { path: string }[] };
-    expect(manifest.artifacts.map((item) => item.path)).toContain(
-      join(root, "child.jsonl"),
-    );
+    await rm(join(root, "child.jsonl"));
+    await recoverDurableWorkflow(options);
+    expect(await readFile(join(root, "child.jsonl"), "utf8")).toBe("{}\n");
     expect(
       completed.usage?.accountHistory.at(-1)?.reading.windows.short
         ?.usedPercent,
