@@ -250,6 +250,27 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
       (resetResumed.usage?.activeMs ?? 0) - (resetStopped.usage?.activeMs ?? 0),
     ).toBeGreaterThanOrEqual(75);
     expect(dispatched).toBe(3);
+
+    const failed = {
+      ...options,
+      directory: join(root, "failed-state"),
+      invocationId: "failed",
+      worktrees: {
+        one: {
+          ...real,
+          run: async (runOptions: Parameters<typeof real.run>[0]) => {
+            await runOptions.onIterationStart?.(1);
+            throw new Error("Provider failed after dispatch");
+          },
+        },
+      },
+    };
+    const failedResult = await runDurableWorkflow(failed);
+    expect(failedResult.tasks.one?.status).toBe("blocked");
+    const failedUsage = (await workflowStatus(failed.directory)).usage;
+    expect(failedUsage?.remaining.one?.implementation).toBe(1);
+    expect(failedUsage?.tokens.unknown).toHaveLength(1);
+    expect(Object.values(failedUsage?.tokens.estimates ?? {})).toEqual([null]);
   } finally {
     await real.close();
     await rm(root, { recursive: true, force: true });
