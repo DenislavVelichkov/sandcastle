@@ -18,6 +18,7 @@ Sandcastle is provider-agnostic — it ships with built-in providers for Docker,
 
 For an existing project with its own task tracker and acceptance rules, use the opt-in [selected-task workflow](docs/workflow.md). It validates exact task references, dependencies, scopes, roles, and capabilities before running a fixed policy on a named-branch worktree.
 The workflow also supports [durable owner answers, checkpoint recovery, and accepted-candidate integration](docs/workflow.md) through host-only control operations. A verified stopped receipt is the safe-to-quit signal.
+Guarded durable runs can also [check worker model availability, account windows, and finite invocation allowances](docs/workflow.md#guarded-codex-usage) before and during dispatch.
 
 ## Prerequisites
 
@@ -979,12 +980,13 @@ The `codex()` factory accepts an optional second argument for provider-specific 
 agent: codex("gpt-5.4", { effort: "high" });
 ```
 
-| Option              | Type                                           | Default | Description                                                                                                                                                                                                           |
-| ------------------- | ---------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `effort`            | `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` | —       | Codex reasoning effort level via `model_reasoning_effort`                                                                                                                                                             |
-| `env`               | `Record<string, string>`                       | `{}`    | Environment variables injected by this agent provider                                                                                                                                                                 |
-| `captureSessions`   | `boolean`                                      | `true`  | Capture Codex rollout JSONL to host for resume                                                                                                                                                                        |
-| `approvalsReviewer` | `"user"` \| `"auto_review"`                    | —       | Maps to Codex's `approvals_reviewer` config. When `"auto_review"`, swaps `--dangerously-bypass-approvals-and-sandbox` for `-a on-request -s danger-full-access` so the reviewer agent evaluates each approval prompt. |
+| Option              | Type                                                      | Default | Description                                                                                                                                                                                                           |
+| ------------------- | --------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `effort`            | `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` \| `"max"` | —       | Codex reasoning effort level via `model_reasoning_effort`; availability depends on the selected model                                                                                                                 |
+| `serviceTier`       | `"default"`                                               | —       | Explicit Standard processing for guarded Codex workflows                                                                                                                                                              |
+| `env`               | `Record<string, string>`                                  | `{}`    | Environment variables injected by this agent provider                                                                                                                                                                 |
+| `captureSessions`   | `boolean`                                                 | `true`  | Capture Codex rollout JSONL to host for resume                                                                                                                                                                        |
+| `approvalsReviewer` | `"user"` \| `"auto_review"`                               | —       | Maps to Codex's `approvals_reviewer` config. When `"auto_review"`, swaps `--dangerously-bypass-approvals-and-sandbox` for `-a on-request -s danger-full-access` so the reviewer agent evaluates each approval prompt. |
 
 ### `PiOptions`
 

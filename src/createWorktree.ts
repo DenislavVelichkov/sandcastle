@@ -155,6 +155,12 @@ export interface WorktreeRunOptions {
   readonly signal?: AbortSignal;
   /** Host session capture receipt, including an interrupted iteration. */
   readonly onSessionCaptured?: (session: IterationResult) => Promise<void>;
+  /** Guarded workflows use these hooks at the actual provider boundary. */
+  readonly onIterationStart?: (iteration: number) => Promise<void>;
+  readonly onIterationComplete?: (
+    iteration: number,
+    result: IterationResult,
+  ) => Promise<void>;
   /** Report a sandbox close failure to the workflow owner. */
   readonly onCleanupFailure?: (error: unknown) => Promise<void>;
 }
@@ -685,6 +691,8 @@ export const createWorktree = async (
           resumeSession: opts.resumeSession,
           signal: opts.signal,
           onSessionCaptured: opts.onSessionCaptured,
+          onIterationStart: opts.onIterationStart,
+          onIterationComplete: opts.onIterationComplete,
           skipPromptExpansion: isInlinePrompt,
           timeouts: options.timeouts,
           keepSourceBranch: isMergeToHead,

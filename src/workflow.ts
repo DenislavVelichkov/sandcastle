@@ -130,6 +130,15 @@ export interface WorkflowOptions {
   readonly onRoleStarted?: (taskId: string, role: string) => Promise<void>;
   readonly onRoleCompleted?: (taskId: string, role: string) => Promise<void>;
   readonly onCleanupFailure?: (taskId: string, error: unknown) => Promise<void>;
+  readonly onInvocationStart?: (taskId: string, role: string) => Promise<void>;
+  readonly onInvocationComplete?: (
+    taskId: string,
+    role: string,
+    result: {
+      readonly sessionId?: string;
+      readonly usage?: import("./AgentProvider.js").IterationUsage;
+    },
+  ) => Promise<void>;
   readonly resume?: {
     readonly taskId: string;
     readonly role: string;
@@ -481,7 +490,9 @@ export const runWorkflow = async (
           throw new Error(
             `Project must supply exactly one prompt or prompt file for ${task.id}/${role}`,
           );
-        await options.onRoleStarted?.(task.id, role);
+        if (!options.onInvocationStart)
+          await options.onRoleStarted?.(task.id, role);
+        let roleStarted = false;
         const result = await worktree.run({
           agent: assignment.agent,
           sandbox: assignment.sandbox,
@@ -497,6 +508,16 @@ export const runWorkflow = async (
             Promise.resolve(),
           onCleanupFailure: (error) =>
             options.onCleanupFailure?.(task.id, error) ?? Promise.resolve(),
+          onIterationStart: async () => {
+            await options.onInvocationStart?.(task.id, role);
+            if (options.onInvocationStart && !roleStarted) {
+              await options.onRoleStarted?.(task.id, role);
+              roleStarted = true;
+            }
+          },
+          onIterationComplete: (_iteration, result) =>
+            options.onInvocationComplete?.(task.id, role, result) ??
+            Promise.resolve(),
         });
         signal?.throwIfAborted();
         if (role === "implementation")

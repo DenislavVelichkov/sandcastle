@@ -291,6 +291,11 @@ export interface OrchestrateOptions {
   readonly keepSourceBranch?: boolean;
   /** Called after a session reaches the host, including interrupted runs. */
   readonly onSessionCaptured?: (session: IterationResult) => Promise<void>;
+  readonly onIterationStart?: (iteration: number) => Promise<void>;
+  readonly onIterationComplete?: (
+    iteration: number,
+    result: IterationResult,
+  ) => Promise<void>;
 }
 
 /** Per-iteration result carrying an optional session ID. */
@@ -476,6 +481,9 @@ export const orchestrate = (
                   );
                 };
                 let interruptedSessionId: string | undefined;
+                if (options.onIterationStart)
+                  yield* Effect.promise(() => options.onIterationStart!(i));
+                yield* checkAbort();
                 const {
                   result: agentOutput,
                   sessionId,
@@ -617,6 +625,10 @@ export const orchestrate = (
         sessionFilePath: lifecycleResult.result.sessionFilePath,
         usage: lifecycleResult.result.usage,
       });
+      if (options.onIterationComplete)
+        yield* Effect.promise(() =>
+          options.onIterationComplete!(i, allIterations.at(-1)!),
+        );
 
       if (lifecycleResult.result.completionSignal !== undefined) {
         yield* display.status(

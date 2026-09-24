@@ -147,15 +147,13 @@ const parseCursorToolCallStarted = (
   const tc = toolCall as Record<string, unknown>;
 
   const readToolCall = tc.readToolCall as
-    | { args?: { path?: unknown } }
-    | undefined;
+    { args?: { path?: unknown } } | undefined;
   if (readToolCall?.args && typeof readToolCall.args.path === "string") {
     return [{ type: "tool_call", name: "Read", args: readToolCall.args.path }];
   }
 
   const writeToolCall = tc.writeToolCall as
-    | { args?: { path?: unknown } }
-    | undefined;
+    { args?: { path?: unknown } } | undefined;
   if (writeToolCall?.args && typeof writeToolCall.args.path === "string") {
     return [
       { type: "tool_call", name: "Write", args: writeToolCall.args.path },
@@ -263,6 +261,12 @@ export interface AgentSessionStorage {
 
 export interface AgentProvider {
   readonly name: string;
+  /** Exact requested Codex settings. Catalog presence is not proof of effective settings. */
+  readonly codexConfiguration?: {
+    readonly model: string;
+    readonly effort?: CodexOptions["effort"];
+    readonly serviceTier?: "default";
+  };
   /** Environment variables injected by this agent provider. Merged at launch time with env resolver and sandbox provider env. */
   readonly env: Record<string, string>;
   /** When true, session capture is enabled for this provider. Default: true for Claude Code, false for others. */
@@ -748,7 +752,9 @@ const parseCodexStreamLine = (line: string): ParsedStreamEvent[] => {
 
 /** Options for the codex agent provider. */
 export interface CodexOptions {
-  readonly effort?: "low" | "medium" | "high" | "xhigh";
+  readonly effort?: "low" | "medium" | "high" | "xhigh" | "max";
+  /** Select Standard processing explicitly for guarded workflow activity. */
+  readonly serviceTier?: "default";
   /** Environment variables injected by this agent provider. */
   readonly env?: Record<string, string>;
   /** When false, session capture is disabled. Default: true. */
@@ -775,6 +781,11 @@ export const codex = (
   options?: CodexOptions,
 ): AgentProvider & { readonly sessionStorage: AgentSessionStorage } => ({
   name: "codex",
+  codexConfiguration: {
+    model,
+    effort: options?.effort,
+    serviceTier: options?.serviceTier,
+  },
   env: options?.env ?? {},
   captureSessions: options?.captureSessions ?? true,
   sessionStorage: makeCodexSessionStorage(options),
@@ -786,6 +797,9 @@ export const codex = (
   }: AgentCommandOptions): PrintCommand {
     const effortFlag = options?.effort
       ? ` -c ${shellEscape(`model_reasoning_effort="${options.effort}"`)}`
+      : "";
+    const tierFlag = options?.serviceTier
+      ? ` -c ${shellEscape(`service_tier="${options.serviceTier}"`)}`
       : "";
     // auto_review only fires on interactive approvals, so the bypass flag is
     // dropped in favour of `-a on-request`. `-s danger-full-access` disables
@@ -808,7 +822,7 @@ export const codex = (
     }
     const stdinArg = resumeSession ? " -" : "";
     return {
-      command: `${base} --json${approvalsFlags} -m ${shellEscape(model)}${effortFlag}${stdinArg}`,
+      command: `${base} --json${approvalsFlags} -m ${shellEscape(model)}${effortFlag}${tierFlag}${stdinArg}`,
       stdin: prompt,
     };
   },
@@ -915,8 +929,7 @@ const parseOpenCodeStreamLine = (line: string): ParsedStreamEvent[] => {
     if (obj.type === "tool_use" && part?.type === "tool") {
       if (typeof part.tool !== "string") return [];
       const state = part.state as
-        | { status?: string; input?: Record<string, unknown> }
-        | undefined;
+        { status?: string; input?: Record<string, unknown> } | undefined;
       if (state?.status !== "completed") return [];
       const input = state.input;
       if (!input) return [];

@@ -23,6 +23,14 @@ export type {
   WorkflowResponseRoute,
 } from "./workflowControl.js";
 export type {
+  AccountObservation,
+  ModelCatalogPage,
+  TokenCounter,
+  TokenLedger,
+  WorkflowUsageOptions,
+  WorkflowUsageState,
+} from "./workflowUsage.js";
+export type {
   WorkflowTask,
   WorkflowCandidate,
   WorkflowDecision,

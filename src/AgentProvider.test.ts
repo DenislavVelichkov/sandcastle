@@ -748,12 +748,28 @@ describe("codex factory", () => {
   });
 
   it("supports all codex effort levels", () => {
-    for (const effort of ["low", "medium", "high", "xhigh"] as const) {
+    for (const effort of ["low", "medium", "high", "xhigh", "max"] as const) {
       const provider = codex("gpt-5.4-mini", { effort });
       expect(provider.buildPrintCommand(opts("test")).command).toContain(
         `model_reasoning_effort="${effort}"`,
       );
     }
+  });
+
+  it("pins requested Max and Standard settings in the command", () => {
+    const provider = codex("gpt-6-sol", {
+      effort: "max",
+      serviceTier: "default",
+    });
+    const command = provider.buildPrintCommand(opts("test")).command;
+    expect(command).toContain(`-m 'gpt-6-sol'`);
+    expect(command).toContain(`-c 'model_reasoning_effort="max"'`);
+    expect(command).toContain(`-c 'service_tier="default"'`);
+    expect(provider.codexConfiguration).toEqual({
+      model: "gpt-6-sol",
+      effort: "max",
+      serviceTier: "default",
+    });
   });
 
   // --- approvalsReviewer option ---

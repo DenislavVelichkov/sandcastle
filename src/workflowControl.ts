@@ -14,6 +14,20 @@ import { readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Worktree } from "./createWorktree.js";
 import {
+  accrueWorkflowTime,
+  discoverConfiguredModels,
+  finishWorkflowInvocation,
+  initialWorkflowUsage,
+  observeWorkflowUsage,
+  resumeWorkflowUsage,
+  startWorkflowInvocation,
+  startWorkflowTask,
+  finishWorkflowTask,
+  validateActivityConfiguration,
+  type WorkflowUsageOptions,
+  type WorkflowUsageState,
+} from "./workflowUsage.js";
+import {
   captureWorkflowCheckpoint,
   restoreWorkflowCheckpoint,
   verifyWorkflowCheckpoint,
@@ -176,6 +190,7 @@ export interface WorkflowSnapshot {
     readonly scopes: Readonly<Record<string, readonly string[]>>;
   };
   readonly allowances: { readonly iterations: number };
+  readonly usage?: WorkflowUsageState;
 }
 
 export interface WorkflowStatus extends WorkflowSnapshot {
@@ -225,6 +240,8 @@ export interface DurableWorkflowOptions extends Omit<
   >;
   /** Project-owned proof that the original logical reservation still exists. */
   readonly recoverReservation?: (id: string) => Promise<void>;
+  /** Model-free account and worker-catalog readers for bounded live activities. */
+  readonly usage?: WorkflowUsageOptions;
 }
 
 const digest = (value: unknown): string =>
@@ -237,6 +254,23 @@ const responseIdentityPath = (directory: string, responseId: string): string =>
 const lockPath = (directory: string): string =>
   join(directory, "execution.lock");
 const stopPath = (directory: string): string => join(directory, "stop.json");
+const usagePath = (directory: string): string => join(directory, "usage.json");
+const readGuardedAccount = async (usage: WorkflowUsageOptions) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      usage.readAccount(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Account reading timed out")),
+          30_000,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
 const sessionPath = (directory: string): string => join(directory, "sessions");
 const roleStartPath = (directory: string): string =>
   join(directory, "role-starts");
@@ -388,6 +422,14 @@ export const workflowStatus = async (
   directory: string,
 ): Promise<WorkflowStatus> => {
   const state = await readState(directory);
+  let usage: WorkflowUsageState | undefined;
+  try {
+    usage = JSON.parse(
+      await readFile(usagePath(directory), "utf8"),
+    ) as WorkflowUsageState;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
   const observationAgeMs = Math.max(
     0,
     Date.now() - Date.parse(state.observedAt),
@@ -403,7 +445,12 @@ export const workflowStatus = async (
       /* exited */
     }
   }
-  return { ...state, observationAgeMs, liveness: live ? "live" : "last-known" };
+  return {
+    ...state,
+    ...(usage ? { usage } : {}),
+    observationAgeMs,
+    liveness: live ? "live" : "last-known",
+  };
 };
 
 /** Request a durable stop, then wait for the controller's verified receipt. */
@@ -1026,6 +1073,11 @@ const captureState = async (
   options: DurableWorkflowOptions,
   state: WorkflowSnapshot,
 ): Promise<WorkflowSnapshot> => {
+  const usage = options.usage
+    ? (JSON.parse(
+        await readFile(usagePath(options.directory), "utf8"),
+      ) as WorkflowUsageState)
+    : undefined;
   const unfinished = (state.startedTasks ?? []).filter(
     (taskId) =>
       !["accepted", "cancelled"].includes(
@@ -1048,6 +1100,7 @@ const captureState = async (
         missingRequiredSession = true;
     }
   const artifacts = [
+    ...(usage ? [usagePath(options.directory)] : []),
     ...state.requests.flatMap((request) =>
       request.evidence.map((item) => item.path),
     ),
@@ -1066,6 +1119,7 @@ const captureState = async (
   );
   return update(options.directory, state, {
     checkpoint,
+    ...(usage ? { usage } : {}),
     sourceRestoration: "verified",
     sessionRestoration: missingRequiredSession ? "unavailable" : "verified",
   });
@@ -1156,6 +1210,57 @@ const driveDurableWorkflow = async (
     : await inspectWorkflow({ ...options, worktree: first });
   if (admission.status !== "ready")
     throw new Error(admission.reasons.join("; "));
+  let initialUsage: WorkflowUsageState | undefined;
+  let requestedConfigurations: WorkflowUsageState["requested"] | undefined;
+  if (options.usage) {
+    if (!options.runtimeIdentity)
+      throw new Error("Guarded workflow requires a stable runtime identity");
+    const roles = new Set(
+      admission.tasks.flatMap((task) => [
+        "implementation",
+        ...task.requiredRoles,
+      ]),
+    );
+    const requested = Object.fromEntries(
+      [...roles].map((role) => {
+        const config = options.policy.roles[role]?.agent.codexConfiguration;
+        if (
+          !config?.model ||
+          !config.effort ||
+          config.serviceTier !== "default"
+        )
+          throw new Error(
+            `Guarded role ${role} needs an explicit Codex model, effort and Standard tier`,
+          );
+        validateActivityConfiguration(options.usage!.activity, role, {
+          model: config.model,
+          effort: config.effort,
+        });
+        return [
+          role,
+          {
+            model: config.model,
+            effort: config.effort,
+            serviceTier: "default" as const,
+          },
+        ];
+      }),
+    ) as WorkflowUsageState["requested"];
+    requestedConfigurations = requested;
+    await discoverConfiguredModels(
+      options.usage.listModels,
+      Object.values(requested),
+    );
+    if (!resume)
+      initialUsage = initialWorkflowUsage(
+        options.usage,
+        options.runtimeIdentity,
+        await readGuardedAccount(options.usage),
+        admission.tasks,
+        options.policy.iterations,
+        requested,
+      );
+  }
   if (options.project.capabilities.includes("recovery")) {
     if (!options.runtimeIdentity)
       throw new Error(
@@ -1220,6 +1325,22 @@ const driveDurableWorkflow = async (
   await writeLockOwner(options.directory);
   let reservation: Awaited<ReturnType<WorkflowProject["reserve"]>> | undefined;
   let state: WorkflowSnapshot | undefined;
+  let usageState: WorkflowUsageState | undefined;
+  let recoveredGuardStop: string | undefined;
+  let usageMutation = Promise.resolve();
+  const mutateUsage = async (
+    action: (
+      current: WorkflowUsageState,
+    ) => Promise<WorkflowUsageState> | WorkflowUsageState,
+  ): Promise<void> => {
+    const next = usageMutation.then(async () => {
+      if (!usageState) throw new Error("Missing durable usage reservation");
+      usageState = await action(usageState);
+      await publish(usagePath(options.directory), usageState);
+    });
+    usageMutation = next.catch(() => {});
+    await next;
+  };
   try {
     if (!resume) {
       try {
@@ -1259,12 +1380,59 @@ const driveDurableWorkflow = async (
     if (resume && reservation.id !== previous!.resources.reservationId)
       throw new Error("Project changed the retained reservation identity");
     if (resume) {
+      try {
+        usageState = JSON.parse(
+          await readFile(usagePath(options.directory), "utf8"),
+        ) as WorkflowUsageState;
+      } catch (error) {
+        if (options.usage || (error as NodeJS.ErrnoException).code !== "ENOENT")
+          throw error;
+      }
+      if (
+        Boolean(usageState) !== Boolean(options.usage) ||
+        (usageState &&
+          (usageState.policyId !== options.usage?.policyId ||
+            usageState.runtimeIdentity !== options.runtimeIdentity ||
+            usageState.activity !== options.usage?.activity ||
+            JSON.stringify(usageState.requested) !==
+              JSON.stringify(requestedConfigurations) ||
+            usageState.active))
+      )
+        throw new Error(
+          "Guarded policy, runtime or unsettled invocation changed on resume",
+        );
+      if (usageState) {
+        const priorStop = usageState.stopReason;
+        const reading = await readGuardedAccount(options.usage!);
+        usageState = resumeWorkflowUsage(usageState, reading, Date.now());
+        if (priorStop && !usageState.stopReason) recoveredGuardStop = priorStop;
+        await publish(usagePath(options.directory), usageState);
+      }
+    } else if (initialUsage) {
+      usageState = initialUsage;
+      await publish(usagePath(options.directory), usageState, true);
+    }
+    if (resume) {
       await rm(stopPath(options.directory), { force: true });
       await syncDirectory(options.directory);
       state = await update(options.directory, previous!, {
         lifecycle: "running",
         owner: { pid: process.pid, start: ownerStart(process.pid) },
         processes: [],
+        ...(recoveredGuardStop
+          ? {
+              tasks: Object.fromEntries(
+                Object.entries(previous!.tasks).map(([id, task]) => [
+                  id,
+                  task.status === "blocked" &&
+                  task.remaining > 0 &&
+                  task.reason?.includes(recoveredGuardStop!)
+                    ? { ...task, status: "ready", reason: undefined }
+                    : task,
+                ]),
+              ),
+            }
+          : {}),
       });
     } else {
       state = {
@@ -1313,6 +1481,8 @@ const driveDurableWorkflow = async (
         allowances: { iterations: options.policy.iterations },
       };
       await publish(statePath(options.directory), state, true);
+      if (usageState)
+        await mutateUsage((current) => accrueWorkflowTime(current, Date.now()));
       state = await captureState(options, state);
     }
     for (const task of admission.tasks) {
@@ -1384,6 +1554,36 @@ const driveDurableWorkflow = async (
       const worktree = options.worktrees[task.id]!;
       const activeAbort = new AbortController();
       const allowanceBefore = priorTask?.remaining ?? options.policy.iterations;
+      if (usageState) {
+        try {
+          await mutateUsage((current) =>
+            startWorkflowTask(current, task.id, Date.now()),
+          );
+        } catch (error) {
+          await mutateUsage((current) => ({
+            ...current,
+            stopReason: String(error),
+          }));
+          await publish(
+            stopPath(options.directory),
+            { invocationId: options.invocationId },
+            true,
+          ).catch((failure: NodeJS.ErrnoException) => {
+            if (failure.code !== "EEXIST") throw failure;
+          });
+          state = await update(options.directory, state, {
+            tasks: {
+              ...state.tasks,
+              [task.id]: {
+                ...state.tasks[task.id]!,
+                status: "blocked",
+                reason: String(error),
+              },
+            },
+          });
+          break;
+        }
+      }
       state = await update(options.directory, state, {
         active: [task.id],
         startedTasks: [...new Set([...(state.startedTasks ?? []), task.id])],
@@ -1405,8 +1605,74 @@ const driveDurableWorkflow = async (
           },
         },
       });
+      const guardedUsage = options.usage;
       const resultPromise = runWorkflow({
         ...options,
+        ...(guardedUsage
+          ? {
+              onInvocationStart: async (taskId: string, role: string) => {
+                let reading:
+                  | Awaited<ReturnType<WorkflowUsageOptions["readAccount"]>>
+                  | undefined;
+                try {
+                  reading = await readGuardedAccount(guardedUsage);
+                  await mutateUsage((current) =>
+                    startWorkflowInvocation(
+                      current,
+                      taskId,
+                      role,
+                      reading!,
+                      Date.now(),
+                    ),
+                  );
+                } catch (error) {
+                  await mutateUsage((current) => ({
+                    ...(reading
+                      ? observeWorkflowUsage(current, reading, Date.now())
+                      : current),
+                    stopReason: String(error),
+                  }));
+                  await publish(
+                    stopPath(options.directory),
+                    { invocationId: options.invocationId },
+                    true,
+                  ).catch((failure: NodeJS.ErrnoException) => {
+                    if (failure.code !== "EEXIST") throw failure;
+                  });
+                  throw error;
+                }
+              },
+              onInvocationComplete: async (
+                taskId: string,
+                role: string,
+                result: {
+                  sessionId?: string;
+                  usage?: import("./AgentProvider.js").IterationUsage;
+                },
+              ) => {
+                const counters = await guardedUsage
+                  .readTokenCounters?.(taskId, role, result.sessionId)
+                  .catch(() => []);
+                await mutateUsage((current) =>
+                  finishWorkflowInvocation(
+                    current,
+                    Date.now(),
+                    result.sessionId,
+                    result.usage,
+                    counters,
+                  ),
+                );
+                if (usageState?.stopReason)
+                  await publish(
+                    stopPath(options.directory),
+                    { invocationId: options.invocationId },
+                    true,
+                  ).catch((error: NodeJS.ErrnoException) => {
+                    if (error.code !== "EEXIST") throw error;
+                  });
+              },
+            }
+          : {}),
         onRoleStarted: async (taskId, role) => {
           await publish(
             join(roleStartPath(options.directory), `${randomUUID()}.json`),
@@ -1483,6 +1749,32 @@ const driveDurableWorkflow = async (
       try {
         while (!finished) {
           await new Promise((resolve) => setTimeout(resolve, 100));
+          if (
+            options.usage &&
+            usageState?.currentTask &&
+            Date.now() - usageState.latest.observedAt >= 30_000
+          ) {
+            try {
+              const reading = await readGuardedAccount(options.usage);
+              await mutateUsage((current) =>
+                observeWorkflowUsage(current, reading, Date.now()),
+              );
+            } catch (error) {
+              await mutateUsage((current) => ({
+                ...current,
+                stopReason: String(error),
+              }));
+            }
+            if (usageState?.stopReason) {
+              await publish(
+                stopPath(options.directory),
+                { invocationId: options.invocationId },
+                true,
+              ).catch((error: NodeJS.ErrnoException) => {
+                if (error.code !== "EEXIST") throw error;
+              });
+            }
+          }
           if (await stopRequested(options.directory)) {
             if (state.lifecycle !== "stopping")
               state = await update(options.directory, state, {
@@ -1505,8 +1797,30 @@ const driveDurableWorkflow = async (
         await resultPromise.catch(() => {});
         throw error;
       }
+      if (usageState?.currentTask)
+        await mutateUsage((current) =>
+          observeWorkflowUsage(current, current.latest, Date.now()),
+        );
+      if (usageState?.stopReason) {
+        await publish(
+          stopPath(options.directory),
+          { invocationId: options.invocationId },
+          true,
+        ).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "EEXIST") throw error;
+        });
+        failure ??= new Error(usageState.stopReason);
+      }
       const stopAfterResult = await stopRequested(options.directory);
+      if (options.usage && usageState?.active)
+        await mutateUsage((current) =>
+          finishWorkflowInvocation(current, Date.now()),
+        );
       if (stopAfterResult && failure) {
+        if (usageState?.currentTask)
+          await mutateUsage((current) =>
+            finishWorkflowTask(current, Date.now()),
+          );
         const sessions = await capturedSessions(options.directory, task.id);
         const used = sessions.filter(
           (session) => session.role === "implementation",
@@ -1521,10 +1835,12 @@ const driveDurableWorkflow = async (
             ...state.tasks,
             [task.id]: {
               ...state.tasks[task.id]!,
-              status: "paused",
-              remaining: sessions.length
-                ? Math.max(0, options.policy.iterations - used)
-                : 0,
+              status: sessions.length ? "paused" : "blocked",
+              remaining:
+                usageState?.remaining[task.id]?.implementation ??
+                (sessions.length
+                  ? Math.max(0, options.policy.iterations - used)
+                  : 0),
               reason: failure ? String(failure) : undefined,
             },
           },
@@ -1532,6 +1848,10 @@ const driveDurableWorkflow = async (
         break;
       }
       if (failure) {
+        if (usageState?.currentTask)
+          await mutateUsage((current) =>
+            finishWorkflowTask(current, Date.now()),
+          );
         state = await update(options.directory, state, {
           active: [],
           tasks: {
@@ -1646,6 +1966,10 @@ const driveDurableWorkflow = async (
           },
         });
       }
+      if (usageState?.currentTask)
+        await mutateUsage((current) => finishWorkflowTask(current, Date.now()));
+      if (usageState)
+        await mutateUsage((current) => accrueWorkflowTime(current, Date.now()));
       state = await captureState(options, state);
       if (stopAfterResult) break;
     }
@@ -1675,6 +1999,8 @@ const driveDurableWorkflow = async (
       throw new Error(
         "Sandbox cleanup failed; retained work requires recovery",
       );
+    if (usageState)
+      await mutateUsage((current) => accrueWorkflowTime(current, Date.now()));
     state = await captureState(options, state);
     if (state.sessionRestoration === "unavailable")
       throw new Error(
@@ -1945,11 +2271,26 @@ export const recoverDurableWorkflow = async (
       state.invocationId !== options.invocationId ||
       state.projectRoot !== options.project.root ||
       state.runtimeIdentity !== options.runtimeIdentity ||
-      state.allowances.iterations !== options.policy.iterations
+      state.allowances.iterations !== options.policy.iterations ||
+      Boolean(state.usage) !== Boolean(options.usage) ||
+      (state.usage &&
+        (state.usage.policyId !== options.usage?.policyId ||
+          state.usage.activity !== options.usage?.activity ||
+          state.usage.runtimeIdentity !== options.runtimeIdentity))
     )
       throw new Error(
         "Project, target, runtime or iteration allowance changed",
       );
+    if (state.usage)
+      for (const [role, requested] of Object.entries(state.usage.requested)) {
+        const current = options.policy.roles[role]?.agent.codexConfiguration;
+        if (
+          current?.model !== requested.model ||
+          current.effort !== requested.effort ||
+          current.serviceTier !== requested.serviceTier
+        )
+          throw new Error(`Guarded role configuration changed: ${role}`);
+      }
     if (
       !state.selectedTasks ||
       state.selectedTasks.length !== options.selected.length ||
