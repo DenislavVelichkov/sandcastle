@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import type { AgentProvider } from "./AgentProvider.js";
-import type { Worktree } from "./createWorktree.js";
+import type { Worktree, WorktreeRunOptions } from "./createWorktree.js";
 import type { SandboxProvider } from "./SandboxProvider.js";
 
 export interface WorkflowTask {
@@ -43,7 +43,16 @@ export interface WorkflowProject {
   readonly capabilities: readonly string[];
   getTask(id: string): Promise<WorkflowTask | undefined>;
   reserve(request: WorkflowReservation): Promise<() => Promise<void> | void>;
-  prompt(task: WorkflowTask, role: string, iteration: number): string;
+  prompt(
+    task: WorkflowTask,
+    role: string,
+    iteration: number,
+  ):
+    | string
+    | Pick<
+        WorktreeRunOptions,
+        "prompt" | "promptFile" | "promptArgs" | "hooks"
+      >;
   check(candidate: WorkflowCandidate): Promise<WorkflowDecision>;
   accept(
     candidate: WorkflowCandidate,
@@ -86,6 +95,11 @@ export interface WorkflowAdmission {
   readonly reasons: readonly string[];
   readonly tasks: readonly WorkflowTask[];
   readonly capabilities: readonly string[];
+  readonly worktreeState?: {
+    readonly branch: string;
+    readonly head: string;
+    readonly clean: boolean;
+  };
 }
 
 const git = (cwd: string, ...args: string[]): string =>
@@ -105,6 +119,18 @@ const validPath = (path: string): boolean =>
 const overlaps = (a: string, b: string): boolean =>
   a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 
+const validAssignment = (
+  assignment: WorkflowPolicy["roles"][string] | undefined,
+): boolean =>
+  typeof assignment?.agent?.buildPrintCommand === "function" &&
+  typeof assignment.agent.parseStreamLine === "function" &&
+  typeof assignment.sandbox?.create === "function" &&
+  ["bind-mount", "isolated", "none"].includes(assignment.sandbox.tag);
+
+const candidateCurrent = (path: string, head: string): boolean =>
+  git(path, "rev-parse", "HEAD") === head &&
+  !git(path, "status", "--porcelain", "--untracked-files=all");
+
 /** Read-only contract and state inspection. Also used as the single run admission check. */
 export const inspectWorkflow = async (
   options: WorkflowOptions,
@@ -112,6 +138,7 @@ export const inspectWorkflow = async (
   const { project, worktree, selected, policy } = options;
   const reasons: string[] = [];
   const tasks: WorkflowTask[] = [];
+  let worktreeState: WorkflowAdmission["worktreeState"];
   if (!project || !worktree || !policy || !Array.isArray(selected)) {
     return {
       status: "blocked",
@@ -143,10 +170,7 @@ export const inspectWorkflow = async (
   if (!Number.isSafeInteger(policy.iterations) || policy.iterations < 1) {
     reasons.push("Policy iterations must be a positive finite integer");
   }
-  if (
-    !policy.roles?.implementation?.agent ||
-    !policy.roles.implementation.sandbox
-  ) {
+  if (!validAssignment(policy.roles?.implementation)) {
     reasons.push("An implementation agent and sandbox are required");
   }
   try {
@@ -162,10 +186,13 @@ export const inspectWorkflow = async (
         "Selected worktree must belong to a separate worktree in the selected project",
       );
     }
-    if (git(path, "branch", "--show-current") !== worktree.branch) {
+    const branch = git(path, "branch", "--show-current");
+    const clean = !git(path, "status", "--porcelain", "--untracked-files=all");
+    worktreeState = { branch, head: git(path, "rev-parse", "HEAD"), clean };
+    if (branch !== worktree.branch) {
       reasons.push("Selected worktree branch does not match its handle");
     }
-    if (git(path, "status", "--porcelain", "--untracked-files=all")) {
+    if (!clean) {
       reasons.push("Selected worktree has uncommitted changes");
     }
   } catch {
@@ -217,11 +244,7 @@ export const inspectWorkflow = async (
       reasons.push(`Task ${item.id} repeats a required role`);
     }
     for (const role of task.requiredRoles) {
-      if (
-        role === "implementation" ||
-        !policy.roles?.[role]?.agent ||
-        !policy.roles[role].sandbox
-      ) {
+      if (role === "implementation" || !validAssignment(policy.roles?.[role])) {
         reasons.push(`Task ${item.id} requires an unavailable role: ${role}`);
       }
     }
@@ -231,7 +254,7 @@ export const inspectWorkflow = async (
           `Task ${item.id} requires unsupported capability: ${capability}`,
         );
     }
-    tasks.push(task);
+    tasks.push(structuredClone(task));
   }
   const byId = new Map(tasks.map((task, index) => [task.id, index]));
   for (const [index, task] of tasks.entries()) {
@@ -266,6 +289,7 @@ export const inspectWorkflow = async (
     reasons,
     tasks,
     capabilities,
+    worktreeState,
   };
 };
 
@@ -291,6 +315,7 @@ export const runWorkflow = async (
       reason: admission.reasons.join("; "),
     };
   const { project, worktree, policy, signal } = options;
+  const admittedTasks = JSON.stringify(admission.tasks);
   const release = await project.reserve({
     tasks: admission.tasks,
     branch: worktree.branch,
@@ -312,7 +337,7 @@ export const runWorkflow = async (
         completed: [],
         reason: current.reasons.join("; "),
       };
-    if (JSON.stringify(current.tasks) !== JSON.stringify(admission.tasks)) {
+    if (JSON.stringify(current.tasks) !== admittedTasks) {
       return {
         status: "blocked",
         completed: [],
@@ -335,15 +360,20 @@ export const runWorkflow = async (
         if (!assignment) throw new Error(`Required role disappeared: ${role}`);
         for (let iteration = 1; iteration <= count; iteration++) {
           signal?.throwIfAborted();
-          const prompt = project.prompt(task, role, iteration);
-          if (!prompt?.trim())
+          const provided = project.prompt(task, role, iteration);
+          const invocation =
+            typeof provided === "string" ? { prompt: provided } : provided;
+          if (
+            !invocation ||
+            Boolean(invocation.prompt) === Boolean(invocation.promptFile)
+          )
             throw new Error(
-              `Project supplied no prompt for ${task.id}/${role}`,
+              `Project must supply exactly one prompt or prompt file for ${task.id}/${role}`,
             );
           const result = await worktree.run({
             agent: assignment.agent,
             sandbox: assignment.sandbox,
-            prompt,
+            ...invocation,
             maxIterations: 1,
             signal,
           });
@@ -396,6 +426,14 @@ export const runWorkflow = async (
         };
       }
       const check = await project.check(candidate);
+      if (!candidateCurrent(worktree.worktreePath, candidate.head)) {
+        completed.push({ candidate, check });
+        return {
+          status: "blocked",
+          completed,
+          reason: `Task ${task.id} changed during its project check`,
+        };
+      }
       if (check.status !== "passed") {
         completed.push({ candidate, check });
         return {
@@ -406,6 +444,13 @@ export const runWorkflow = async (
       }
       const acceptance = await project.accept(candidate, check);
       completed.push({ candidate, check, acceptance });
+      if (!candidateCurrent(worktree.worktreePath, candidate.head)) {
+        return {
+          status: "blocked",
+          completed,
+          reason: `Task ${task.id} changed during project acceptance`,
+        };
+      }
       if (acceptance.status !== "accepted") {
         return {
           status: "blocked",

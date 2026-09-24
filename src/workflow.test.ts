@@ -33,7 +33,8 @@ describe("public workflow", () => {
     git(root, "config", "user.name", "Test");
     git(root, "config", "user.email", "test@example.com");
     await writeFile(join(root, "README.md"), "fixture\n");
-    git(root, "add", "README.md");
+    await writeFile(join(root, "prompt.md"), "Task {{TASK}}\n");
+    git(root, "add", "README.md", "prompt.md");
     git(root, "commit", "-m", "fixture");
     const worktree = await createWorktree({
       cwd: root,
@@ -47,6 +48,7 @@ describe("public workflow", () => {
         exec: async (command, options) => {
           const cwd = options?.cwd ?? worktreePath;
           if (command.startsWith("claude ")) {
+            expect(options?.stdin).toMatch(/Task [12]/);
             invocations++;
             await mkdir(join(worktreePath, "src"), { recursive: true });
             await writeFile(
@@ -89,6 +91,7 @@ describe("public workflow", () => {
     ]);
     let released = false;
     let accepted = false;
+    let acceptanceCalls = 0;
     const project: WorkflowProject = {
       root,
       capabilities: ["checks"],
@@ -96,7 +99,10 @@ describe("public workflow", () => {
       reserve: async () => async () => {
         released = true;
       },
-      prompt: (_, role) => `Perform ${role}`,
+      prompt: (selectedTask) => ({
+        promptFile: join(root, "prompt.md"),
+        promptArgs: { TASK: selectedTask.id },
+      }),
       check: async () => ({
         status: "failed",
         evidence: ["fixture check"],
@@ -104,6 +110,7 @@ describe("public workflow", () => {
       }),
       accept: async () => {
         accepted = true;
+        acceptanceCalls++;
         return { status: "accepted", evidence: [] };
       },
     };
@@ -121,6 +128,20 @@ describe("public workflow", () => {
       policy,
     };
     try {
+      expect((await inspectWorkflow(options)).worktreeState).toMatchObject({
+        branch: "workflow-test",
+        clean: true,
+      });
+      expect(
+        (
+          await inspectWorkflow({
+            ...options,
+            project: { ...project, reserve: undefined as never },
+          })
+        ).reasons,
+      ).toContain(
+        "Project tracker, reservation, prompt, check and acceptance functions are required",
+      );
       expect(
         (
           await inspectWorkflow({
@@ -161,6 +182,26 @@ describe("public workflow", () => {
           })
         ).reasons,
       ).toContain("Task 2 has unfinished dependency missing");
+      tasks.set("2", { ...task("2", ["docs"]), dependencies: ["1"] });
+      expect(
+        (
+          await inspectWorkflow({
+            ...options,
+            selected: [
+              { id: "2", reference: "issue:2" },
+              { id: "1", reference: "issue:1" },
+            ],
+          })
+        ).reasons,
+      ).toContain("Task 2 must follow dependency 1");
+      expect(
+        (
+          await inspectWorkflow({
+            ...options,
+            policy: { ...policy, iterations: 0 },
+          })
+        ).status,
+      ).toBe("blocked");
       tasks.set("2", {
         ...task("2", ["docs"]),
         requiredCapabilities: ["human-acceptance"],
@@ -202,6 +243,24 @@ describe("public workflow", () => {
         selected: [{ id: "2", reference: "issue:2" }],
       });
       expect(outside.reason).toContain("edited outside its scope");
+      const mutatingProject: WorkflowProject = {
+        ...passingProject,
+        check: async () => {
+          await writeFile(
+            join(worktree.worktreePath, "src", "check.txt"),
+            "drift",
+          );
+          return { status: "passed", evidence: ["stale check"] };
+        },
+      };
+      const changedDuringCheck = await runWorkflow({
+        ...options,
+        project: mutatingProject,
+      });
+      expect(changedDuringCheck.reason).toContain(
+        "changed during its project check",
+      );
+      expect(acceptanceCalls).toBe(1);
     } finally {
       await worktree.close();
       await rm(root, { recursive: true, force: true });
