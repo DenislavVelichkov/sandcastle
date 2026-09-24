@@ -14,6 +14,12 @@ import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import type { Worktree } from "./createWorktree.js";
 import {
+  captureWorkflowCheckpoint,
+  restoreWorkflowCheckpoint,
+  verifyWorkflowCheckpoint,
+  type WorkflowCheckpoint,
+} from "./workflowCheckpoint.js";
+import {
   inspectWorkflow,
   runWorkflow,
   type WorkflowAcceptance,
@@ -32,6 +38,7 @@ type TaskState =
   | "rejected"
   | "rework-requested"
   | "blocked"
+  | "paused"
   | "cancelled";
 
 export interface WorkflowRequest extends WorkflowHumanQuestion {
@@ -88,17 +95,42 @@ export interface WorkflowSnapshot {
   readonly invocationId: string;
   readonly projectRoot: string;
   readonly observedAt: string;
-  readonly lifecycle: "running" | "stopped" | "recovery-required";
+  readonly lifecycle: "running" | "stopping" | "stopped" | "recovery-required";
   readonly failure?: string;
   readonly owner: { readonly pid: number; readonly start: string };
+  readonly processes?: readonly {
+    readonly pid: number;
+    readonly start: string;
+  }[];
   readonly tasks: Record<
     string,
     { status: TaskState; reason?: string; remaining: number }
   >;
   readonly active: readonly string[];
+  readonly startedTasks?: readonly string[];
   readonly requests: readonly WorkflowRequest[];
   readonly responses: readonly WorkflowResponseReceipt[];
   readonly checkpoints: readonly string[];
+  readonly checkpoint?: WorkflowCheckpoint;
+  readonly sourceRestoration?: "verified" | "unavailable";
+  readonly sessionRestoration?: "verified" | "unavailable";
+  readonly runtimeIdentity?: string;
+  readonly targetHead?: string;
+  readonly targetBranch?: string;
+  readonly baselineHeads?: Readonly<Record<string, string>>;
+  readonly selectedTasks?: readonly WorkflowTask[];
+  readonly evidence?: Readonly<Record<string, readonly string[]>>;
+  readonly sessions?: Readonly<
+    Record<
+      string,
+      readonly {
+        role: string;
+        id: string;
+        path?: string;
+        capturedAt?: string;
+      }[]
+    >
+  >;
   readonly resources: {
     readonly reservationId: string;
     readonly retained: boolean;
@@ -140,6 +172,14 @@ export interface DurableWorkflowOptions extends Omit<
   readonly invocationId: string;
   /** Separate worktrees keep a waiting candidate frozen while another task runs. */
   readonly worktrees: Readonly<Record<string, Worktree>>;
+  /** Stable project and provider/build identity required for recovery. */
+  readonly runtimeIdentity?: string;
+  /** Ignored files or directories the project requires in a checkpoint. */
+  readonly requiredIgnoredArtifacts?: Readonly<
+    Record<string, readonly string[]>
+  >;
+  /** Project-owned proof that the original logical reservation still exists. */
+  readonly recoverReservation?: (id: string) => Promise<void>;
 }
 
 const digest = (value: unknown): string =>
@@ -149,6 +189,20 @@ const statePath = (directory: string): string => join(directory, "state.json");
 const inboxPath = (directory: string): string => join(directory, "inbox");
 const lockPath = (directory: string): string =>
   join(directory, "execution.lock");
+const stopPath = (directory: string): string => join(directory, "stop.json");
+const sessionPath = (directory: string): string => join(directory, "sessions");
+const rolePath = (directory: string): string => join(directory, "roles");
+const cleanupPath = (directory: string): string => join(directory, "cleanup");
+
+const stopRequested = async (directory: string): Promise<boolean> => {
+  try {
+    await stat(stopPath(directory));
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+};
 
 const readState = async (directory: string): Promise<WorkflowSnapshot> => {
   const state = JSON.parse(
@@ -195,6 +249,47 @@ const ownerStart = (pid: number): string => {
   return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19] ?? "";
 };
 
+const ownerAlive = (owner: { pid: number; start: string }): boolean => {
+  try {
+    return ownerStart(owner.pid) === owner.start;
+  } catch {
+    return false;
+  }
+};
+
+const descendants = (pid: number): { pid: number; start: string }[] => {
+  const found: { pid: number; start: string }[] = [];
+  const visit = (parent: number): void => {
+    let children: number[];
+    try {
+      children = readFileSync(`/proc/${parent}/task/${parent}/children`, "utf8")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(Number);
+    } catch {
+      return;
+    }
+    for (const child of children) {
+      try {
+        found.push({ pid: child, start: ownerStart(child) });
+        visit(child);
+      } catch {
+        /* exited during inspection */
+      }
+    }
+  };
+  visit(pid);
+  return found;
+};
+
+const writeLockOwner = async (directory: string): Promise<void> =>
+  publish(
+    join(lockPath(directory), "owner.json"),
+    { pid: process.pid, start: ownerStart(process.pid) },
+    true,
+  );
+
 const update = async (
   directory: string,
   state: WorkflowSnapshot,
@@ -228,6 +323,66 @@ export const workflowStatus = async (
     }
   }
   return { ...state, observationAgeMs, liveness: live ? "live" : "last-known" };
+};
+
+/** Request a durable stop, then wait for the controller's verified receipt. */
+export const checkpointStopWorkflow = async (
+  directory: string,
+): Promise<WorkflowSnapshot> => {
+  const initial = await readState(directory);
+  if (initial.lifecycle === "stopped" && initial.checkpoint) {
+    await verifyWorkflowCheckpoint(directory, initial.checkpoint);
+    if (
+      initial.sourceRestoration !== "verified" ||
+      initial.sessionRestoration !== "verified"
+    )
+      throw new Error(
+        "Workflow checkpoint is missing required restoration proof",
+      );
+    return initial;
+  }
+  if (initial.lifecycle === "recovery-required")
+    throw new Error(initial.failure ?? "Workflow requires recovery");
+  try {
+    await publish(
+      stopPath(directory),
+      { invocationId: initial.invocationId },
+      true,
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const prior = JSON.parse(await readFile(stopPath(directory), "utf8")) as {
+      invocationId: string;
+    };
+    if (prior.invocationId !== initial.invocationId)
+      throw new Error("Stop intent belongs to another invocation");
+  }
+  for (let attempt = 0; attempt < 600; attempt++) {
+    const state = await readState(directory);
+    if (state.lifecycle === "stopped" && state.checkpoint) {
+      await verifyWorkflowCheckpoint(directory, state.checkpoint);
+      if (
+        state.sourceRestoration !== "verified" ||
+        state.sessionRestoration !== "verified"
+      )
+        throw new Error(
+          "Workflow checkpoint is missing required restoration proof",
+        );
+      return state;
+    }
+    if (state.lifecycle === "recovery-required")
+      throw new Error(state.failure ?? "Workflow requires recovery");
+    try {
+      if (ownerStart(state.owner.pid) !== state.owner.start)
+        throw new Error("Workflow owner exited before a stopped receipt");
+    } catch (error) {
+      throw new Error(
+        `Workflow owner exited before a stopped receipt: ${String(error)}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("Workflow stop has not produced a verified receipt");
 };
 
 const exactReply = (text: string): Decision => {
@@ -478,6 +633,7 @@ export const processWorkflowResponses = async (
   validate: (request: WorkflowRequest) => Promise<boolean>,
 ): Promise<WorkflowSnapshot> => {
   await mkdir(lockPath(directory));
+  await writeLockOwner(directory);
   try {
     const state = await readState(directory);
     if (state.lifecycle === "recovery-required")
@@ -496,6 +652,7 @@ export const cancelWorkflowTask = async (
   taskId: string,
 ): Promise<WorkflowSnapshot> => {
   await mkdir(lockPath(directory));
+  await writeLockOwner(directory);
   try {
     const state = await readState(directory);
     const task = state.tasks[taskId];
@@ -520,6 +677,7 @@ export const requestWorkflowRework = async (
   taskId: string,
 ): Promise<WorkflowSnapshot> => {
   await mkdir(lockPath(directory));
+  await writeLockOwner(directory);
   try {
     const state = await readState(directory);
     const task = state.tasks[taskId];
@@ -580,9 +738,98 @@ const requestFrom = (
   };
 };
 
-/** Runs exact selected tasks with durable human waits and independent worktrees. */
-export const runDurableWorkflow = async (
+const captureState = async (
   options: DurableWorkflowOptions,
+  state: WorkflowSnapshot,
+): Promise<WorkflowSnapshot> => {
+  const unfinished = (state.startedTasks ?? []).filter(
+    (taskId) =>
+      !["accepted", "cancelled"].includes(
+        state.tasks[taskId]?.status ?? "ready",
+      ),
+  );
+  const sessions = Object.values(state.sessions ?? {}).flat();
+  const missingRequiredSession =
+    (options.project.capabilities.includes("recovery") &&
+      unfinished.some((taskId) => !state.sessions?.[taskId]?.length)) ||
+    (options.project.capabilities.includes("recovery") &&
+      sessions.some((session) => !session.path));
+  const artifacts = [
+    ...state.requests.flatMap((request) =>
+      request.evidence.map((item) => item.path),
+    ),
+    ...Object.values(state.evidence ?? {})
+      .flat()
+      .filter(isAbsolute),
+    ...sessions
+      .map((session) => session.path)
+      .filter((path): path is string => Boolean(path)),
+  ];
+  const checkpoint = await captureWorkflowCheckpoint(
+    options.directory,
+    options.worktrees,
+    options.requiredIgnoredArtifacts ?? {},
+    artifacts,
+  );
+  return update(options.directory, state, {
+    checkpoint,
+    sourceRestoration: "verified",
+    sessionRestoration: missingRequiredSession ? "unavailable" : "verified",
+  });
+};
+
+const capturedSessions = async (
+  directory: string,
+  taskId: string,
+): Promise<
+  { role: string; id: string; path?: string; capturedAt?: string }[]
+> => {
+  const result: {
+    role: string;
+    id: string;
+    path?: string;
+    capturedAt?: string;
+  }[] = [];
+  for (const name of await readdir(sessionPath(directory))) {
+    if (!name.endsWith(".json")) continue;
+    const record = JSON.parse(
+      await readFile(join(sessionPath(directory), name), "utf8"),
+    ) as {
+      taskId: string;
+      role: string;
+      id: string;
+      path?: string;
+      capturedAt?: string;
+    };
+    if (record.taskId === taskId) result.push(record);
+  }
+  return result.sort((a, b) =>
+    (a.capturedAt ?? "").localeCompare(b.capturedAt ?? ""),
+  );
+};
+
+const completedRoles = async (
+  directory: string,
+  taskId: string,
+): Promise<string[]> => {
+  const result: string[] = [];
+  for (const name of await readdir(rolePath(directory))) {
+    if (!name.endsWith(".json")) continue;
+    const record = JSON.parse(
+      await readFile(join(rolePath(directory), name), "utf8"),
+    ) as {
+      taskId: string;
+      role: string;
+    };
+    if (record.taskId === taskId) result.push(record.role);
+  }
+  return result;
+};
+
+/** Runs exact selected tasks with durable human waits and independent worktrees. */
+const driveDurableWorkflow = async (
+  options: DurableWorkflowOptions,
+  resume = false,
 ): Promise<WorkflowSnapshot> => {
   if (!validId(options.projectId) || !validId(options.invocationId))
     throw new Error("Invalid project or invocation identity");
@@ -595,9 +842,32 @@ export const runDurableWorkflow = async (
     );
   const first = options.worktrees[options.selected[0]?.id ?? ""];
   if (!first) throw new Error("Every selected task needs a worktree");
-  const admission = await inspectWorkflow({ ...options, worktree: first });
+  const previous = resume ? await readState(options.directory) : undefined;
+  if (resume && (previous?.lifecycle !== "stopped" || !previous.selectedTasks))
+    throw new Error("Workflow is not verified and stopped for resume");
+  const admission = previous
+    ? { status: "ready" as const, reasons: [], tasks: previous.selectedTasks! }
+    : await inspectWorkflow({ ...options, worktree: first });
   if (admission.status !== "ready")
     throw new Error(admission.reasons.join("; "));
+  if (options.project.capabilities.includes("recovery")) {
+    if (!options.runtimeIdentity)
+      throw new Error(
+        "Recoverable workflow requires a stable runtime identity",
+      );
+    for (const task of admission.tasks)
+      for (const role of ["implementation", ...task.requiredRoles]) {
+        const assignment = options.policy.roles[role];
+        if (
+          assignment?.sandbox.tag !== "bind-mount" ||
+          !assignment.agent.captureSessions ||
+          !assignment.agent.sessionStorage
+        )
+          throw new Error(
+            `Recoverable workflow needs host session capture for ${task.id}/${role}`,
+          );
+      }
+  }
   if (
     new Set(
       admission.tasks.map((task) => options.worktrees[task.id]?.worktreePath),
@@ -606,7 +876,7 @@ export const runDurableWorkflow = async (
     throw new Error(
       "Selected tasks need separate worktrees to preserve exact candidates",
     );
-  for (const task of admission.tasks) {
+  for (const task of resume ? [] : admission.tasks) {
     const worktree = options.worktrees[task.id];
     if (!worktree) throw new Error(`Missing worktree for ${task.id}`);
     const check = await inspectWorkflow({
@@ -632,15 +902,21 @@ export const runDurableWorkflow = async (
   }
   await mkdir(options.directory, { recursive: true, mode: 0o700 });
   await mkdir(inboxPath(options.directory), { recursive: true, mode: 0o700 });
+  await mkdir(sessionPath(options.directory), { recursive: true, mode: 0o700 });
+  await mkdir(rolePath(options.directory), { recursive: true, mode: 0o700 });
+  await mkdir(cleanupPath(options.directory), { recursive: true, mode: 0o700 });
   await mkdir(lockPath(options.directory));
+  await writeLockOwner(options.directory);
   let reservation: Awaited<ReturnType<WorkflowProject["reserve"]>> | undefined;
   let state: WorkflowSnapshot | undefined;
   try {
-    try {
-      await stat(statePath(options.directory));
-      throw new Error("Invocation already exists");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if (!resume) {
+      try {
+        await stat(statePath(options.directory));
+        throw new Error("Invocation already exists");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
     }
     reservation = await options.project.reserve({
       tasks: admission.tasks,
@@ -652,6 +928,7 @@ export const runDurableWorkflow = async (
         ]),
       ),
       implementationIterations: options.policy.iterations,
+      ...(resume ? { resumeId: previous!.resources.reservationId } : {}),
       roles: Object.fromEntries(
         admission.tasks.map((task) => [
           task.id,
@@ -668,36 +945,106 @@ export const runDurableWorkflow = async (
       throw new Error(
         "Durable workflow requires a project-owned durable reservation",
       );
-    state = {
-      version: 1,
-      revision: 1,
-      projectId: options.projectId,
-      invocationId: options.invocationId,
-      projectRoot: options.project.root,
-      observedAt: new Date().toISOString(),
-      lifecycle: "running",
-      owner: { pid: process.pid, start: ownerStart(process.pid) },
-      tasks: Object.fromEntries(
-        admission.tasks.map((task) => [
-          task.id,
-          { status: "ready", remaining: options.policy.iterations },
-        ]),
-      ),
-      active: [],
-      requests: [],
-      responses: [],
-      checkpoints: [],
-      resources: {
-        reservationId: reservation.id,
-        retained: false,
-        scopes: Object.fromEntries(
-          admission.tasks.map((task) => [task.id, task.scope]),
+    if (resume && reservation.id !== previous!.resources.reservationId)
+      throw new Error("Project changed the retained reservation identity");
+    if (resume) {
+      await rm(stopPath(options.directory), { force: true });
+      await syncDirectory(options.directory);
+      state = await update(options.directory, previous!, {
+        lifecycle: "running",
+        owner: { pid: process.pid, start: ownerStart(process.pid) },
+        processes: [],
+      });
+    } else {
+      state = {
+        version: 1,
+        revision: 1,
+        projectId: options.projectId,
+        invocationId: options.invocationId,
+        projectRoot: options.project.root,
+        observedAt: new Date().toISOString(),
+        lifecycle: "running",
+        owner: { pid: process.pid, start: ownerStart(process.pid) },
+        processes: [],
+        tasks: Object.fromEntries(
+          admission.tasks.map((task) => [
+            task.id,
+            { status: "ready", remaining: options.policy.iterations },
+          ]),
         ),
-      },
-      allowances: { iterations: options.policy.iterations },
-    };
-    await publish(statePath(options.directory), state, true);
+        active: [],
+        startedTasks: [],
+        requests: [],
+        responses: [],
+        checkpoints: [],
+        runtimeIdentity: options.runtimeIdentity,
+        targetHead: execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: options.project.root,
+          encoding: "utf8",
+        }).trim(),
+        targetBranch: execFileSync("git", ["branch", "--show-current"], {
+          cwd: options.project.root,
+          encoding: "utf8",
+        }).trim(),
+        selectedTasks: admission.tasks,
+        baselineHeads: {},
+        evidence: {},
+        sessions: {},
+        resources: {
+          reservationId: reservation.id,
+          retained: false,
+          scopes: Object.fromEntries(
+            admission.tasks.map((task) => [task.id, task.scope]),
+          ),
+        },
+        allowances: { iterations: options.policy.iterations },
+      };
+      await publish(statePath(options.directory), state, true);
+      state = await captureState(options, state);
+    }
     for (const task of admission.tasks) {
+      const priorTask = state.tasks[task.id];
+      if (
+        resume &&
+        priorTask?.status !== "ready" &&
+        priorTask?.status !== "paused"
+      )
+        continue;
+      let resumed: WorkflowOptions["resume"];
+      if (resume && priorTask?.status === "paused") {
+        const roles = ["implementation", ...task.requiredRoles];
+        const done = await completedRoles(options.directory, task.id);
+        const role = roles.find((item) => !done.includes(item));
+        if (!role) continue;
+        if (role === "implementation" && priorTask.remaining < 1) continue;
+        const session = [...(state.sessions?.[task.id] ?? [])]
+          .reverse()
+          .find((item) => item.role === role);
+        if (
+          !session &&
+          (state.sessions?.[task.id]?.length ?? 0) > 0 &&
+          !done.includes(role)
+        )
+          throw new Error(
+            `Missing session for interrupted role ${task.id}/${role}`,
+          );
+        const baselineHead = state.baselineHeads?.[task.id];
+        if (!baselineHead)
+          throw new Error(`Missing baseline head for ${task.id}`);
+        resumed = {
+          taskId: task.id,
+          role,
+          ...(session ? { sessionId: session.id } : {}),
+          baselineHead,
+          completedRoles: roles.filter((item) => done.includes(item)),
+        };
+      }
+      if (await stopRequested(options.directory)) {
+        state = await update(options.directory, state, {
+          lifecycle: "stopping",
+        });
+        break;
+      }
       state = await applyQueued(
         options.directory,
         state,
@@ -724,8 +1071,19 @@ export const runDurableWorkflow = async (
       }
       const worktree = options.worktrees[task.id]!;
       const activeAbort = new AbortController();
+      const allowanceBefore = priorTask?.remaining ?? options.policy.iterations;
       state = await update(options.directory, state, {
         active: [task.id],
+        startedTasks: [...new Set([...(state.startedTasks ?? []), task.id])],
+        baselineHeads: {
+          ...state.baselineHeads,
+          [task.id]:
+            resumed?.baselineHead ??
+            execFileSync("git", ["rev-parse", "HEAD"], {
+              cwd: worktree.worktreePath,
+              encoding: "utf8",
+            }).trim(),
+        },
         tasks: {
           ...state.tasks,
           [task.id]: {
@@ -737,6 +1095,43 @@ export const runDurableWorkflow = async (
       });
       const resultPromise = runWorkflow({
         ...options,
+        onSessionCaptured: async (taskId, role, session) => {
+          if (!session.sessionId || !session.sessionFilePath) return;
+          const record = {
+            eventId: randomUUID(),
+            capturedAt: new Date().toISOString(),
+            taskId,
+            role,
+            id: session.sessionId,
+            path: session.sessionFilePath,
+          };
+          const path = join(
+            sessionPath(options.directory),
+            `${record.eventId}.json`,
+          );
+          await publish(path, record, true);
+        },
+        onRoleCompleted: async (taskId, role) => {
+          const record = { taskId, role };
+          await publish(
+            join(rolePath(options.directory), `${digest(record)}.json`),
+            record,
+            true,
+          );
+        },
+        onCleanupFailure: async (taskId, error) => {
+          await publish(
+            join(cleanupPath(options.directory), `${randomUUID()}.json`),
+            { taskId, reason: String(error), at: new Date().toISOString() },
+            true,
+          );
+        },
+        ...(resumed ? { resume: resumed } : {}),
+        ...(resumed
+          ? {
+              policy: { ...options.policy, iterations: 1 },
+            }
+          : {}),
         signal: options.signal
           ? AbortSignal.any([options.signal, activeAbort.signal])
           : activeAbort.signal,
@@ -769,18 +1164,53 @@ export const runDurableWorkflow = async (
       try {
         while (!finished) {
           await new Promise((resolve) => setTimeout(resolve, 100));
+          if (await stopRequested(options.directory)) {
+            if (state.lifecycle !== "stopping")
+              state = await update(options.directory, state, {
+                lifecycle: "stopping",
+              });
+            activeAbort.abort(new Error("Workflow checkpoint stop requested"));
+          }
           state = await applyQueued(
             options.directory,
             state,
             options.project.validateHumanRequest,
           );
           if (Date.now() - Date.parse(state.observedAt) > 1000)
-            state = await update(options.directory, state, {});
+            state = await update(options.directory, state, {
+              processes: descendants(process.pid),
+            });
         }
       } catch (error) {
         activeAbort.abort(error);
         await resultPromise.catch(() => {});
         throw error;
+      }
+      const stopAfterResult = await stopRequested(options.directory);
+      if (stopAfterResult && failure) {
+        const sessions = await capturedSessions(options.directory, task.id);
+        const used = sessions.filter(
+          (session) => session.role === "implementation",
+        ).length;
+        state = await update(options.directory, state, {
+          active: [],
+          sessions: {
+            ...state.sessions,
+            [task.id]: sessions,
+          },
+          tasks: {
+            ...state.tasks,
+            [task.id]: {
+              ...state.tasks[task.id]!,
+              status: "paused",
+              remaining: sessions.length
+                ? Math.max(0, options.policy.iterations - used)
+                : 0,
+              reason: failure ? String(failure) : undefined,
+            },
+          },
+        });
+        break;
       }
       if (failure) {
         state = await update(options.directory, state, {
@@ -797,13 +1227,37 @@ export const runDurableWorkflow = async (
         continue;
       }
       result ??= await resultPromise;
+      const last = result.completed.at(-1);
+      state = await update(options.directory, state, {
+        evidence: {
+          ...state.evidence,
+          [task.id]: [
+            ...(last?.check.evidence ?? []),
+            ...(last?.acceptance?.evidence ?? []),
+          ],
+        },
+        sessions: {
+          ...state.sessions,
+          [task.id]: [
+            ...(state.sessions?.[task.id] ?? []),
+            ...(last?.sessions ?? []),
+          ],
+        },
+      });
       const acceptance = result.completed.at(-1)?.acceptance;
-      const remaining = Math.max(
-        0,
-        options.policy.iterations -
-          (result.completed.at(-1)?.usedImplementationIterations ??
-            options.policy.iterations),
-      );
+      const remaining = resumed
+        ? Math.max(
+            0,
+            allowanceBefore -
+              (resumed.role === "implementation"
+                ? (last?.usedImplementationIterations ?? 1)
+                : 0),
+          )
+        : Math.max(
+            0,
+            options.policy.iterations -
+              (last?.usedImplementationIterations ?? options.policy.iterations),
+          );
       if (acceptance?.status === "waiting") {
         const request = requestFrom(
           options,
@@ -841,15 +1295,30 @@ export const runDurableWorkflow = async (
           },
         });
       }
+      state = await captureState(options, state);
+      if (stopAfterResult) break;
     }
     state = await applyQueued(
       options.directory,
       state,
       options.project.validateHumanRequest,
     );
-    const waiting = Object.values(state.tasks).some(
-      (task) => task.status === "waiting" || task.status === "rejected",
+    const waiting = Object.values(state.tasks).some((task) =>
+      ["waiting", "rejected", "paused", "ready", "blocked"].includes(
+        task.status,
+      ),
     );
+    if (descendants(process.pid).length)
+      throw new Error("Owned child processes remain after workflow drain");
+    if ((await readdir(cleanupPath(options.directory))).length)
+      throw new Error(
+        "Sandbox cleanup failed; retained work requires recovery",
+      );
+    state = await captureState(options, state);
+    if (state.sessionRestoration === "unavailable")
+      throw new Error(
+        "Required agent session was not captured; source remains retained",
+      );
     if (waiting) await reservation.retain();
     else await reservation.release();
     state = await update(options.directory, state, {
@@ -865,6 +1334,7 @@ export const runDurableWorkflow = async (
         state = await update(options.directory, state, {
           lifecycle: "recovery-required",
           active: [],
+          sourceRestoration: "unavailable",
           failure: String(error),
           resources: { ...state.resources, retained: true },
         });
@@ -878,4 +1348,136 @@ export const runDurableWorkflow = async (
     if (!state && reservation && typeof reservation !== "function")
       await reservation.release();
   }
+};
+
+export const runDurableWorkflow = (
+  options: DurableWorkflowOptions,
+): Promise<WorkflowSnapshot> => driveDurableWorkflow(options);
+
+/** Verify an interrupted invocation and restore only into a matching worktree. */
+export const recoverDurableWorkflow = async (
+  options: DurableWorkflowOptions,
+): Promise<WorkflowSnapshot> => {
+  if (!options.runtimeIdentity)
+    throw new Error("Recovery requires a stable runtime identity");
+  const recoveryLock = join(options.directory, "recovery.lock");
+  await mkdir(recoveryLock);
+  let executionOwned = false;
+  try {
+    let state = await readState(options.directory);
+    const targetHead = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: options.project.root,
+      encoding: "utf8",
+    }).trim();
+    const targetBranch = execFileSync("git", ["branch", "--show-current"], {
+      cwd: options.project.root,
+      encoding: "utf8",
+    }).trim();
+    if (
+      state.projectId !== options.projectId ||
+      state.invocationId !== options.invocationId ||
+      state.projectRoot !== options.project.root ||
+      state.runtimeIdentity !== options.runtimeIdentity ||
+      state.targetHead !== targetHead ||
+      state.targetBranch !== targetBranch
+    )
+      throw new Error("Project, target or runtime identity changed");
+    if (
+      !state.selectedTasks ||
+      state.selectedTasks.length !== options.selected.length ||
+      state.selectedTasks.some(
+        (task, index) =>
+          task.id !== options.selected[index]?.id ||
+          task.reference !== options.selected[index]?.reference,
+      )
+    )
+      throw new Error("Selected task identities changed");
+    for (const task of state.selectedTasks) {
+      if (
+        JSON.stringify(await options.project.getTask(task.id)) !==
+        JSON.stringify(task)
+      )
+        throw new Error(`Task contract changed for ${task.id}`);
+    }
+    if (state.lifecycle === "running" || state.lifecycle === "stopping") {
+      if (ownerAlive(state.owner))
+        throw new Error("Workflow owner is still running");
+      if (state.processes?.some(ownerAlive))
+        throw new Error("Owned descendant survived the workflow owner");
+    }
+    if (!state.checkpoint)
+      throw new Error("No verified durable checkpoint exists");
+    await verifyWorkflowCheckpoint(options.directory, state.checkpoint);
+    try {
+      if ((await readdir(cleanupPath(options.directory))).length)
+        throw new Error("Sandbox cleanup failure still requires owner repair");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    try {
+      const lockOwner = JSON.parse(
+        await readFile(join(lockPath(options.directory), "owner.json"), "utf8"),
+      ) as { pid: number; start: string };
+      if (ownerAlive(lockOwner))
+        throw new Error("Execution lock is still owned");
+      await rm(lockPath(options.directory), { recursive: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    await mkdir(lockPath(options.directory));
+    executionOwned = true;
+    await writeLockOwner(options.directory);
+    if (state.active.length)
+      return update(options.directory, state, {
+        lifecycle: "recovery-required",
+        sourceRestoration: "unavailable",
+        failure:
+          "Interrupted active work has no verified final inventory; retained work needs owner inspection",
+      });
+    try {
+      await restoreWorkflowCheckpoint(
+        options.directory,
+        state.checkpoint,
+        options.worktrees,
+        options.requiredIgnoredArtifacts ?? {},
+      );
+      if (state.resources.retained) {
+        if (!options.recoverReservation)
+          throw new Error("Project reservation recovery is required");
+        await options.recoverReservation(state.resources.reservationId);
+      }
+      if (state.sessionRestoration === "unavailable")
+        throw new Error("Required agent session is unavailable");
+      state = await update(options.directory, state, {
+        lifecycle: "stopped",
+        sourceRestoration: "verified",
+        failure: undefined,
+      });
+      return await applyQueued(
+        options.directory,
+        state,
+        options.project.validateHumanRequest,
+      );
+    } catch (error) {
+      await update(options.directory, state, {
+        lifecycle: "recovery-required",
+        failure: String(error),
+      });
+      throw error;
+    }
+  } finally {
+    if (executionOwned)
+      await rm(lockPath(options.directory), { recursive: true, force: true });
+    await rm(recoveryLock, { recursive: true, force: true });
+  }
+};
+
+/** Explicitly continue only ready or paused tasks after recovery checks. */
+export const resumeDurableWorkflow = async (
+  options: DurableWorkflowOptions,
+): Promise<WorkflowSnapshot> => {
+  const recovered = await recoverDurableWorkflow(options);
+  if (recovered.lifecycle !== "stopped")
+    throw new Error(recovered.failure ?? "Workflow requires recovery");
+  return driveDurableWorkflow(options, true);
 };

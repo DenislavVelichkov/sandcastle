@@ -2,6 +2,9 @@ export { run } from "./run.js";
 export { inspectWorkflow, runWorkflow } from "./workflow.js";
 export {
   runDurableWorkflow,
+  checkpointStopWorkflow,
+  recoverDurableWorkflow,
+  resumeDurableWorkflow,
   workflowStatus,
   respondWorkflow,
   processWorkflowResponses,
