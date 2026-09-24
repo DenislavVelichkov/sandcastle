@@ -13,6 +13,10 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
+## Implementation progress
+
+When completing or pausing work on an existing issue, comment on that issue with the commit or PR, checks run and their results, acceptance criteria met, and any remaining work or blockers. Update its labels or checklist when the project's conventions use them. Close it only after its required gates pass on the intended integration branch; otherwise leave it open and say what remains. A `#<number>` commit reference does not record this progress.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: yes.** External PRs are treated as feature requests; `/triage` reads this flag and pulls them into the same queue as issues, running them through the same labels and states using the `gh pr` equivalents:
