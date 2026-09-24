@@ -1,4 +1,17 @@
 export { run } from "./run.js";
+export { inspectWorkflow, runWorkflow } from "./workflow.js";
+export type {
+  WorkflowTask,
+  WorkflowCandidate,
+  WorkflowDecision,
+  WorkflowAcceptance,
+  WorkflowProject,
+  WorkflowReservation,
+  WorkflowPolicy,
+  WorkflowOptions,
+  WorkflowAdmission,
+  WorkflowResult,
+} from "./workflow.js";
 export type {
   RunOptions,
   RunResult,

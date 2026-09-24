@@ -16,6 +16,8 @@ A TypeScript library for orchestrating AI coding agents in isolated sandboxes:
 
 Sandcastle is provider-agnostic — it ships with built-in providers for Docker, Podman, and Vercel, and you can create your own. Great for parallelizing multiple AFK agents, creating review pipelines, or even just orchestrating your own agents.
 
+For an existing project with its own task tracker and acceptance rules, use the opt-in [selected-task workflow](docs/workflow.md). It validates exact task references, dependencies, scopes, roles, and capabilities before running a fixed policy on a named-branch worktree.
+
 ## Prerequisites
 
 - [Git](https://git-scm.com/)
