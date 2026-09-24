@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import {
   codex,
   createWorktree,
+  recoverDurableWorkflow,
   resumeDurableWorkflow,
   runDurableWorkflow,
   workflowStatus,
@@ -204,3 +205,158 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("shares a pilot budget across measurement and scored durable invocations", async () => {
+  const root = await mkdtemp(join(tmpdir(), "sandcastle-pilot-"));
+  git(root, "init", "-b", "main");
+  git(root, "config", "user.name", "Test");
+  git(root, "config", "user.email", "test@example.com");
+  await writeFile(join(root, "README.md"), "base\n");
+  git(root, "add", "README.md");
+  git(root, "commit", "-m", "base");
+  const measurementWorktree = await createWorktree({
+    cwd: root,
+    branchStrategy: { type: "branch", branch: "measurement" },
+  });
+  const scoredWorktree = await createWorktree({
+    cwd: root,
+    branchStrategy: { type: "branch", branch: "scored" },
+  });
+  const pilotDirectory = join(root, "pilot-budget");
+  const now = Date.now();
+  const dispatched: string[] = [];
+  const task = (id: string, state: WorkflowTask["state"]): WorkflowTask => ({
+    id,
+    reference: `issue:${id}`,
+    state,
+    dependencies: id === "scored" ? ["measurement"] : [],
+    scope: [`${id}.txt`],
+    requiredRoles: [],
+    requiredCapabilities: [],
+  });
+  let measurementAccepted = false;
+  const project = {
+    root,
+    capabilities: [],
+    getTask: async (id: string) =>
+      id === "measurement"
+        ? task(id, measurementAccepted ? "complete" : "ready")
+        : id === "scored"
+          ? task(id, "ready")
+          : undefined,
+    reserve: async () => ({
+      id: "reservation",
+      retain: async () => {},
+      release: async () => {},
+    }),
+    prompt: () => "test",
+    check: async () => ({ status: "passed" as const, evidence: [] }),
+    accept: async () => ({ status: "accepted" as const, evidence: [] }),
+    validateHumanRequest: async () => true,
+  };
+  const wrapped = (id: string, worktree: typeof measurementWorktree) => ({
+    ...worktree,
+    run: async (runOptions: Parameters<typeof worktree.run>[0]) => {
+      await runOptions.onIterationStart?.(1);
+      dispatched.push(id);
+      const file = `${id}.txt`;
+      await writeFile(join(worktree.worktreePath, file), `${id}\n`);
+      git(worktree.worktreePath, "add", file);
+      git(worktree.worktreePath, "commit", "-m", id);
+      const iteration = {};
+      await runOptions.onIterationComplete?.(1, iteration);
+      return {
+        iterations: [iteration],
+        commits: [{ sha: git(worktree.worktreePath, "rev-parse", "HEAD") }],
+      } as never;
+    },
+  });
+  const usage = (activity: "measurement" | "pilot") => ({
+    policyId: "pilot-policy",
+    activity,
+    pilot: { id: "pilot-1", directory: pilotDirectory },
+    listModels: async () => ({
+      data: [
+        {
+          model: "gpt-6-sol",
+          supportedReasoningEfforts: [{ reasoningEffort: "high" }],
+        },
+      ],
+    }),
+    readAccount: async () => ({
+      accountId: "account-a",
+      observedAt: Date.now(),
+      denied: false,
+      windows: {
+        short: {
+          usedPercent: dispatched.length === 2 ? 25 : 20,
+          resetsAt: now + 5 * 60 * 60_000,
+        },
+        weekly: { usedPercent: 30, resetsAt: now + 7 * 24 * 60 * 60_000 },
+      },
+    }),
+  });
+  const policy = {
+    iterations: 2,
+    roles: {
+      implementation: {
+        agent: codex("gpt-6-sol", {
+          effort: "high",
+          serviceTier: "default",
+        }),
+        sandbox: { tag: "none" as const, create: async () => ({}) } as never,
+      },
+    },
+  };
+  const runOptions = (
+    id: string,
+    activity: "measurement" | "pilot",
+    worktree: typeof measurementWorktree,
+  ) => ({
+    directory: join(root, `${id}-state`),
+    projectId: "project",
+    invocationId: id,
+    runtimeIdentity: "worker-image-cli-home-account",
+    selected: [{ id, reference: `issue:${id}` }],
+    worktrees: { [id]: wrapped(id, worktree) },
+    project,
+    recoverReservation: async () => {},
+    policy,
+    usage: usage(activity),
+  });
+  try {
+    const measurementOptions = runOptions(
+      "measurement",
+      "measurement",
+      measurementWorktree,
+    );
+    const first = await runDurableWorkflow(measurementOptions);
+    expect(first.tasks.measurement?.status).toBe("accepted");
+    await mkdir(join(pilotDirectory, "execution.lock"));
+    await writeFile(
+      join(pilotDirectory, "execution.lock", "owner.json"),
+      JSON.stringify({ pid: 999999, start: "0" }),
+    );
+    const recovered = await recoverDurableWorkflow(measurementOptions);
+    expect(recovered.lifecycle).toBe("stopped");
+    measurementAccepted = true;
+    const second = await runDurableWorkflow(
+      runOptions("scored", "pilot", scoredWorktree),
+    );
+    expect(dispatched).toEqual(["measurement", "scored"]);
+    expect(second.tasks.scored?.status).toBe("blocked");
+    expect(second.usage?.stopReason).toMatch(/5 percentage points/);
+    expect(second.usage?.baseline.windows.short?.usedPercent).toBe(20);
+    const budget = JSON.parse(
+      await readFile(join(pilotDirectory, "budget.json"), "utf8"),
+    );
+    expect(budget.measurementCalls).toBe(1);
+    expect(budget.evaluations).toBe(1);
+    expect(budget.episodes.measurement.complete).toBe(true);
+    expect(budget.activeMs).toBeGreaterThan(0);
+  } finally {
+    await measurementWorktree.close();
+    await scoredWorktree.close();
+    await rm(root, { recursive: true, force: true });
+  }
+}, 15_000);

@@ -138,6 +138,8 @@ export interface WorkflowUsageOptions {
   readonly policyId: string;
   /** Bound activity whose ceilings apply to this invocation. */
   readonly activity: "library-proof" | "pilot" | "measurement";
+  /** Shared host-only budget for every measurement and evaluation in one pilot. */
+  readonly pilot?: { readonly id: string; readonly directory: string };
   /** Read both applicable windows from the worker's ordinary account. */
   readonly readAccount: () => Promise<AccountObservation>;
   /** Run model/list in the same isolated Codex Home, CLI, image and account as the worker. */

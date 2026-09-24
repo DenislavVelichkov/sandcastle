@@ -14,6 +14,12 @@ import { readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Worktree } from "./createWorktree.js";
 import {
+  beginPilotInvocation,
+  recordPilotUsage,
+  settlePilotInvocation,
+  type PilotBudgetState,
+} from "./pilotBudget.js";
+import {
   accrueWorkflowTime,
   discoverConfiguredModels,
   finishWorkflowInvocation,
@@ -255,6 +261,8 @@ const lockPath = (directory: string): string =>
   join(directory, "execution.lock");
 const stopPath = (directory: string): string => join(directory, "stop.json");
 const usagePath = (directory: string): string => join(directory, "usage.json");
+const pilotBudgetPath = (directory: string): string =>
+  join(directory, "budget.json");
 const readWithin = async <T>(
   read: () => Promise<T>,
   message: string,
@@ -1183,6 +1191,11 @@ const completedRoles = (directory: string, taskId: string): Promise<string[]> =>
 const driveDurableWorkflow = async (
   options: DurableWorkflowOptions,
   resume = false,
+  pilotContext?: {
+    path: string;
+    startedAt: number;
+    budget?: PilotBudgetState;
+  },
 ): Promise<WorkflowSnapshot> => {
   if (!validId(options.projectId) || !validId(options.invocationId))
     throw new Error("Invalid project or invocation identity");
@@ -1253,15 +1266,33 @@ const driveDurableWorkflow = async (
       options.usage.listModels,
       Object.values(requested),
     );
-    if (!resume)
-      initialUsage = initialWorkflowUsage(
-        options.usage,
-        options.runtimeIdentity,
-        await readGuardedAccount(options.usage),
-        admission.tasks,
-        options.policy.iterations,
-        requested,
-      );
+    if (!resume) {
+      const reading = await readGuardedAccount(options.usage);
+      if (pilotContext) {
+        const begun = beginPilotInvocation(
+          pilotContext.budget,
+          options.usage,
+          options.invocationId,
+          options.runtimeIdentity,
+          reading,
+          admission.tasks,
+          options.policy.iterations,
+          requested,
+          pilotContext.startedAt,
+          Date.now(),
+        );
+        pilotContext.budget = begun.budget;
+        initialUsage = begun.usage;
+      } else
+        initialUsage = initialWorkflowUsage(
+          options.usage,
+          options.runtimeIdentity,
+          reading,
+          admission.tasks,
+          options.policy.iterations,
+          requested,
+        );
+    }
   }
   if (options.project.capabilities.includes("recovery")) {
     if (!options.runtimeIdentity)
@@ -1337,8 +1368,17 @@ const driveDurableWorkflow = async (
   ): Promise<void> => {
     const next = usageMutation.then(async () => {
       if (!usageState) throw new Error("Missing durable usage reservation");
-      usageState = await action(usageState);
-      await publish(usagePath(options.directory), usageState);
+      const nextState = await action(usageState);
+      if (pilotContext) {
+        pilotContext.budget = recordPilotUsage(
+          pilotContext.budget!,
+          options.invocationId,
+          nextState,
+        );
+        await publish(pilotContext.path, pilotContext.budget);
+      }
+      usageState = nextState;
+      await publish(usagePath(options.directory), nextState);
     });
     usageMutation = next.catch(() => {});
     await next;
@@ -1413,14 +1453,32 @@ const driveDurableWorkflow = async (
           "Guarded policy, runtime or unsettled invocation changed on resume",
         );
       if (usageState) {
+        if (
+          pilotContext &&
+          (pilotContext.budget?.activeInvocationId !== options.invocationId ||
+            !pilotContext.budget.episodes[options.invocationId] ||
+            digest(
+              pilotContext.budget.episodes[options.invocationId]?.usage,
+            ) !== digest(usageState))
+        )
+          throw new Error("Pilot ledger and durable usage state disagree");
         const priorStop = usageState.stopReason;
         const reading = await readGuardedAccount(options.usage!);
         usageState = resumeWorkflowUsage(usageState, reading, Date.now());
         if (priorStop && !usageState.stopReason) recoveredGuardStop = priorStop;
+        if (pilotContext) {
+          pilotContext.budget = recordPilotUsage(
+            pilotContext.budget!,
+            options.invocationId,
+            usageState,
+          );
+          await publish(pilotContext.path, pilotContext.budget);
+        }
         await publish(usagePath(options.directory), usageState);
       }
     } else if (initialUsage) {
       usageState = initialUsage;
+      if (pilotContext) await publish(pilotContext.path, pilotContext.budget!);
       await publish(usagePath(options.directory), usageState, true);
     }
     if (resume) {
@@ -2025,6 +2083,19 @@ const driveDurableWorkflow = async (
       lifecycle: "stopped",
       resources: { ...state.resources, retained: waiting },
     });
+    if (pilotContext && usageState) {
+      pilotContext.budget = settlePilotInvocation(
+        pilotContext.budget!,
+        options.invocationId,
+        usageState,
+        !waiting &&
+          !usageState.stopReason &&
+          Object.values(state.tasks).every((task) =>
+            ["accepted", "integrated"].includes(task.status),
+          ),
+      );
+      await publish(pilotContext.path, pilotContext.budget);
+    }
     return state;
   } catch (error) {
     if (state) {
@@ -2263,9 +2334,50 @@ export const integrateWorkflowTask = async (
   }
 };
 
+const driveWithPilotBudget = async (
+  options: DurableWorkflowOptions,
+  resume = false,
+): Promise<WorkflowSnapshot> => {
+  const usage = options.usage;
+  if (!usage || usage.activity === "library-proof") {
+    if (usage?.pilot)
+      throw new Error("Library proof cannot consume a pilot budget");
+    return driveDurableWorkflow(options, resume);
+  }
+  const pilot = usage.pilot;
+  if (!pilot || !validId(pilot.id) || !isAbsolute(pilot.directory))
+    throw new Error(
+      "Pilot activity requires an absolute shared pilot directory",
+    );
+  if (resolve(pilot.directory) === resolve(options.directory))
+    throw new Error("Shared pilot directory must differ from invocation state");
+  await mkdir(pilot.directory, { recursive: true, mode: 0o700 });
+  assertHostDirectory(pilot.directory, options.worktrees);
+  await mkdir(lockPath(pilot.directory));
+  try {
+    await writeLockOwner(pilot.directory);
+    const startedAt = Date.now();
+    let budget: PilotBudgetState | undefined;
+    try {
+      budget = JSON.parse(
+        await readFile(pilotBudgetPath(pilot.directory), "utf8"),
+      ) as PilotBudgetState;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return await driveDurableWorkflow(options, resume, {
+      path: pilotBudgetPath(pilot.directory),
+      startedAt,
+      budget,
+    });
+  } finally {
+    await rm(lockPath(pilot.directory), { recursive: true, force: true });
+  }
+};
+
 export const runDurableWorkflow = (
   options: DurableWorkflowOptions,
-): Promise<WorkflowSnapshot> => driveDurableWorkflow(options);
+): Promise<WorkflowSnapshot> => driveWithPilotBudget(options);
 
 /** Verify an interrupted invocation and restore only into a matching worktree. */
 export const recoverDurableWorkflow = async (
@@ -2365,6 +2477,41 @@ export const recoverDurableWorkflow = async (
       });
       throw error;
     }
+    if (
+      options.usage?.activity === "measurement" ||
+      options.usage?.activity === "pilot"
+    ) {
+      const pilot = options.usage.pilot;
+      if (!pilot || !isAbsolute(pilot.directory))
+        throw new Error("Recovery requires the original pilot budget");
+      const budget = JSON.parse(
+        await readFile(pilotBudgetPath(pilot.directory), "utf8"),
+      ) as PilotBudgetState;
+      const localUsage = JSON.parse(
+        await readFile(usagePath(options.directory), "utf8"),
+      ) as WorkflowUsageState;
+      if (
+        budget.id !== pilot.id ||
+        budget.policyId !== options.usage.policyId ||
+        budget.runtimeIdentity !== options.runtimeIdentity ||
+        (budget.activeInvocationId !== options.invocationId &&
+          !budget.episodes[options.invocationId]?.complete) ||
+        !budget.episodes[options.invocationId] ||
+        digest(budget.episodes[options.invocationId]?.usage) !==
+          digest(localUsage)
+      )
+        throw new Error("Pilot budget and retained invocation disagree");
+      try {
+        await stat(lockPath(pilot.directory));
+        const owner = JSON.parse(
+          await readFile(join(lockPath(pilot.directory), "owner.json"), "utf8"),
+        ) as { pid: number; start: string };
+        if (ownerAlive(owner)) throw new Error("Pilot budget is still owned");
+        await rm(lockPath(pilot.directory), { recursive: true });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
     try {
       const lockOwner = JSON.parse(
         await readFile(join(lockPath(options.directory), "owner.json"), "utf8"),
@@ -2444,5 +2591,5 @@ export const resumeDurableWorkflow = async (
   const recovered = await recoverDurableWorkflow(options);
   if (recovered.lifecycle !== "stopped")
     throw new Error(recovered.failure ?? "Workflow requires recovery");
-  return driveDurableWorkflow(options, true);
+  return driveWithPilotBudget(options, true);
 };
