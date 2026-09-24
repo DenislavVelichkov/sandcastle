@@ -213,6 +213,26 @@ it("reserves each role, keeps the baseline, and charges late completion", () => 
     now,
   );
   expect(state.remaining.task?.implementation).toBe(1);
+  const partial = finishWorkflowInvocation(
+    state,
+    now + 500,
+    "session-1",
+    undefined,
+    [
+      {
+        counterId: "session-1",
+        coverageId: "session-1",
+        usage: {
+          inputTokens: 10,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          outputTokens: 1,
+        },
+      },
+    ],
+  );
+  expect(partial.tokens.deltas["session-1"]?.inputTokens).toBe(10);
+  expect(partial.tokens.unknown).toEqual(["task/implementation/1"]);
   state = finishWorkflowInvocation(
     state,
     now + 500,
@@ -235,6 +255,7 @@ it("reserves each role, keeps the baseline, and charges late completion", () => 
         },
       },
     ],
+    true,
   );
   state = startWorkflowInvocation(
     state,
@@ -265,6 +286,7 @@ it("reserves each role, keeps the baseline, and charges late completion", () => 
         },
       },
     ],
+    true,
   );
   expect(state.tokens.deltas["session-1"]?.inputTokens).toBe(15);
   expect(() =>

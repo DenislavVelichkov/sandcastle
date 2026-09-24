@@ -55,8 +55,8 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
       _taskId: string,
       _role: string,
       sessionId?: string,
-    ) =>
-      sessionId
+    ) => ({
+      counters: sessionId
         ? [
             {
               counterId: sessionId,
@@ -70,6 +70,8 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
             },
           ]
         : [],
+      complete: true,
+    }),
     listModels: async (cursor?: string) => {
       pages++;
       return cursor

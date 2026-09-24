@@ -422,8 +422,6 @@ export const orchestrate = (
                       ctx.sandboxRepoDir,
                     );
 
-                yield* display.status(label("Agent started"), "success");
-
                 // Invoke the agent — buffer text deltas so Pi's single-token
                 // chunks are displayed as readable multi-word lines.
                 const textBuffer = new TextDeltaBuffer((chunk) => {
@@ -484,6 +482,7 @@ export const orchestrate = (
                 if (options.onIterationStart)
                   yield* Effect.promise(() => options.onIterationStart!(i));
                 yield* checkAbort();
+                yield* display.status(label("Agent started"), "success");
                 const {
                   result: agentOutput,
                   sessionId,

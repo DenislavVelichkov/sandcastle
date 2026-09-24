@@ -1341,6 +1341,15 @@ const driveDurableWorkflow = async (
     usageMutation = next.catch(() => {});
     await next;
   };
+  const requestGuardStop = async (): Promise<void> => {
+    await publish(
+      stopPath(options.directory),
+      { invocationId: options.invocationId },
+      true,
+    ).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "EEXIST") throw error;
+    });
+  };
   try {
     if (!resume) {
       try {
@@ -1564,13 +1573,7 @@ const driveDurableWorkflow = async (
             ...current,
             stopReason: String(error),
           }));
-          await publish(
-            stopPath(options.directory),
-            { invocationId: options.invocationId },
-            true,
-          ).catch((failure: NodeJS.ErrnoException) => {
-            if (failure.code !== "EEXIST") throw failure;
-          });
+          await requestGuardStop();
           state = await update(options.directory, state, {
             tasks: {
               ...state.tasks,
@@ -1632,13 +1635,7 @@ const driveDurableWorkflow = async (
                       : current),
                     stopReason: String(error),
                   }));
-                  await publish(
-                    stopPath(options.directory),
-                    { invocationId: options.invocationId },
-                    true,
-                  ).catch((failure: NodeJS.ErrnoException) => {
-                    if (failure.code !== "EEXIST") throw failure;
-                  });
+                  await requestGuardStop();
                   throw error;
                 }
               },
@@ -1652,24 +1649,18 @@ const driveDurableWorkflow = async (
               ) => {
                 const counters = await guardedUsage
                   .readTokenCounters?.(taskId, role, result.sessionId)
-                  .catch(() => []);
+                  .catch(() => undefined);
                 await mutateUsage((current) =>
                   finishWorkflowInvocation(
                     current,
                     Date.now(),
                     result.sessionId,
                     result.usage,
-                    counters,
+                    counters?.counters,
+                    counters?.complete,
                   ),
                 );
-                if (usageState?.stopReason)
-                  await publish(
-                    stopPath(options.directory),
-                    { invocationId: options.invocationId },
-                    true,
-                  ).catch((error: NodeJS.ErrnoException) => {
-                    if (error.code !== "EEXIST") throw error;
-                  });
+                if (usageState?.stopReason) await requestGuardStop();
               },
             }
           : {}),
@@ -1765,15 +1756,7 @@ const driveDurableWorkflow = async (
                 stopReason: String(error),
               }));
             }
-            if (usageState?.stopReason) {
-              await publish(
-                stopPath(options.directory),
-                { invocationId: options.invocationId },
-                true,
-              ).catch((error: NodeJS.ErrnoException) => {
-                if (error.code !== "EEXIST") throw error;
-              });
-            }
+            if (usageState?.stopReason) await requestGuardStop();
           }
           if (await stopRequested(options.directory)) {
             if (state.lifecycle !== "stopping")
@@ -1802,13 +1785,7 @@ const driveDurableWorkflow = async (
           observeWorkflowUsage(current, current.latest, Date.now()),
         );
       if (usageState?.stopReason) {
-        await publish(
-          stopPath(options.directory),
-          { invocationId: options.invocationId },
-          true,
-        ).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== "EEXIST") throw error;
-        });
+        await requestGuardStop();
         failure ??= new Error(usageState.stopReason);
       }
       const stopAfterResult = await stopRequested(options.directory);

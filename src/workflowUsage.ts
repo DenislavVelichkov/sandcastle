@@ -70,7 +70,7 @@ export const accountGuardReason = (
     now - current.observedAt > 120_000
   )
     return "Account identity or observation is missing or stale";
-  if (current.denied) return "Ordinary account usage was denied";
+  if (current.denied !== false) return "Ordinary account usage was denied";
   const names = Object.keys(baseline.windows);
   if (
     names.length < 2 ||
@@ -122,12 +122,15 @@ export interface WorkflowUsageOptions {
   readonly readAccount: () => Promise<AccountObservation>;
   /** Run model/list in the same isolated Codex Home, CLI, image and account as the worker. */
   readonly listModels: (cursor?: string) => Promise<ModelCatalogPage>;
-  /** Supply only counters whose cumulative scope and identity have been verified. */
+  /** Verify cumulative counters and coverage of every required descendant. */
   readonly readTokenCounters?: (
     taskId: string,
     role: string,
     sessionId?: string,
-  ) => Promise<readonly TokenCounter[]>;
+  ) => Promise<{
+    readonly counters: readonly TokenCounter[];
+    readonly complete: boolean;
+  }>;
 }
 
 export const pilotConfigurations = [
@@ -372,6 +375,7 @@ export const finishWorkflowInvocation = (
   sessionId?: string,
   usage?: IterationUsage,
   verifiedCounters: readonly TokenCounter[] = [],
+  coverageComplete = false,
 ): WorkflowUsageState => {
   if (!state.active) throw new Error("No active invocation to settle");
   const active = state.active;
@@ -382,7 +386,7 @@ export const finishWorkflowInvocation = (
   let tokens: TokenLedger = {
     ...state.tokens,
     estimates: { ...state.tokens.estimates, [estimateId]: usage ?? null },
-    ...(verifiedCounters.length
+    ...(verifiedCounters.length && coverageComplete
       ? {}
       : { unknown: [...state.tokens.unknown, estimateId] }),
   };
