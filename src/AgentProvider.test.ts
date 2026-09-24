@@ -2370,6 +2370,106 @@ describe("sessionStorage", () => {
     }
   });
 
+  it("captures Codex descendant rollouts and reads their cumulative counters", async () => {
+    const hostDir = await mkdtemp(join(tmpdir(), "sandcastle-codex-counters-"));
+    const sandboxDir = await mkdtemp(
+      join(tmpdir(), "sandcastle-codex-lineage-"),
+    );
+    try {
+      const rootId = "11111111-2222-4444-8888-111111111111";
+      const childId = "22222222-2222-4444-8888-222222222222";
+      const day = join(sandboxDir, "2026", "05", "26");
+      await mkdir(day, { recursive: true });
+      const rollout = (
+        id: string,
+        parent: string | undefined,
+        input: number,
+        spawned = parent ? 0 : 1,
+      ) =>
+        [
+          {
+            type: "session_meta",
+            payload: { id, cwd: "/sandbox/repo", parent_thread_id: parent },
+          },
+          { type: "event_msg", payload: { type: "task_started" } },
+          ...Array.from({ length: spawned }, () => ({
+            type: "response_item",
+            payload: { type: "function_call", name: "spawn_agent" },
+          })),
+          {
+            type: "event_msg",
+            payload: {
+              type: "token_count",
+              info: {
+                total_token_usage: {
+                  input_tokens: input,
+                  cached_input_tokens: 0,
+                  output_tokens: 1,
+                },
+              },
+            },
+          },
+          { type: "event_msg", payload: { type: "task_complete" } },
+        ]
+          .map((item) => JSON.stringify(item))
+          .join("\n") + "\n";
+      await writeFile(
+        join(day, `rollout-2026-05-26T08-00-00-${rootId}.jsonl`),
+        rollout(rootId, undefined, 10),
+      );
+      await writeFile(
+        join(day, `rollout-2026-05-26T08-01-00-${childId}.jsonl`),
+        rollout(childId, rootId, 5),
+      );
+      const provider = codex("gpt-6-sol", {
+        sessionStorage: {
+          hostSessionsDir: hostDir,
+          sandboxSessionsDir: sandboxDir,
+        },
+      });
+      await provider.sessionStorage.captureToHost({
+        hostCwd: "/host/repo",
+        sandboxCwd: "/sandbox/repo",
+        sessionId: rootId,
+        handle: fsBindMountHandle(),
+      });
+      const result =
+        await provider.sessionStorage.readCumulativeCounters!(rootId);
+      expect(result.complete).toBe(true);
+      expect(result.requiredSessionIds).toEqual([rootId, childId]);
+      expect(
+        result.counters.map((item) => [
+          item.sessionId,
+          item.parentSessionId,
+          item.usage.inputTokens,
+        ]),
+      ).toEqual([
+        [rootId, undefined, 10],
+        [childId, rootId, 5],
+      ]);
+      expect(
+        result.counters.every((item) => item.rawSource?.startsWith(hostDir)),
+      ).toBe(true);
+      await writeFile(
+        join(day, `rollout-2026-05-26T08-00-00-${rootId}.jsonl`),
+        rollout(rootId, undefined, 10, 2),
+      );
+      await provider.sessionStorage.captureToHost({
+        hostCwd: "/host/repo",
+        sandboxCwd: "/sandbox/repo",
+        sessionId: rootId,
+        handle: fsBindMountHandle(),
+      });
+      expect(
+        (await provider.sessionStorage.readCumulativeCounters!(rootId))
+          .complete,
+      ).toBe(false);
+    } finally {
+      await rm(hostDir, { recursive: true, force: true });
+      await rm(sandboxDir, { recursive: true, force: true });
+    }
+  });
+
   it("claudeCode captureToHost copies the main session when no subagents dir exists", async () => {
     const hostDir = await mkdtemp(
       join(tmpdir(), "sandcastle-claude-sub-main-"),

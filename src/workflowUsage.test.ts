@@ -302,6 +302,8 @@ it("requires root and descendant raw counters before reporting a token total", (
     reading,
     now,
   );
+  expect(initial.tokens.unknown).toEqual(["task/implementation/1"]);
+  expect(initial.tokens.attributableTotal).toBeNull();
   const usage = (inputTokens: number) => ({
     inputTokens,
     cacheCreationInputTokens: 0,
@@ -376,6 +378,7 @@ it("requires root and descendant raw counters before reporting a token total", (
     coverageComplete: true,
   });
   expect(complete.tokens.attributableTotal?.inputTokens).toBe(15);
+  expect(complete.tokens.unknown).toEqual([]);
   const failed = finishWorkflowInvocation(
     startWorkflowInvocation(
       complete,

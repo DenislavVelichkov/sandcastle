@@ -56,33 +56,6 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
         weekly: { usedPercent: 30, resetsAt: now + 2_000_000 },
       },
     }),
-    readTokenCounters: async (
-      _taskId: string,
-      _role: string,
-      sessionId?: string,
-    ) => ({
-      counters: sessionId
-        ? [
-            {
-              counterId: sessionId,
-              coverageId: sessionId,
-              sessionId,
-              rawSource: join(
-                root,
-                `${sessionId === "failed-session" ? "failed-session" : "session"}.jsonl`,
-              ),
-              usage: {
-                inputTokens: 10,
-                cacheCreationInputTokens: 0,
-                cacheReadInputTokens: 0,
-                outputTokens: 2,
-              },
-            },
-          ]
-        : [],
-      requiredSessionIds: sessionId ? [sessionId] : [],
-      complete: true,
-    }),
     listModels: async (cursor?: string) => {
       pages++;
       return cursor
@@ -97,6 +70,10 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
         : { data: [], nextCursor: "second" };
     },
   };
+  const codexAgent = codex("gpt-6-sol", {
+    effort: "high",
+    serviceTier: "default",
+  });
   const options = {
     directory: join(root, "state"),
     projectId: "project",
@@ -117,6 +94,7 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
           git(real.worktreePath, "commit", "-m", "result");
           const sessionFilePath = join(root, "session.jsonl");
           await writeFile(sessionFilePath, "{}\n");
+          await writeFile(join(root, "child.jsonl"), "{}\n");
           const iteration = {
             sessionId: "session-1",
             sessionFilePath,
@@ -155,7 +133,55 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
       iterations: 2,
       roles: {
         implementation: {
-          agent: codex("gpt-6-sol", { effort: "high", serviceTier: "default" }),
+          agent: {
+            ...codexAgent,
+            sessionStorage: {
+              ...codexAgent.sessionStorage!,
+              readCumulativeCounters: async (sessionId: string) => ({
+                counters: [
+                  {
+                    counterId: sessionId,
+                    coverageId: sessionId,
+                    sessionId,
+                    rawSource: join(
+                      root,
+                      sessionId === "failed-session"
+                        ? "failed-session.jsonl"
+                        : "session.jsonl",
+                    ),
+                    usage: {
+                      inputTokens: 10,
+                      cacheCreationInputTokens: 0,
+                      cacheReadInputTokens: 0,
+                      outputTokens: 2,
+                    },
+                  },
+                  ...(sessionId === "session-1"
+                    ? [
+                        {
+                          counterId: "child-1",
+                          coverageId: "child-1",
+                          sessionId: "child-1",
+                          parentSessionId: sessionId,
+                          rawSource: join(root, "child.jsonl"),
+                          usage: {
+                            inputTokens: 5,
+                            cacheCreationInputTokens: 0,
+                            cacheReadInputTokens: 0,
+                            outputTokens: 1,
+                          },
+                        },
+                      ]
+                    : []),
+                ],
+                requiredSessionIds:
+                  sessionId === "session-1"
+                    ? [sessionId, "child-1"]
+                    : [sessionId],
+                complete: true,
+              }),
+            },
+          },
           sandbox: { tag: "none" as const, create: async () => ({}) } as never,
         },
       },
@@ -167,7 +193,21 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
     expect(completed.tasks.one?.status).toBe("accepted");
     expect(completed.usage?.remaining.one?.implementation).toBe(1);
     expect(completed.usage?.tokens.deltas["session-1"]?.inputTokens).toBe(10);
-    expect(completed.usage?.tokens.attributableTotal?.inputTokens).toBe(10);
+    expect(completed.usage?.tokens.attributableTotal?.inputTokens).toBe(15);
+    const manifest = JSON.parse(
+      await readFile(
+        join(
+          options.directory,
+          "checkpoints",
+          completed.checkpoint!.id,
+          "manifest.json",
+        ),
+        "utf8",
+      ),
+    ) as { artifacts: { path: string }[] };
+    expect(manifest.artifacts.map((item) => item.path)).toContain(
+      join(root, "child.jsonl"),
+    );
     expect(
       completed.usage?.accountHistory.at(-1)?.reading.windows.short
         ?.usedPercent,

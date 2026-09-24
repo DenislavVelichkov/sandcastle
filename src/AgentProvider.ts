@@ -21,6 +21,7 @@ import {
   type HostSessionLookup,
 } from "./SessionStore.js";
 import type { BindMountSandboxHandle } from "./SandboxProvider.js";
+import type { TokenCounter } from "./workflowUsage.js";
 
 const fileExists = async (path: string): Promise<boolean> => {
   try {
@@ -257,6 +258,15 @@ export interface AgentSessionStorage {
    * directory that was searched (for not-found errors).
    */
   findByIdOnHost(sessionId: string): Promise<HostSessionLookup>;
+  /** Read verified cumulative counters from captured Codex session lineage. */
+  readCumulativeCounters?(sessionId: string): Promise<{
+    /** Root and descendant counter samples from captured host rollouts. */
+    readonly counters: readonly TokenCounter[];
+    /** Every session the capture associated with the root. */
+    readonly requiredSessionIds: readonly string[];
+    /** Whether all captured sessions finished and the lineage is closed. */
+    readonly complete: boolean;
+  }>;
 }
 
 export interface AgentProvider {
@@ -442,6 +452,72 @@ const makeClaudeSessionStorage = (
   };
 };
 
+const codexCounterSource = (
+  jsonl: string,
+  sessionId: string,
+  rawSource: string,
+): {
+  counter?: TokenCounter;
+  parentSessionId?: string;
+  spawned: number;
+  complete: boolean;
+} => {
+  let metadataId: string | undefined;
+  let parentSessionId: string | undefined;
+  let usage: IterationUsage | undefined;
+  let spawned = 0;
+  let finished = false;
+  let malformed = false;
+  for (const line of jsonl.split("\n")) {
+    if (!line.trim()) continue;
+    let item: any;
+    try {
+      item = JSON.parse(line);
+    } catch {
+      malformed = true;
+      continue;
+    }
+    if (item.type === "session_meta") {
+      metadataId = item.payload?.id;
+      parentSessionId =
+        typeof item.payload?.parent_thread_id === "string"
+          ? item.payload.parent_thread_id
+          : undefined;
+    } else if (item.type === "event_msg") {
+      if (item.payload?.type === "token_count") {
+        const total = item.payload.info?.total_token_usage;
+        if (total) usage = parseCodexUsage(total) ?? usage;
+      }
+      if (item.payload?.type === "task_started") finished = false;
+      if (item.payload?.type === "task_complete") finished = true;
+    } else if (
+      item.type === "response_item" &&
+      item.payload?.type === "function_call" &&
+      typeof item.payload.name === "string" &&
+      item.payload.name.endsWith("spawn_agent")
+    )
+      spawned++;
+  }
+  return {
+    ...(usage && metadataId === sessionId
+      ? {
+          counter: {
+            counterId: sessionId,
+            coverageId: sessionId,
+            sessionId,
+            ...(parentSessionId ? { parentSessionId } : {}),
+            rawSource,
+            usage,
+          },
+        }
+      : {}),
+    ...(parentSessionId ? { parentSessionId } : {}),
+    spawned,
+    complete:
+      metadataId === sessionId && Boolean(usage) && finished && !malformed,
+  };
+};
+
 const makeCodexSessionStorage = (
   options?: CodexOptions,
 ): AgentSessionStorage => {
@@ -454,6 +530,7 @@ const makeCodexSessionStorage = (
   // derivable from (cwd, id) alone, so we cache the path written by
   // captureToHost for hostSessionFilePath to surface on the IterationResult.
   const capturedPaths = new Map<string, string>();
+  const capturedLineages = new Map<string, Set<string>>();
 
   return {
     hostSessionFilePath: (_cwd, id) => capturedPaths.get(id),
@@ -480,6 +557,63 @@ const makeCodexSessionStorage = (
       await mkdir(dirname(target), { recursive: true });
       await writeFile(target, rewritten);
       capturedPaths.set(sessionId, target);
+      const listed = await handle.exec(
+        `find ${shellEscape(sandboxSessionsDir)} -type f -name 'rollout-*.jsonl' -exec sh -c 'for path; do printf "%s\\t" "$path"; head -n 1 "$path"; done' sh {} +`,
+      );
+      if (listed.exitCode !== 0)
+        throw new Error("Could not enumerate Codex descendant sessions");
+      const candidates: {
+        id: string;
+        parent: string;
+        path: string;
+      }[] = [];
+      for (const line of listed.stdout.trim().split("\n").filter(Boolean)) {
+        const separator = line.indexOf("\t");
+        if (separator < 0) continue;
+        const path = line.slice(0, separator);
+        if (path === located.path) continue;
+        try {
+          const item = JSON.parse(line.slice(separator + 1));
+          if (
+            item.type === "session_meta" &&
+            typeof item.payload?.id === "string" &&
+            typeof item.payload?.parent_thread_id === "string"
+          )
+            candidates.push({
+              id: item.payload.id,
+              parent: item.payload.parent_thread_id,
+              path,
+            });
+        } catch {
+          // An unidentifiable file cannot be attributed to this root.
+        }
+      }
+      const lineage = new Set(capturedLineages.get(sessionId) ?? [sessionId]);
+      let found = true;
+      while (found) {
+        found = false;
+        for (const child of candidates) {
+          if (lineage.has(child.id) || !lineage.has(child.parent)) continue;
+          const relativePath = posix.relative(sandboxSessionsDir, child.path);
+          if (relativePath.startsWith(".."))
+            throw new Error("Codex descendant path escaped the session root");
+          const content = await readSandboxFile(
+            handle,
+            child.path,
+            "codex-cap",
+          );
+          const childTarget = join(root, relativePath);
+          await mkdir(dirname(childTarget), { recursive: true });
+          await writeFile(
+            childTarget,
+            transferCodexSession(content, sandboxCwd, hostCwd),
+          );
+          capturedPaths.set(child.id, childTarget);
+          lineage.add(child.id);
+          found = true;
+        }
+      }
+      capturedLineages.set(sessionId, lineage);
     },
     resumeIntoSandbox: async ({ hostCwd, sandboxCwd, sessionId, handle }) => {
       const located = await locateCodexHostSession(sessionId, hostSessionsDir);
@@ -489,6 +623,28 @@ const makeCodexSessionStorage = (
       await writeSandboxFile(handle, target, rewritten, "codex-res");
     },
     findByIdOnHost: (id) => findCodexSessionOnHost(id, hostSessionsDir),
+    readCumulativeCounters: async (id) => {
+      const lineage = [...(capturedLineages.get(id) ?? [id])];
+      const sources = await Promise.all(
+        lineage.map(async (item) => {
+          const path = capturedPaths.get(item);
+          return path
+            ? codexCounterSource(await readFile(path, "utf8"), item, path)
+            : undefined;
+        }),
+      );
+      const counters = sources.flatMap((source) =>
+        source?.counter ? [source.counter] : [],
+      );
+      const complete =
+        sources.every((source) => source?.complete) &&
+        lineage.every(
+          (item, index) =>
+            (sources[index]?.spawned ?? 0) ===
+            sources.filter((source) => source?.parentSessionId === item).length,
+        );
+      return { counters, requiredSessionIds: lineage, complete };
+    },
   };
 };
 

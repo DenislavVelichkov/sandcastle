@@ -485,6 +485,14 @@ export const startWorkflowInvocation = (
     },
     invocations: state.invocations + 1,
     active: { taskId, role, startedAt: now },
+    tokens: {
+      ...state.tokens,
+      unknown: [
+        ...state.tokens.unknown,
+        `${taskId}/${role}/${state.invocations + 1}`,
+      ],
+      attributableTotal: null,
+    },
   };
 };
 
@@ -534,21 +542,20 @@ export const finishWorkflowInvocation = (
   const { taskId, role, startedAt } = active;
   const elapsed = Math.max(0, now - startedAt);
   const estimateId = `${taskId}/${role}/${state.invocations}`;
+  const priorUnknown = state.tokens.unknown.filter((id) => id !== estimateId);
   const claimedComplete =
     coverageComplete &&
     coversInvocation(sessionId, verifiedCounters, requiredSessionIds);
   let tokens: TokenLedger = {
     ...state.tokens,
     estimates: { ...state.tokens.estimates, [estimateId]: usage ?? null },
-    ...(claimedComplete
-      ? {}
-      : { unknown: [...state.tokens.unknown, estimateId] }),
+    unknown: claimedComplete ? priorUnknown : [...priorUnknown, estimateId],
   };
   for (const counter of verifiedCounters)
     tokens = recordTokenCounter(tokens, counter);
   const complete =
     claimedComplete &&
-    tokens.unknown.length === state.tokens.unknown.length &&
+    tokens.unknown.length === priorUnknown.length &&
     verifiedCounters.every(
       (counter) =>
         !state.tokens.unknown.includes(counter.counterId) &&

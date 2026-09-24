@@ -1120,6 +1120,9 @@ const captureState = async (
     ...sessions
       .map((session) => session.path)
       .filter((path): path is string => Boolean(path)),
+    ...Object.values(usage?.tokens.counters ?? {})
+      .map((counter) => counter.rawSource)
+      .filter((path): path is string => Boolean(path && isAbsolute(path))),
   ];
   const checkpoint = await captureWorkflowCheckpoint(
     options.directory,
@@ -1689,12 +1692,20 @@ const driveDurableWorkflow = async (
         sessionId?: string,
       ) => {
         const read = guardedUsage?.readTokenCounters;
+        const builtIn =
+          options.policy.roles[role]?.agent.sessionStorage
+            ?.readCumulativeCounters;
         return read
           ? readWithin(
               () => read(taskId, role, sessionId),
               "Token counter reading timed out",
             ).catch(() => undefined)
-          : Promise.resolve(undefined);
+          : builtIn && sessionId
+            ? readWithin(
+                () => builtIn(sessionId),
+                "Token counter reading timed out",
+              ).catch(() => undefined)
+            : Promise.resolve(undefined);
       };
       const resultPromise = runWorkflow({
         ...options,
