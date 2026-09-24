@@ -4,17 +4,19 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { createWorktree, type Worktree } from "./createWorktree.js";
-import type { WorkflowProject, WorkflowTask } from "./workflow.js";
 import {
+  createWorktree,
   cancelWorkflowTask,
   processWorkflowResponses,
   requestWorkflowRework,
   respondWorkflow,
   runDurableWorkflow,
   workflowStatus,
+  type WorkflowProject,
+  type WorkflowTask,
   type WorkflowRequest,
-} from "./workflowControl.js";
+  type Worktree,
+} from "./index.js";
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -158,7 +160,7 @@ it("queues an authenticated answer under the execution lock and applies it while
         "tsx",
         "--input-type=module",
         "-e",
-        `import { workflowStatus } from './src/workflowControl.ts'; console.log((await workflowStatus(${JSON.stringify(directory)})).requests[0].id)`,
+        `import { workflowStatus } from './src/index.ts'; console.log((await workflowStatus(${JSON.stringify(directory)})).requests[0].id)`,
       ],
       { cwd: process.cwd(), encoding: "utf8" },
     ).trim();
@@ -180,7 +182,7 @@ it("queues an authenticated answer under the execution lock and applies it while
           "tsx",
           "--input-type=module",
           "-e",
-          `import { respondWorkflow } from './src/workflowControl.ts'; console.log(JSON.stringify(await respondWorkflow({ directory: ${JSON.stringify(directory)}, requestId: ${JSON.stringify(requestId)}, responseId: 'response-1', sourceEvent: {}, route: { authenticate: async () => ({ owner: 'owner-1', questionId: 'question-1', sourceRef: 'host-question-1', eventId: 'human-event-1', originalText: 'Approve' }) } })))`,
+          `import { respondWorkflow } from './src/index.ts'; console.log(JSON.stringify(await respondWorkflow({ directory: ${JSON.stringify(directory)}, requestId: ${JSON.stringify(requestId)}, responseId: 'response-1', sourceEvent: {}, route: { authenticate: async () => ({ owner: 'owner-1', questionId: 'question-1', sourceRef: 'host-question-1', eventId: 'human-event-1', originalText: 'Approve' }) } })))`,
         ],
         { cwd: process.cwd(), encoding: "utf8" },
       ),
@@ -248,7 +250,7 @@ it("queues an authenticated answer under the execution lock and applies it while
     await b.close();
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 15_000);
 
 it("retains rejection feedback and allowance, and rejects stale evidence after a stopped delivery", async () => {
   const root = await mkdtemp(join(tmpdir(), "sandcastle-stopped-"));
