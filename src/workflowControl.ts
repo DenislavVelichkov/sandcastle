@@ -255,22 +255,24 @@ const lockPath = (directory: string): string =>
   join(directory, "execution.lock");
 const stopPath = (directory: string): string => join(directory, "stop.json");
 const usagePath = (directory: string): string => join(directory, "usage.json");
-const readGuardedAccount = async (usage: WorkflowUsageOptions) => {
+const readWithin = async <T>(
+  read: () => Promise<T>,
+  message: string,
+): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      usage.readAccount(),
+      read(),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error("Account reading timed out")),
-          30_000,
-        );
+        timer = setTimeout(() => reject(new Error(message)), 30_000);
       }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);
   }
 };
+const readGuardedAccount = (usage: WorkflowUsageOptions) =>
+  readWithin(usage.readAccount, "Account reading timed out");
 const sessionPath = (directory: string): string => join(directory, "sessions");
 const roleStartPath = (directory: string): string =>
   join(directory, "role-starts");
@@ -1647,9 +1649,17 @@ const driveDurableWorkflow = async (
                   usage?: import("./AgentProvider.js").IterationUsage;
                 },
               ) => {
-                const counters = await guardedUsage
-                  .readTokenCounters?.(taskId, role, result.sessionId)
-                  .catch(() => undefined);
+                const counters = guardedUsage.readTokenCounters
+                  ? await readWithin(
+                      () =>
+                        guardedUsage.readTokenCounters!(
+                          taskId,
+                          role,
+                          result.sessionId,
+                        ),
+                      "Token counter reading timed out",
+                    ).catch(() => undefined)
+                  : undefined;
                 await mutateUsage((current) =>
                   finishWorkflowInvocation(
                     current,
