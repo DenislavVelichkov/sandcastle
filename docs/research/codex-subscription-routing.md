@@ -1,0 +1,82 @@
+# Codex subscription measurements and execution controls
+
+Research for [Establish Codex subscription usage measurements and execution controls](https://github.com/DenislavVelichkov/sandcastle/issues/3), 2026-09-23. The objective is to conserve included Codex subscription allowance with acceptance gates unchanged. This note identifies evidence for a later routing decision; it chooses no model, quality threshold, or stopping reserve.
+
+## Evidence boundary
+
+Sandcastle was inspected at `e99f832f26dc9d245c019a9ddd19fa5dee792427`. The host CLI reports `codex-cli 0.156.0`. Read-only help and `codex app-server generate-json-schema --experimental` were exercised; generated files went to temporary storage. The matching upstream release tag resolves to `fe74a774532af67b5a4a3dec03ce9469e17f89af`. References below pin source to these revisions. No inference, controller, account endpoint, model-list request, cancellation experiment, or settings mutation ran. A schema proves a contract exists, not that this account or the eventual sandbox can use it. [Schema-generation documentation][app]
+
+The committed workflow examples currently select Claude, including their shared agent helper. There is no exercised Codex worker configuration to endorse from those files. Host CLI availability does not prove the sandbox has the same binary, account, configuration, tools, or model catalog. [Workflow helper][helper], [workflow runner][runner]
+
+## What can be measured
+
+| Scope | Available evidence | Limits for subscription routing |
+| --- | --- | --- |
+| Successful Sandcastle invocation | Optional `IterationResult.usage` has uncached input, cached input, cache creation, and output counts. Codex reads `turn.completed.usage`; cached input is subtracted from total input and cache creation is zero. | No credits, USD, allowance percentage, effort, speed, reasoning-token breakdown, or per-response identity in this result. Codex has no `parseSessionUsage` fallback. [Provider][provider], [orchestrator][orchestrator] |
+| Codex JSON stream | Documented `thread.started`, `turn.started`, `turn.completed`, `turn.failed`, item and error events. | Current upstream implementation builds successful completion usage from the last **thread total**, not a separately calculated attempt delta. Do not sum resumed completion snapshots. If no usage update exists, the implementation returns default usage, so a zero alone does not establish zero consumption. [Noninteractive documentation][exec], [completion implementation][jsonl] |
+| App-server thread token events | `thread/tokenUsage/updated` contains `threadId`, `turnId`, and `tokenUsage.total`/`last`, with input, cached input, output, reasoning output, total, cache-write counts, and nullable context window. | Updates are snapshots, not an allowance meter. Establish counter identity and reset/resume/fork semantics before taking deltas. Do not treat `last` as an entire multi-response attempt or sum each cumulative notification. No inference exercise established coverage or freshness. [Token schema][tokens] |
+| Per-thread billing estimate | Installed schema supports `account/usage/read` with `threadId`. Nullable `threadUsage` contains `estimatedUsageCreditsMicros`, optional `estimatedUsageUsdMicros`, and groups by optional model, effort, and speed with optional token counts. | These are explicitly **estimates**, available only when the thread billing route is available. They are not included-subscription allowance consumed. No per-turn allocation, descendant inclusion, finalization delay, failed-attempt coverage, or account availability was established. The documentation's account-only example omits this locally inspected extension. [Account contract][account], [estimate fields][threadusage], [app-server documentation][app] |
+| Account token activity | `account/usage/read` without a thread requests summary metrics and optional daily token buckets. | Nullable lifetime/daily activity cannot attribute a single iteration. Authentication must be backed by Codex services; API-key-only and Bedrock authentication do not support this documented endpoint. [App-server account usage][app] |
+| Account subscription allowance | `account/rateLimits/read`, plus update notifications, exposes bucket IDs and primary/secondary windows with `usedPercent`, window duration, and reset time. Prefer `rateLimitsByLimitId` when available. | Account-wide, not task-specific. Integer percentages are too coarse to equate an unchanged reading with no spend. Reset boundaries invalidate simple subtraction. Current schema also includes nullable `ordinaryUsageAllowed`; its contract expressly forbids inferring recovery from percentages/reset times. [Rate-limit schema][limits], [account contract][account] |
+| Credits and spend controls | Rate-limit snapshots can include a credit balance, `individualLimit`, and `spendControlReached`. | These backend fields are distinct from included-allowance windows. Missing values mean unavailable. Their presence does not prove this account has controls configured or provide a Sandcastle setter. [Rate-limit schema][limits] |
+
+OpenAI explicitly states that credit prices alone do not determine included subscription usage. API-key use follows API pricing. Token-derived API-equivalent USD or credit-rate estimates may be retained as labeled secondary measurements, but cannot rank models for this user's primary objective without allowance evidence. Message size, complexity, model and speed affect usage; message-count estimates are not fixed allowances. [Pricing][pricing]
+
+The exposed Codex app `get_usage_limits` tool is a read-only account snapshot, not a per-task meter. Its inspected tool description also says account limits are shared. The app tools expose no per-attempt credit-cost reader. No account numbers were collected for this research; app-server contracts above are the durable implementation references. [Account contract][account]
+
+## Failures, retries, resumed sessions, and delegated work
+
+The current CLI maps a failed turn to `turn.failed` without completion usage; an interrupted turn initiates shutdown without `turn.completed`. Sandcastle accepts usage only on completion, and a subprocess error or abort exits before its normal session capture and iteration-result append. Consequently an unsuccessful promise can have consumed resources without a usable returned usage record. A captured transcript is not guaranteed on this path. Retain an explicit unknown measurement, never substitute zero. [CLI mapping][jsonl], [provider][provider], [orchestrator][orchestrator]
+
+For repeated or resumed work, record the attempt ID, root task, session/thread ID, parent/fork identity, start/end times, outcome, raw snapshots and their source. Derive token or estimate deltas only for the same established counter across a known interval; retain the baseline for resumed work and copied history. Count retries and required reviewers/delegates in the acceptance episode even when they produce no accepted change. These are measurement recommendations, not current Sandcastle output guarantees. The upstream thread contract exposes `parentThreadId`, `forkedFromId`, and a shared session-tree ID, but that alone does not establish which usage totals include descendants. [Thread schema][thread], [orchestrator][orchestrator]
+
+Local messages and cloud chats share plan allowance. Concurrent account work, other agentic features, and delayed observations prevent a before/after account delta from establishing this attempt's causal consumption. Use an otherwise quiet account interval for a bounded comparison, or explicitly mark attribution as confounded. Preserve separate windows and bucket identities; do not combine their percentages. The reviewed contracts provide no guaranteed reporting delay or per-attempt subscription debit endpoint. [Pricing][pricing], [account contract][account]
+
+## Model and effort discovery and changes
+
+- `model/list` is the documented discovery method. Page through `nextCursor` and use returned model IDs, supported reasoning efforts and defaults; availability depends on client and account. The installed schema additionally includes service-tier and multi-agent metadata. An arbitrary model string accepted by Sandcastle's TypeScript interface is not proof of entitlement or runtime support. [Model documentation][app], [model schema][models], [provider][provider]
+- Discovery must run with the eventual worker's executable/version, account, provider, `CODEX_HOME`, trusted working directory, config/profile and overrides. Codex layers command-line overrides over project/profile/user/system defaults. A desktop list or host catalog is insufficient evidence for a differently configured sandbox. Avoid reading credentials into logs. [Configuration precedence][config], [provider][provider]
+- `CodexOptions.effort` currently allows only `low | medium | high | xhigh`. `max`, `ultra`, `minimal`, `none`, or another returned effort require a provider-contract change before typed use. Omitted effort inherits Codex configuration/default behavior; the noninteractive builder passes an explicit model and optional `model_reasoning_effort` override. Its interactive builder passes the model but ignores `options.effort`. [Provider][provider]
+- A single Sandcastle multi-iteration call retains one provider; it has no per-iteration model-selection callback. `SandboxRunResult.resume()` preserves the prior agent and its typed options exclude an agent replacement. To change settings while retaining the agent session using today's public API, call the same `sandbox.run()` with a newly constructed Codex provider, `resumeSession: priorSessionId`, and `maxIterations: 1`. The provider builds `codex exec resume` with explicit model/effort; local resume help accepts these flags. Actual continued-session behavior remains unexercised. [Sandbox API][sandbox], [provider][provider], [one-iteration ADR][resume]
+- App-server `turn/start` can override model, effort, and service tier for subsequent turns on the same thread. Experimental `collaborationMode` takes precedence over model/effort when supplied. Thread metadata reports current configured or latest persisted model/effort and explicitly says it is **not per-turn execution telemetry**. Retain requested settings, resolved metadata, any rerouting notification, and billing groups separately; none alone proves every response used the requested model. [Turn schema][turn], [thread schema][thread]
+
+## Controls and what they cannot guarantee
+
+Sandcastle's `maxIterations` bounds invocations, not model calls or tokens inside one invocation. `AbortSignal` can cancel in-flight work; the documented implementation kills the subprocess and rejects with the abort reason. The caller can attach a deadline or react to an external allowance observation. This is an action to stop further work, not a refund or an exact spending ceiling. Cancellation of independently launched delegates and remote inference completion must be validated rather than inferred from the parent process. [Abort ADR][abort], [orchestrator][orchestrator]
+
+Idle timeout measures silence and resets with output. Completion timeout starts after a completion signal and preserves a grace interval for trailing usage. Neither is a wall-clock or subscription budget. Current Sandcastle does not expose a native token, credit, or allowance hard cap. [Orchestrator][orchestrator], [sandbox API][sandbox]
+
+App-server documents `turn/interrupt`; successful acknowledgement is followed by interrupted completion. Its goal API exposes token budgets, tokens used, and `budgetLimited`/`usageLimited` states. These are runtime controls separate from included allowance; the inspected schema alone does not establish an exact pre-request token cap, overshoot bound, or descendant coverage. No goal or interrupt was exercised. OpenAI also documents that an active turn may continue after usage limits are reached, subject to fair use. Therefore account exhaustion is not a dependable immediate stop mechanism. [App-server documentation][app], [goal schema][goals], [Pricing][pricing]
+
+## Bounded follow-up validation
+
+After the later routing decision authorizes an evaluation, use one disposable sandbox with the intended worker configuration and a small fixed acceptance task. Preserve the same review and test requirements for every candidate.
+
+1. Record the worker version and sanitized config identity. Discover model/effort/service-tier combinations using that worker context, and record account/bucket identities and baseline measurements without exposing credentials.
+2. Run one successful attempt, one resumed attempt with changed settings, and one deliberately interrupted attempt. Preserve raw token notifications, completion events, outcome, session lineage, requested settings and observed settings. Verify whether counters are cumulative and whether the failure path retains recoverable usage.
+3. Include one required delegated/review step and reconcile its identity and measurements with the parent. Check for omitted work and double counting before defining the episode total.
+4. Re-read thread estimates and account limits after completion, retaining observation times and any later change. Stop after a pre-agreed bounded observation interval; leave delayed/unavailable figures unknown. Repeat only the measurements whose semantics remain unresolved.
+5. Exercise cancellation against an active worker and any required children under a fixed deadline. Report termination latency and resource use observed after the stop request; do not claim a hard allowance ceiling from a retrospective delta.
+
+These tests were not run. The existing evaluation/routing question should decide whether attribution is good enough, the reserve policy for missing data, and acceptable overhead. This research adds no separate product decision and declares no model winner.
+
+[provider]: https://github.com/DenislavVelichkov/sandcastle/blob/e99f832f26dc9d245c019a9ddd19fa5dee792427/src/AgentProvider.ts#L668-L824
+[orchestrator]: https://github.com/DenislavVelichkov/sandcastle/blob/e99f832f26dc9d245c019a9ddd19fa5dee792427/src/Orchestrator.ts
+[sandbox]: https://github.com/DenislavVelichkov/sandcastle/blob/e99f832f26dc9d245c019a9ddd19fa5dee792427/src/createSandbox.ts
+[helper]: https://github.com/DenislavVelichkov/sandcastle/blob/e99f832f26dc9d245c019a9ddd19fa5dee792427/.sandcastle/agent-workflows/shared/common.ts
+[runner]: https://github.com/DenislavVelichkov/sandcastle/blob/e99f832f26dc9d245c019a9ddd19fa5dee792427/.sandcastle/run.ts
+[abort]: https://github.com/DenislavVelichkov/sandcastle/blob/e99f832f26dc9d245c019a9ddd19fa5dee792427/docs/adr/0004-abort-signal-on-run-and-interactive.md
+[resume]: https://github.com/DenislavVelichkov/sandcastle/blob/e99f832f26dc9d245c019a9ddd19fa5dee792427/docs/adr/0011-resume-is-one-iteration.md
+[app]: https://developers.openai.com/codex/app-server
+[exec]: https://developers.openai.com/codex/noninteractive
+[config]: https://developers.openai.com/codex/config-basic
+[pricing]: https://learn.chatgpt.com/docs/pricing
+[jsonl]: https://github.com/openai/codex/blob/fe74a774532af67b5a4a3dec03ce9469e17f89af/codex-rs/exec/src/event_processor_with_jsonl_output.rs
+[account]: https://github.com/openai/codex/blob/fe74a774532af67b5a4a3dec03ce9469e17f89af/codex-rs/app-server-protocol/src/protocol/v2/account.rs
+[threadusage]: https://github.com/openai/codex/blob/fe74a774532af67b5a4a3dec03ce9469e17f89af/codex-rs/app-server-protocol/src/protocol/v2/thread_usage.rs
+[tokens]: https://github.com/openai/codex/blob/fe74a774532af67b5a4a3dec03ce9469e17f89af/codex-rs/app-server-protocol/schema/json/v2/ThreadTokenUsageUpdatedNotification.json
+[limits]: https://github.com/openai/codex/blob/fe74a774532af67b5a4a3dec03ce9469e17f89af/codex-rs/app-server-protocol/schema/json/v2/GetAccountRateLimitsResponse.json
+[models]: https://github.com/openai/codex/blob/fe74a774532af67b5a4a3dec03ce9469e17f89af/codex-rs/app-server-protocol/schema/json/v2/ModelListResponse.json
+[thread]: https://github.com/openai/codex/blob/fe74a774532af67b5a4a3dec03ce9469e17f89af/codex-rs/app-server-protocol/schema/json/v2/ThreadReadResponse.json
+[turn]: https://github.com/openai/codex/blob/fe74a774532af67b5a4a3dec03ce9469e17f89af/codex-rs/app-server-protocol/schema/json/v2/TurnStartParams.json
+[goals]: https://github.com/openai/codex/blob/fe74a774532af67b5a4a3dec03ce9469e17f89af/codex-rs/app-server-protocol/schema/json/v2/ThreadGoalSetResponse.json
