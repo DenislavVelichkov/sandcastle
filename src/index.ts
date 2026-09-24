@@ -2,6 +2,7 @@ export { run } from "./run.js";
 export { inspectWorkflow, runWorkflow } from "./workflow.js";
 export {
   runDurableWorkflow,
+  integrateWorkflowTask,
   checkpointStopWorkflow,
   recoverDurableWorkflow,
   resumeDurableWorkflow,
@@ -16,6 +17,7 @@ export type {
   WorkflowRequest,
   WorkflowResponseReceipt,
   WorkflowSnapshot,
+  WorkflowIntegrationIntent,
   WorkflowStatus,
   WorkflowAuthenticatedAnswer,
   WorkflowResponseRoute,

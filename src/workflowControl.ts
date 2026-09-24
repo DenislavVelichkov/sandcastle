@@ -23,6 +23,8 @@ import {
   inspectWorkflow,
   runWorkflow,
   type WorkflowAcceptance,
+  type WorkflowCandidate,
+  type WorkflowDecision,
   type WorkflowHumanQuestion,
   type WorkflowOptions,
   type WorkflowProject,
@@ -35,6 +37,7 @@ type TaskState =
   | "active"
   | "waiting"
   | "accepted"
+  | "integrated"
   | "rejected"
   | "rework-requested"
   | "blocked"
@@ -51,6 +54,35 @@ export interface WorkflowRequest extends WorkflowHumanQuestion {
   readonly candidate: string;
   readonly evidenceHash: string;
   readonly status: "pending" | "applied" | "stale" | "cancelled";
+  readonly integration?: WorkflowIntegrationInput;
+}
+
+interface WorkflowIntegrationInput {
+  readonly worktree: string;
+  readonly candidate: WorkflowCandidate;
+  readonly check: WorkflowDecision;
+  readonly evidence: readonly {
+    readonly path: string;
+    readonly sha256: string;
+  }[];
+  readonly targetBranch: string;
+  readonly targetHead: string;
+  readonly requestId?: string;
+}
+
+export interface WorkflowIntegrationIntent extends WorkflowIntegrationInput {
+  readonly id: string;
+  readonly status: "ready" | "applying" | "integrated" | "blocked";
+  readonly responseId?: string;
+  readonly commit?: string;
+  readonly gate?: WorkflowDecision;
+  readonly gateEvidence?: WorkflowIntegrationInput["evidence"];
+  readonly postconditions?: {
+    readonly branch: string;
+    readonly tree: string;
+    readonly clean: true;
+  };
+  readonly reason?: string;
 }
 
 export interface WorkflowResponseReceipt {
@@ -110,6 +142,7 @@ export interface WorkflowSnapshot {
   readonly startedTasks?: readonly string[];
   readonly requests: readonly WorkflowRequest[];
   readonly responses: readonly WorkflowResponseReceipt[];
+  readonly integrations?: Readonly<Record<string, WorkflowIntegrationIntent>>;
   readonly checkpoints: readonly string[];
   readonly checkpoint?: WorkflowCheckpoint;
   readonly sourceRestoration?: "verified" | "unavailable";
@@ -166,6 +199,12 @@ export interface DurableWorkflowOptions extends Omit<
 > {
   readonly project: WorkflowProject & {
     validateHumanRequest(request: WorkflowRequest): Promise<boolean>;
+    /** Hold the project's target-branch lock for the entire callback. */
+    withTargetLock?<T>(branch: string, action: () => Promise<T>): Promise<T>;
+    /** Recheck every project-owned gate that authorizes this exact integration. */
+    validateIntegration?(
+      intent: WorkflowIntegrationIntent,
+    ): Promise<WorkflowDecision>;
   };
   readonly directory: string;
   readonly projectId: string;
@@ -533,8 +572,10 @@ export const respondWorkflow = async (options: {
   return { status: "queued", responseId };
 };
 
-const validEvidence = async (request: WorkflowRequest): Promise<boolean> => {
-  for (const item of request.evidence) {
+const validEvidence = async (
+  evidence: readonly { readonly path: string; readonly sha256: string }[],
+): Promise<boolean> => {
+  for (const item of evidence) {
     if (!isAbsolute(item.path)) return false;
     try {
       const bytes = await readFile(item.path);
@@ -547,7 +588,29 @@ const validEvidence = async (request: WorkflowRequest): Promise<boolean> => {
   return true;
 };
 
-const candidateCurrent = (request: WorkflowRequest): boolean => {
+const captureEvidence = async (
+  paths: readonly string[],
+): Promise<WorkflowIntegrationInput["evidence"]> =>
+  Promise.all(
+    [...new Set(paths)].map(async (path) => {
+      if (!isAbsolute(path))
+        throw new Error(
+          `Integration evidence must have an absolute path: ${path}`,
+        );
+      return {
+        path,
+        sha256: createHash("sha256")
+          .update(await readFile(path))
+          .digest("hex"),
+      };
+    }),
+  );
+
+const candidateCurrent = (request: {
+  worktree: string;
+  branch: string;
+  candidate: string;
+}): boolean => {
   try {
     const git = (...args: string[]) =>
       execFileSync("git", args, {
@@ -562,6 +625,159 @@ const candidateCurrent = (request: WorkflowRequest): boolean => {
   } catch {
     return false;
   }
+};
+
+const acceptedCurrent = async (
+  intent: WorkflowIntegrationInput,
+): Promise<boolean> =>
+  candidateCurrent({
+    worktree: intent.worktree,
+    branch: intent.candidate.branch,
+    candidate: intent.candidate.head,
+  }) && (await validEvidence(intent.evidence));
+
+const targetCurrent = (root: string, branch: string, head: string): boolean => {
+  try {
+    return (
+      git(root, "branch", "--show-current") === branch &&
+      git(root, "rev-parse", "HEAD") === head
+    );
+  } catch {
+    return false;
+  }
+};
+
+const integrationInput = async (
+  state: WorkflowSnapshot,
+  worktree: string,
+  completed: {
+    candidate: WorkflowCandidate;
+    check: WorkflowDecision;
+    acceptance?: WorkflowAcceptance;
+  },
+  requestId?: string,
+): Promise<WorkflowIntegrationInput> => {
+  if (!state.targetBranch || !state.targetHead)
+    throw new Error("Integration target was not recorded");
+  if (
+    completed.acceptance?.request &&
+    completed.acceptance.request.target !== state.targetBranch
+  )
+    throw new Error("Human request target does not match the recorded target");
+  return {
+    worktree,
+    candidate: completed.candidate,
+    check: completed.check,
+    evidence: await captureEvidence([
+      ...completed.check.evidence,
+      ...(completed.acceptance?.evidence ?? []),
+      ...(completed.acceptance?.request?.evidence.map((item) => item.path) ??
+        []),
+    ]),
+    targetBranch: state.targetBranch,
+    targetHead: state.targetHead,
+    ...(requestId ? { requestId } : {}),
+  };
+};
+
+const integrationIntent = (
+  input: WorkflowIntegrationInput,
+  responseId?: string,
+): WorkflowIntegrationIntent => ({
+  ...input,
+  id: randomUUID(),
+  status: "ready",
+  ...(responseId ? { responseId } : {}),
+});
+
+const git = (cwd: string, ...args: string[]): string =>
+  execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, LC_ALL: "C" },
+    timeout: 30_000,
+  }).trim();
+
+const effectCommit = (
+  root: string,
+  intent: WorkflowIntegrationIntent,
+): string | undefined => {
+  const head = git(root, "rev-parse", "HEAD");
+  if (
+    git(root, "branch", "--show-current") !== intent.targetBranch ||
+    head === intent.targetHead
+  )
+    return undefined;
+  const parents = git(root, "show", "-s", "--format=%P", head).split(" ");
+  const message = git(root, "show", "-s", "--format=%B", head).split("\n");
+  if (
+    parents.length !== 2 ||
+    parents[0] !== intent.targetHead ||
+    parents[1] !== intent.candidate.head ||
+    !message.includes(`Sandcastle-Effect: ${intent.id}`) ||
+    !message.includes(`Sandcastle-Candidate: ${intent.candidate.head}`) ||
+    git(root, "status", "--porcelain", "--untracked-files=all")
+  )
+    return undefined;
+  return head;
+};
+
+const reconcileIntegration = async (
+  options: DurableWorkflowOptions,
+  state: WorkflowSnapshot,
+): Promise<WorkflowSnapshot> => {
+  for (const [taskId, intent] of Object.entries(state.integrations ?? {})) {
+    if (intent.status !== "applying") continue;
+    if (!options.project.withTargetLock)
+      throw new Error("Project target lock is unavailable during recovery");
+    state = await options.project.withTargetLock(
+      intent.targetBranch,
+      async () => {
+        const commit = effectCommit(options.project.root, intent);
+        const tree = commit
+          ? git(
+              options.project.root,
+              "merge-tree",
+              "--write-tree",
+              "--no-messages",
+              intent.targetHead,
+              intent.candidate.head,
+            )
+          : undefined;
+        if (
+          !commit ||
+          git(options.project.root, "show", "-s", "--format=%T", commit) !==
+            tree ||
+          !(await acceptedCurrent(intent)) ||
+          !(await validEvidence(intent.gateEvidence ?? []))
+        )
+          throw new Error(
+            `Integration effect ${intent.id} is uncertain; owner recovery is required`,
+          );
+        return update(options.directory, state, {
+          targetHead: commit,
+          tasks: {
+            ...state.tasks,
+            [taskId]: { ...state.tasks[taskId]!, status: "integrated" },
+          },
+          integrations: {
+            ...state.integrations,
+            [taskId]: {
+              ...intent,
+              status: "integrated",
+              commit,
+              postconditions: {
+                branch: intent.targetBranch,
+                tree: tree!,
+                clean: true,
+              },
+            },
+          },
+        });
+      },
+    );
+  }
+  return state;
 };
 
 const applyQueued = async (
@@ -618,7 +834,14 @@ const applyQueued = async (
     const current = Boolean(
       same &&
       candidateCurrent(request!) &&
-      (await validEvidence(request!)) &&
+      (await validEvidence(request!.evidence)) &&
+      (!request!.integration ||
+        ((await validEvidence(request!.integration.evidence)) &&
+          targetCurrent(
+            state.projectRoot,
+            request!.integration.targetBranch,
+            request!.integration.targetHead,
+          ))) &&
       (await validate(request!)),
     );
     const invalidated = Boolean(same && !current && request);
@@ -666,6 +889,16 @@ const applyQueued = async (
               },
             }
           : state.tasks,
+      integrations:
+        current && response.decision === "Approve" && request?.integration
+          ? {
+              ...state.integrations,
+              [request.taskId]: integrationIntent(
+                request.integration,
+                response.responseId,
+              ),
+            }
+          : state.integrations,
     });
     await rm(path);
   }
@@ -898,6 +1131,15 @@ const driveDurableWorkflow = async (
     throw new Error(
       "Durable workflow requires an absolute host state directory and project request validator",
     );
+  if (
+    Boolean(options.project.withTargetLock) !==
+      Boolean(options.project.validateIntegration) ||
+    (options.project.withTargetLock &&
+      (!options.recoverReservation || !options.runtimeIdentity))
+  )
+    throw new Error(
+      "Integration requires the project target lock, gate validator, runtime identity and reservation recovery",
+    );
   const first = options.worktrees[options.selected[0]?.id ?? ""];
   if (!first) throw new Error("Every selected task needs a worktree");
   const previous = resume ? await readState(options.directory) : undefined;
@@ -1039,6 +1281,7 @@ const driveDurableWorkflow = async (
         startedTasks: [],
         requests: [],
         responses: [],
+        integrations: {},
         checkpoints: [],
         runtimeIdentity: options.runtimeIdentity,
         targetHead: execFileSync("git", ["rev-parse", "HEAD"], {
@@ -1328,15 +1571,25 @@ const driveDurableWorkflow = async (
               (last?.usedImplementationIterations ?? options.policy.iterations),
           );
       if (acceptance?.status === "waiting") {
-        const request = requestFrom(
+        let request = requestFrom(
           options,
           task,
           acceptance,
           result.completed.at(-1)!.candidate.head,
         );
+        if (options.project.withTargetLock && last)
+          request = {
+            ...request,
+            integration: await integrationInput(
+              state,
+              worktree.worktreePath,
+              last,
+              request.id,
+            ),
+          };
         if (
           !candidateCurrent(request) ||
-          !(await validEvidence(request)) ||
+          !(await validEvidence(request.evidence)) ||
           !(await options.project.validateHumanRequest(request))
         )
           throw new Error(
@@ -1352,8 +1605,19 @@ const driveDurableWorkflow = async (
           },
         });
       } else {
+        const intent =
+          options.project.withTargetLock && result.status === "accepted" && last
+            ? integrationIntent(
+                await integrationInput(state, worktree.worktreePath, last),
+              )
+            : undefined;
         state = await update(options.directory, state, {
           active: [],
+          ...(intent
+            ? {
+                integrations: { ...state.integrations, [task.id]: intent },
+              }
+            : {}),
           tasks: {
             ...state.tasks,
             [task.id]: {
@@ -1378,11 +1642,15 @@ const driveDurableWorkflow = async (
         state,
         options.project.validateHumanRequest,
       );
-    const waiting = Object.values(state.tasks).some((task) =>
-      ["waiting", "rejected", "paused", "ready", "blocked"].includes(
-        task.status,
-      ),
-    );
+    const waiting =
+      Object.values(state.tasks).some((task) =>
+        ["waiting", "rejected", "paused", "ready", "blocked"].includes(
+          task.status,
+        ),
+      ) ||
+      Object.values(state.integrations ?? {}).some(
+        (intent) => intent.status !== "integrated",
+      );
     if (descendants(process.pid).length)
       throw new Error("Owned child processes remain after workflow drain");
     if ((await readdir(cleanupPath(options.directory))).length)
@@ -1425,6 +1693,214 @@ const driveDurableWorkflow = async (
   }
 };
 
+/** Integrate one accepted candidate under the project's target lock. */
+export const integrateWorkflowTask = async (
+  options: DurableWorkflowOptions,
+  taskId: string,
+): Promise<WorkflowSnapshot> => {
+  assertHostDirectory(options.directory, options.worktrees);
+  await mkdir(lockPath(options.directory));
+  await writeLockOwner(options.directory);
+  try {
+    let state = await readState(options.directory);
+    const intent = state.integrations?.[taskId];
+    if (
+      !intent ||
+      !options.project.withTargetLock ||
+      !options.project.validateIntegration
+    )
+      throw new Error(`Task ${taskId} has no authorized integration intent`);
+    const validateIntegration = options.project.validateIntegration;
+    if (state.lifecycle !== "stopped")
+      throw new Error(
+        "Workflow must be verified and stopped before integration",
+      );
+    if (intent.status === "integrated") return state;
+    if (intent.status !== "ready" || state.tasks[taskId]?.status !== "accepted")
+      throw new Error(`Task ${taskId} is not ready for integration`);
+    if (await stopRequested(options.directory))
+      throw new Error("Workflow stop intent prohibits integration");
+    if (
+      !state.checkpoint ||
+      !state.resources.retained ||
+      !options.recoverReservation
+    )
+      throw new Error(
+        "Integration requires a verified checkpoint and retained reservation",
+      );
+    await verifyWorkflowCheckpoint(options.directory, state.checkpoint);
+    await options.recoverReservation(state.resources.reservationId);
+    if (
+      state.projectId !== options.projectId ||
+      state.invocationId !== options.invocationId ||
+      state.projectRoot !== options.project.root ||
+      state.runtimeIdentity !== options.runtimeIdentity ||
+      realpathSync(options.worktrees[taskId]?.worktreePath ?? "") !==
+        realpathSync(intent.worktree)
+    )
+      throw new Error(
+        "Integration project, runtime or worktree identity changed",
+      );
+    return await options.project.withTargetLock(
+      intent.targetBranch,
+      async () => {
+        let applying = false;
+        try {
+          const selected = state.selectedTasks?.find(
+            (task) => task.id === taskId,
+          );
+          if (
+            !selected ||
+            JSON.stringify(await options.project.getTask(taskId)) !==
+              JSON.stringify(selected)
+          )
+            throw new Error("Task contract changed after acceptance");
+          if (!(await acceptedCurrent(intent)))
+            throw new Error("Accepted candidate or evidence changed");
+          if (intent.requestId) {
+            const request = state.requests.find(
+              (item) => item.id === intent.requestId,
+            );
+            const response = state.responses.find(
+              (item) => item.responseId === intent.responseId,
+            );
+            if (
+              !request ||
+              !response ||
+              request.status !== "applied" ||
+              response.status !== "applied" ||
+              response.decision !== "Approve" ||
+              request.candidate !== intent.candidate.head ||
+              !(await validEvidence(request.evidence)) ||
+              !(await options.project.validateHumanRequest(request))
+            )
+              throw new Error("Exact-candidate human acceptance is stale");
+          }
+          const check = await options.project.check(intent.candidate);
+          if (
+            check.status !== "passed" ||
+            digest(check) !== digest(intent.check)
+          )
+            throw new Error("Project check or reviewed result changed");
+          const gate = await validateIntegration(intent);
+          if (gate.status !== "passed")
+            throw new Error(gate.reason ?? "Project integration gate failed");
+          const gateEvidence = await captureEvidence(gate.evidence);
+          const root = options.project.root;
+          if (
+            !(await acceptedCurrent(intent)) ||
+            state.targetBranch !== intent.targetBranch ||
+            state.targetHead !== intent.targetHead ||
+            git(root, "branch", "--show-current") !== intent.targetBranch ||
+            git(root, "rev-parse", "HEAD") !== intent.targetHead ||
+            git(root, "status", "--porcelain", "--untracked-files=all")
+          )
+            throw new Error("Integration target changed or is not clean");
+          try {
+            git(
+              root,
+              "merge-base",
+              "--is-ancestor",
+              intent.candidate.head,
+              intent.targetHead,
+            );
+            throw new Error("Candidate is already in the integration target");
+          } catch (error) {
+            if (
+              error instanceof Error &&
+              error.message === "Candidate is already in the integration target"
+            )
+              throw error;
+          }
+          let tree: string;
+          try {
+            tree = git(
+              root,
+              "merge-tree",
+              "--write-tree",
+              "--no-messages",
+              intent.targetHead,
+              intent.candidate.head,
+            );
+          } catch {
+            throw new Error(
+              "Integration has conflicts; project repair is required",
+            );
+          }
+          state = await update(options.directory, state, {
+            integrations: {
+              ...state.integrations,
+              [taskId]: { ...intent, status: "applying", gate, gateEvidence },
+            },
+          });
+          applying = true;
+          git(
+            root,
+            "merge",
+            "--no-ff",
+            "-m",
+            `Integrate ${intent.candidate.task.reference}\n\nSandcastle-Effect: ${intent.id}\nSandcastle-Candidate: ${intent.candidate.head}`,
+            intent.candidate.head,
+          );
+          const commit = effectCommit(root, intent);
+          if (
+            !commit ||
+            git(root, "show", "-s", "--format=%T", commit) !== tree ||
+            !(await acceptedCurrent(intent)) ||
+            !(await validEvidence(gateEvidence))
+          )
+            throw new Error(
+              "Git integration postconditions changed; recovery is required",
+            );
+          return update(options.directory, state, {
+            targetHead: commit,
+            tasks: {
+              ...state.tasks,
+              [taskId]: { ...state.tasks[taskId]!, status: "integrated" },
+            },
+            integrations: {
+              ...state.integrations,
+              [taskId]: {
+                ...intent,
+                status: "integrated",
+                gate,
+                gateEvidence,
+                commit,
+                postconditions: {
+                  branch: intent.targetBranch,
+                  tree,
+                  clean: true,
+                },
+              },
+            },
+          });
+        } catch (error) {
+          if (!applying) {
+            const reason = String(error);
+            state = await update(options.directory, state, {
+              tasks: {
+                ...state.tasks,
+                [taskId]: {
+                  ...state.tasks[taskId]!,
+                  status: "blocked",
+                  reason,
+                },
+              },
+              integrations: {
+                ...state.integrations,
+                [taskId]: { ...intent, status: "blocked", reason },
+              },
+            });
+          }
+          throw error;
+        }
+      },
+    );
+  } finally {
+    await rm(lockPath(options.directory), { recursive: true, force: true });
+  }
+};
+
 export const runDurableWorkflow = (
   options: DurableWorkflowOptions,
 ): Promise<WorkflowSnapshot> => driveDurableWorkflow(options);
@@ -1441,21 +1917,11 @@ export const recoverDurableWorkflow = async (
   let executionOwned = false;
   try {
     let state = await readState(options.directory);
-    const targetHead = execFileSync("git", ["rev-parse", "HEAD"], {
-      cwd: options.project.root,
-      encoding: "utf8",
-    }).trim();
-    const targetBranch = execFileSync("git", ["branch", "--show-current"], {
-      cwd: options.project.root,
-      encoding: "utf8",
-    }).trim();
     if (
       state.projectId !== options.projectId ||
       state.invocationId !== options.invocationId ||
       state.projectRoot !== options.project.root ||
       state.runtimeIdentity !== options.runtimeIdentity ||
-      state.targetHead !== targetHead ||
-      state.targetBranch !== targetBranch ||
       state.allowances.iterations !== options.policy.iterations
     )
       throw new Error(
@@ -1543,6 +2009,15 @@ export const recoverDurableWorkflow = async (
           "Interrupted active work has no verified final inventory; retained work needs owner inspection",
       });
     try {
+      state = await reconcileIntegration(options, state);
+      if (
+        state.targetHead !== git(options.project.root, "rev-parse", "HEAD") ||
+        state.targetBranch !==
+          git(options.project.root, "branch", "--show-current")
+      )
+        throw new Error("Integration target changed after the recorded effect");
+      if (!state.checkpoint)
+        throw new Error("No verified durable checkpoint exists");
       await restoreWorkflowCheckpoint(
         options.directory,
         state.checkpoint,

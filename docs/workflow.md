@@ -78,4 +78,20 @@ After a restart, call `recoverDurableWorkflow(options)` with the original projec
 
 Call `resumeDurableWorkflow(options)` explicitly to continue eligible ready or paused tasks. It first runs the recovery checks and applies queued answers, then uses the captured session and remaining iteration allowance for a paused role. Accepted, waiting, rejected, capped and cancelled work does not restart on its own. `cancelWorkflowTask()` invalidates unanswered requests for a stopped task. A later answer cannot integrate cancelled work. Automatic app-close shutdown remains disabled; use the explicit stop operation until the actual app launch chain is proved.
 
+## Integrate an accepted candidate
+
+To opt into Git integration, supply `project.withTargetLock(branch, action)`, `project.validateIntegration(intent)`, and `recoverReservation(id)` in the durable workflow options. The project lock must exclude every other writer to the target branch while `action` runs. `validateIntegration()` must recheck the project's current reviews, acceptance, and completion prerequisites for the intent's candidate and target, then return a `passed` or `failed` decision with absolute evidence file paths. The workflow also reruns `check()`, compares its result with the accepted result, verifies evidence bytes, and revalidates an applied human answer. Keep the target working tree clean and the host state directory outside it.
+
+`runDurableWorkflow()` records an integration intent when project acceptance succeeds. A waiting human request records the intent only when the owner answer is applied. The workflow retains the project reservation while integration is outstanding. After the workflow has stopped and its checkpoint is verified, call `integrateWorkflowTask(options, taskId)`. Its returned snapshot has separate `accepted` and `integrated` task states. An integrated intent records the Git commit and tree. A second call returns that same effect without merging again. Integration does not close the task or promote visual baselines; the project still applies its own completion gates.
+
+```ts
+import { integrateWorkflowTask } from "@ai-hero/sandcastle";
+
+const state = await integrateWorkflowTask(options, "a");
+console.log(state.tasks.a.status, state.integrations?.a?.commit);
+// integrated <merge commit SHA>
+```
+
+The controller checks the exact candidate, target branch and commit, review result, evidence and project gate while the project target lock is held. It preflights conflicts, records `applying` durably, then creates a merge commit with a stable `Sandcastle-Effect` identity. If the controller stops between the Git change and its receipt, call `recoverDurableWorkflow(options)` before any retry. Recovery verifies the merge commit's identity, parents, tree and clean target, then records the original effect. An unchanged target after an `applying` intent, a conflict, changed candidate, changed review or stale answer requires owner repair; the controller does not guess whether to merge again. An explicit checkpoint stop also prohibits integration until the workflow is resumed.
+
 Codex chat answer delivery remains disabled until an authenticated Desktop round trip is proved. The supported fallback is the project's existing owner-verified host route. Do not pass the state directory or route credentials into an agent sandbox. A closed dialog, selected default, model statement, or command permission is not a human answer.
