@@ -215,6 +215,48 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
       }),
     ).rejects.toThrow(/Worker model\/effort unavailable/);
     expect(dispatched).toBe(1);
+    const changedRole = {
+      ...options.policy.roles.implementation,
+      agent: codex("gpt-6-sol", {
+        effort: "high",
+        serviceTier: "default",
+      }),
+    };
+    const changedPolicy = {
+      ...options,
+      directory: join(root, "changed-policy-state"),
+      invocationId: "changed-policy",
+      policy: {
+        ...options.policy,
+        roles: { implementation: changedRole },
+      },
+      usage: {
+        ...usage,
+        listModels: async (cursor?: string) => {
+          changedRole.agent = codex("gpt-6-astra", {
+            effort: "high",
+            serviceTier: "default",
+          });
+          return usage.listModels(cursor);
+        },
+      },
+      worktrees: {
+        one: {
+          ...real,
+          run: async (runOptions: Parameters<typeof real.run>[0]) => {
+            expect(runOptions.agent.codexConfiguration?.model).toBe(
+              "gpt-6-astra",
+            );
+            await runOptions.onIterationStart?.(1);
+            throw new Error("Configuration guard did not stop dispatch");
+          },
+        },
+      },
+    };
+    const changed = await runDurableWorkflow(changedPolicy);
+    expect(changed.usage?.stopReason).toMatch(/configuration changed/);
+    expect(changed.usage?.remaining.one?.implementation).toBe(2);
+    expect(dispatched).toBe(1);
     let reads = 0;
     const second = {
       ...options,

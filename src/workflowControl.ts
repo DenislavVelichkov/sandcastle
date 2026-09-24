@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import type { AgentProvider } from "./AgentProvider.js";
 import type { Worktree } from "./createWorktree.js";
 import {
   beginPilotInvocation,
@@ -1686,15 +1687,14 @@ const driveDurableWorkflow = async (
       });
       const guardedUsage = options.usage;
       let activeSessionId: string | undefined;
+      let activeAgent: AgentProvider | undefined;
       const readCounters = (
         taskId: string,
         role: string,
         sessionId?: string,
       ) => {
         const read = guardedUsage?.readTokenCounters;
-        const builtIn =
-          options.policy.roles[role]?.agent.sessionStorage
-            ?.readCumulativeCounters;
+        const builtIn = activeAgent?.sessionStorage?.readCumulativeCounters;
         return read
           ? readWithin(
               () => read(taskId, role, sessionId),
@@ -1711,11 +1711,26 @@ const driveDurableWorkflow = async (
         ...options,
         ...(guardedUsage
           ? {
-              onInvocationStart: async (taskId: string, role: string) => {
+              onInvocationStart: async (
+                taskId: string,
+                role: string,
+                agent: AgentProvider,
+              ) => {
                 let reading:
                   | Awaited<ReturnType<WorkflowUsageOptions["readAccount"]>>
                   | undefined;
                 try {
+                  const frozen = usageState?.requested[role];
+                  const actual = agent.codexConfiguration;
+                  if (
+                    !frozen ||
+                    actual?.model !== frozen.model ||
+                    actual.effort !== frozen.effort ||
+                    actual.serviceTier !== frozen.serviceTier
+                  )
+                    throw new Error(
+                      `Guarded role configuration changed: ${role}`,
+                    );
                   reading = await readGuardedAccount(guardedUsage);
                   await mutateUsage((current) =>
                     startWorkflowInvocation(
@@ -1727,6 +1742,7 @@ const driveDurableWorkflow = async (
                     ),
                   );
                   activeSessionId = undefined;
+                  activeAgent = agent;
                 } catch (error) {
                   await mutateUsage((current) => ({
                     ...(reading

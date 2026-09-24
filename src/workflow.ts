@@ -134,8 +134,12 @@ export interface WorkflowOptions {
   readonly onRoleCompleted?: (taskId: string, role: string) => Promise<void>;
   /** Report cleanup failure so a durable owner can retain recovery state. */
   readonly onCleanupFailure?: (taskId: string, error: unknown) => Promise<void>;
-  /** Reserve an invocation and guard account usage before provider dispatch. */
-  readonly onInvocationStart?: (taskId: string, role: string) => Promise<void>;
+  /** Reserve an invocation and guard the actual agent before provider dispatch. */
+  readonly onInvocationStart?: (
+    taskId: string,
+    role: string,
+    agent: AgentProvider,
+  ) => Promise<void>;
   /** Settle a completed invocation's usage before another can start. */
   readonly onInvocationComplete?: (
     taskId: string,
@@ -515,7 +519,7 @@ export const runWorkflow = async (
           onCleanupFailure: (error) =>
             options.onCleanupFailure?.(task.id, error) ?? Promise.resolve(),
           onIterationStart: async () => {
-            await options.onInvocationStart?.(task.id, role);
+            await options.onInvocationStart?.(task.id, role, assignment.agent);
             if (options.onInvocationStart && !roleStarted) {
               await options.onRoleStarted?.(task.id, role);
               roleStarted = true;
