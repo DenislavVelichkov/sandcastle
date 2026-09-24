@@ -42,7 +42,10 @@ await writeFile(
   join(root, "dist", "workflow-release.json"),
   JSON.stringify(metadata, null, 2) + "\n",
 );
-const output = resolve(process.argv[2] || join(root, "artifacts"));
+const output = resolve(
+  process.argv.slice(2).filter((arg) => arg !== "--")[0] ||
+    join(root, "artifacts"),
+);
 await mkdir(output, { recursive: true });
 const archive = join(output, `ai-hero-sandcastle-${packageJson.version}.tgz`);
 run("pnpm", ["pack", "--out", archive]);
