@@ -167,6 +167,18 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
     ).toBe(21);
     expect(pages).toBe(2);
     expect(dispatched).toBe(1);
+    await expect(
+      runDurableWorkflow({
+        ...options,
+        directory: join(root, "unavailable-model-state"),
+        invocationId: "unavailable-model",
+        usage: {
+          ...usage,
+          listModels: async () => ({ data: [] }),
+        },
+      }),
+    ).rejects.toThrow(/Worker model\/effort unavailable/);
+    expect(dispatched).toBe(1);
     let reads = 0;
     const second = {
       ...options,
