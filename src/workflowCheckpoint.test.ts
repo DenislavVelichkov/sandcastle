@@ -9,13 +9,25 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createWorktree } from "./createWorktree.js";
 import {
   captureWorkflowCheckpoint,
   restoreWorkflowCheckpoint,
   verifyWorkflowCheckpoint,
 } from "./workflowCheckpoint.js";
+
+const publicationFailure = vi.hoisted(() => ({ active: false }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...fs,
+    rename: async (...args: Parameters<typeof fs.rename>) => {
+      if (publicationFailure.active) throw new Error("publication failed");
+      return fs.rename(...args);
+    },
+  };
+});
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -61,6 +73,19 @@ it("captures edits, deletions, untracked and required ignored files without over
         [join(root, "missing-evidence.txt")],
       ),
     ).rejects.toMatchObject({ code: "ENOENT" });
+    publicationFailure.active = true;
+    try {
+      await expect(
+        captureWorkflowCheckpoint(
+          directory,
+          { a: worktree },
+          { a: ["proof.txt"] },
+          [],
+        ),
+      ).rejects.toThrow("publication failed");
+    } finally {
+      publicationFailure.active = false;
+    }
     expect((await readdir(join(directory, "checkpoints"))).sort()).toEqual([
       receipt.id,
     ]);
