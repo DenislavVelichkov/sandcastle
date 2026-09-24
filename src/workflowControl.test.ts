@@ -189,6 +189,11 @@ it("queues an authenticated answer under the execution lock and applies it while
     ) as { status: string; responseId: string };
     expect(delivered.status).toBe("queued");
     expect(
+      JSON.parse(
+        await readFile(join(directory, "inbox", `${requestId}.json`), "utf8"),
+      ).version,
+    ).toBe(1);
+    expect(
       await respondWorkflow({
         directory,
         requestId,

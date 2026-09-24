@@ -61,6 +61,7 @@ export interface WorkflowResponseReceipt {
 }
 
 interface WorkflowResponse {
+  readonly version: 1;
   readonly responseId: string;
   readonly requestId: string;
   readonly projectId: string;
@@ -268,6 +269,7 @@ export const respondWorkflow = async (options: {
       "Human answer is not authenticated for the displayed question",
     );
   const response: WorkflowResponse = {
+    version: 1,
     responseId,
     requestId,
     projectId: request.projectId,
@@ -391,6 +393,7 @@ const applyQueued = async (
     );
     const same =
       request &&
+      response.version === 1 &&
       request.status === "pending" &&
       state.tasks[request.taskId]?.status === "waiting" &&
       response.projectId === request.projectId &&
