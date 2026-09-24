@@ -269,7 +269,6 @@ export const restoreWorkflowCheckpoint = async (
       throw new Error(`Checkpoint worktree does not match ${taskId}`);
     const cwd = target.worktreePath;
     if (
-      realpathSync(cwd) !== saved.path ||
       realpathSync(resolve(cwd, git(cwd, "rev-parse", "--git-common-dir"))) !==
         saved.gitCommonDir ||
       git(cwd, "branch", "--show-current") !== saved.branch ||

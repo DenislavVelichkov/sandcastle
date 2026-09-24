@@ -10,8 +10,8 @@ import {
   rm,
   stat,
 } from "node:fs/promises";
-import { readFileSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Worktree } from "./createWorktree.js";
 import {
   captureWorkflowCheckpoint,
@@ -196,6 +196,18 @@ const roleStartPath = (directory: string): string =>
 const rolePath = (directory: string): string => join(directory, "roles");
 const cleanupPath = (directory: string): string => join(directory, "cleanup");
 
+const assertHostDirectory = (
+  directory: string,
+  worktrees: Readonly<Record<string, Worktree>>,
+): void => {
+  const control = realpathSync(directory);
+  for (const worktree of Object.values(worktrees)) {
+    const path = relative(realpathSync(worktree.worktreePath), control);
+    if (!path || (path.split(sep)[0] !== ".." && !isAbsolute(path)))
+      throw new Error("Host state directory must be outside agent worktrees");
+  }
+};
+
 const stopRequested = async (directory: string): Promise<boolean> => {
   try {
     await stat(stopPath(directory));
@@ -346,6 +358,8 @@ export const checkpointStopWorkflow = async (
       );
     return initial;
   }
+  if (initial.lifecycle === "stopped")
+    throw new Error("Stopped workflow has no verified checkpoint");
   if (initial.lifecycle === "recovery-required")
     throw new Error(initial.failure ?? "Workflow requires recovery");
   try {
@@ -919,6 +933,7 @@ const driveDurableWorkflow = async (
       );
   }
   await mkdir(options.directory, { recursive: true, mode: 0o700 });
+  assertHostDirectory(options.directory, options.worktrees);
   await mkdir(inboxPath(options.directory), { recursive: true, mode: 0o700 });
   await mkdir(sessionPath(options.directory), { recursive: true, mode: 0o700 });
   await mkdir(roleStartPath(options.directory), {
@@ -1394,6 +1409,7 @@ export const recoverDurableWorkflow = async (
 ): Promise<WorkflowSnapshot> => {
   if (!options.runtimeIdentity)
     throw new Error("Recovery requires a stable runtime identity");
+  assertHostDirectory(options.directory, options.worktrees);
   const recoveryLock = join(options.directory, "recovery.lock");
   await mkdir(recoveryLock);
   let executionOwned = false;
@@ -1413,9 +1429,12 @@ export const recoverDurableWorkflow = async (
       state.projectRoot !== options.project.root ||
       state.runtimeIdentity !== options.runtimeIdentity ||
       state.targetHead !== targetHead ||
-      state.targetBranch !== targetBranch
+      state.targetBranch !== targetBranch ||
+      state.allowances.iterations !== options.policy.iterations
     )
-      throw new Error("Project, target or runtime identity changed");
+      throw new Error(
+        "Project, target, runtime or iteration allowance changed",
+      );
     if (
       !state.selectedTasks ||
       state.selectedTasks.length !== options.selected.length ||
@@ -1439,14 +1458,43 @@ export const recoverDurableWorkflow = async (
       if (state.processes?.some(ownerAlive))
         throw new Error("Owned descendant survived the workflow owner");
     }
-    if (!state.checkpoint)
-      throw new Error("No verified durable checkpoint exists");
-    await verifyWorkflowCheckpoint(options.directory, state.checkpoint);
     try {
-      if ((await readdir(cleanupPath(options.directory))).length)
-        throw new Error("Sandbox cleanup failure still requires owner repair");
+      if (!state.checkpoint)
+        throw new Error("No verified durable checkpoint exists");
+      const manifest = await verifyWorkflowCheckpoint(
+        options.directory,
+        state.checkpoint,
+      );
+      const commonDir = realpathSync(
+        resolve(
+          options.project.root,
+          execFileSync("git", ["rev-parse", "--git-common-dir"], {
+            cwd: options.project.root,
+            encoding: "utf8",
+          }).trim(),
+        ),
+      );
+      if (
+        Object.values(manifest.worktrees).some(
+          (worktree) => worktree.gitCommonDir !== commonDir,
+        )
+      )
+        throw new Error("Checkpoint belongs to another Git repository");
+      try {
+        if ((await readdir(cleanupPath(options.directory))).length)
+          throw new Error(
+            "Sandbox cleanup failure still requires owner repair",
+          );
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await update(options.directory, state, {
+        lifecycle: "recovery-required",
+        sourceRestoration: "unavailable",
+        failure: String(error),
+      });
+      throw error;
     }
     try {
       const lockOwner = JSON.parse(
@@ -1475,12 +1523,16 @@ export const recoverDurableWorkflow = async (
         options.worktrees,
         options.requiredIgnoredArtifacts ?? {},
       );
-      if (state.resources.retained) {
+      if (
+        state.resources.retained ||
+        state.lifecycle === "running" ||
+        state.lifecycle === "stopping"
+      ) {
         if (!options.recoverReservation)
           throw new Error("Project reservation recovery is required");
         await options.recoverReservation(state.resources.reservationId);
       }
-      if (state.sessionRestoration === "unavailable")
+      if (state.sessionRestoration !== "verified")
         throw new Error("Required agent session is unavailable");
       state = await update(options.directory, state, {
         lifecycle: "stopped",
@@ -1495,6 +1547,7 @@ export const recoverDurableWorkflow = async (
     } catch (error) {
       await update(options.directory, state, {
         lifecycle: "recovery-required",
+        sourceRestoration: "unavailable",
         failure: String(error),
       });
       throw error;

@@ -118,6 +118,11 @@ it("stops an active workflow after session capture and restores its exact saved 
     },
   };
   try {
+    const exposed = join(worktree.worktreePath, "host-state");
+    await expect(
+      runDurableWorkflow({ ...options, directory: exposed }),
+    ).rejects.toThrow("outside agent worktrees");
+    await rm(exposed, { recursive: true, force: true });
     const execution = runDurableWorkflow(options);
     await running;
     await expect(recoverDurableWorkflow(options)).rejects.toThrow(
@@ -133,12 +138,51 @@ it("stops an active workflow after session capture and restores its exact saved 
     expect(await readFile(join(worktree.worktreePath, "new.txt"), "utf8")).toBe(
       "untracked\n",
     );
+    await expect(
+      recoverDurableWorkflow({
+        ...options,
+        policy: { ...options.policy, iterations: 3 },
+      }),
+    ).rejects.toThrow("iteration allowance changed");
+    const stateFile = join(directory, "state.json");
+    const interrupted = {
+      ...receipt,
+      lifecycle: "running",
+      owner: { ...receipt.owner, start: "expired" },
+      processes: [receipt.owner],
+    };
+    await writeFile(stateFile, JSON.stringify(interrupted));
+    await expect(recoverDurableWorkflow(options)).rejects.toThrow(
+      "Owned descendant survived",
+    );
+    await writeFile(
+      stateFile,
+      JSON.stringify({ ...interrupted, processes: [] }),
+    );
     expect((await recoverDurableWorkflow(options)).lifecycle).toBe("stopped");
     expect((await workflowStatus(directory)).tasks.a?.remaining).toBe(1);
     const resumed = await resumeDurableWorkflow(options);
     expect(resumedSession).toBe("session-1");
     expect(resumed.tasks.a).toMatchObject({ status: "accepted", remaining: 0 });
     expect(calls).toBe(2);
+    const checkpointDir = join(
+      directory,
+      "checkpoints",
+      resumed.checkpoint!.id,
+    );
+    const manifest = JSON.parse(
+      await readFile(join(checkpointDir, "manifest.json"), "utf8"),
+    ) as { worktrees: { a: { files: { sha256?: string }[] } } };
+    const sha256 = manifest.worktrees.a.files.find(
+      (file) => file.sha256,
+    )?.sha256;
+    await writeFile(join(checkpointDir, "blobs", sha256!), "corrupt\n");
+    await expect(recoverDurableWorkflow(options)).rejects.toThrow(
+      "blob changed",
+    );
+    expect((await workflowStatus(directory)).lifecycle).toBe(
+      "recovery-required",
+    );
   } finally {
     await worktree.close();
     await rm(root, { recursive: true, force: true });
