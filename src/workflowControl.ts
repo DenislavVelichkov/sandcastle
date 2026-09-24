@@ -191,6 +191,8 @@ const lockPath = (directory: string): string =>
   join(directory, "execution.lock");
 const stopPath = (directory: string): string => join(directory, "stop.json");
 const sessionPath = (directory: string): string => join(directory, "sessions");
+const roleStartPath = (directory: string): string =>
+  join(directory, "role-starts");
 const rolePath = (directory: string): string => join(directory, "roles");
 const cleanupPath = (directory: string): string => join(directory, "cleanup");
 
@@ -315,7 +317,10 @@ export const workflowStatus = async (
     Date.now() - Date.parse(state.observedAt),
   );
   let live = false;
-  if (state.lifecycle === "running" && observationAgeMs < 5000) {
+  if (
+    (state.lifecycle === "running" || state.lifecycle === "stopping") &&
+    observationAgeMs < 5000
+  ) {
     try {
       live = ownerStart(state.owner.pid) === state.owner.start;
     } catch {
@@ -749,11 +754,20 @@ const captureState = async (
       ),
   );
   const sessions = Object.values(state.sessions ?? {}).flat();
-  const missingRequiredSession =
-    (options.project.capabilities.includes("recovery") &&
-      unfinished.some((taskId) => !state.sessions?.[taskId]?.length)) ||
-    (options.project.capabilities.includes("recovery") &&
-      sessions.some((session) => !session.path));
+  let missingRequiredSession = sessions.some((session) => !session.path);
+  if (options.project.capabilities.includes("recovery"))
+    for (const taskId of unfinished) {
+      const done = await completedRoles(options.directory, taskId);
+      const started = await startedRoles(options.directory, taskId);
+      if (
+        started.some(
+          (role) =>
+            !done.includes(role) &&
+            !state.sessions?.[taskId]?.some((session) => session.role === role),
+        )
+      )
+        missingRequiredSession = true;
+    }
   const artifacts = [
     ...state.requests.flatMap((request) =>
       request.evidence.map((item) => item.path),
@@ -808,16 +822,14 @@ const capturedSessions = async (
   );
 };
 
-const completedRoles = async (
-  directory: string,
+const recordedRoles = async (
+  path: string,
   taskId: string,
 ): Promise<string[]> => {
   const result: string[] = [];
-  for (const name of await readdir(rolePath(directory))) {
+  for (const name of await readdir(path)) {
     if (!name.endsWith(".json")) continue;
-    const record = JSON.parse(
-      await readFile(join(rolePath(directory), name), "utf8"),
-    ) as {
+    const record = JSON.parse(await readFile(join(path, name), "utf8")) as {
       taskId: string;
       role: string;
     };
@@ -825,6 +837,12 @@ const completedRoles = async (
   }
   return result;
 };
+
+const startedRoles = (directory: string, taskId: string): Promise<string[]> =>
+  recordedRoles(roleStartPath(directory), taskId);
+
+const completedRoles = (directory: string, taskId: string): Promise<string[]> =>
+  recordedRoles(rolePath(directory), taskId);
 
 /** Runs exact selected tasks with durable human waits and independent worktrees. */
 const driveDurableWorkflow = async (
@@ -903,6 +921,10 @@ const driveDurableWorkflow = async (
   await mkdir(options.directory, { recursive: true, mode: 0o700 });
   await mkdir(inboxPath(options.directory), { recursive: true, mode: 0o700 });
   await mkdir(sessionPath(options.directory), { recursive: true, mode: 0o700 });
+  await mkdir(roleStartPath(options.directory), {
+    recursive: true,
+    mode: 0o700,
+  });
   await mkdir(rolePath(options.directory), { recursive: true, mode: 0o700 });
   await mkdir(cleanupPath(options.directory), { recursive: true, mode: 0o700 });
   await mkdir(lockPath(options.directory));
@@ -1022,8 +1044,7 @@ const driveDurableWorkflow = async (
           .find((item) => item.role === role);
         if (
           !session &&
-          (state.sessions?.[task.id]?.length ?? 0) > 0 &&
-          !done.includes(role)
+          (await startedRoles(options.directory, task.id)).includes(role)
         )
           throw new Error(
             `Missing session for interrupted role ${task.id}/${role}`,
@@ -1095,6 +1116,13 @@ const driveDurableWorkflow = async (
       });
       const resultPromise = runWorkflow({
         ...options,
+        onRoleStarted: async (taskId, role) => {
+          await publish(
+            join(roleStartPath(options.directory), `${randomUUID()}.json`),
+            { taskId, role },
+            true,
+          );
+        },
         onSessionCaptured: async (taskId, role, session) => {
           if (!session.sessionId || !session.sessionFilePath) return;
           const record = {
@@ -1170,12 +1198,12 @@ const driveDurableWorkflow = async (
                 lifecycle: "stopping",
               });
             activeAbort.abort(new Error("Workflow checkpoint stop requested"));
-          }
-          state = await applyQueued(
-            options.directory,
-            state,
-            options.project.validateHumanRequest,
-          );
+          } else
+            state = await applyQueued(
+              options.directory,
+              state,
+              options.project.validateHumanRequest,
+            );
           if (Date.now() - Date.parse(state.observedAt) > 1000)
             state = await update(options.directory, state, {
               processes: descendants(process.pid),
@@ -1298,11 +1326,17 @@ const driveDurableWorkflow = async (
       state = await captureState(options, state);
       if (stopAfterResult) break;
     }
-    state = await applyQueued(
-      options.directory,
-      state,
-      options.project.validateHumanRequest,
-    );
+    if (await stopRequested(options.directory)) {
+      if (state.lifecycle !== "stopping")
+        state = await update(options.directory, state, {
+          lifecycle: "stopping",
+        });
+    } else
+      state = await applyQueued(
+        options.directory,
+        state,
+        options.project.validateHumanRequest,
+      );
     const waiting = Object.values(state.tasks).some((task) =>
       ["waiting", "rejected", "paused", "ready", "blocked"].includes(
         task.status,

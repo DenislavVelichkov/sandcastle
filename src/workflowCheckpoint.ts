@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
 import {
   chmod,
   lstat,
@@ -30,7 +31,13 @@ interface Manifest {
   readonly version: 1;
   readonly worktrees: Record<
     string,
-    { path: string; branch: string; head: string; files: FileEntry[] }
+    {
+      path: string;
+      gitCommonDir: string;
+      branch: string;
+      head: string;
+      files: FileEntry[];
+    }
   >;
   readonly artifacts: { path: string; sha256: string }[];
 }
@@ -162,6 +169,7 @@ export const captureWorkflowCheckpoint = async (
       const cwd = worktree.worktreePath;
       if (git(cwd, "branch", "--show-current") !== worktree.branch)
         throw new Error(`Checkpoint branch changed for ${taskId}`);
+      const head = git(cwd, "rev-parse", "HEAD");
       const paths = await pathsFor(cwd, ignored[taskId] ?? []);
       const files = await Promise.all(
         paths.map(({ path, tracked }) => entryFor(cwd, path, tracked, blobs)),
@@ -169,12 +177,20 @@ export const captureWorkflowCheckpoint = async (
       const second = await Promise.all(
         paths.map(({ path, tracked }) => entryFor(cwd, path, tracked)),
       );
-      if (JSON.stringify(files) !== JSON.stringify(second))
+      if (
+        JSON.stringify(files) !== JSON.stringify(second) ||
+        JSON.stringify(paths) !==
+          JSON.stringify(await pathsFor(cwd, ignored[taskId] ?? [])) ||
+        head !== git(cwd, "rev-parse", "HEAD")
+      )
         throw new Error(`Checkpoint source changed during capture: ${taskId}`);
       manifest.worktrees[taskId] = {
-        path: cwd,
+        path: realpathSync(cwd),
+        gitCommonDir: realpathSync(
+          resolve(cwd, git(cwd, "rev-parse", "--git-common-dir")),
+        ),
         branch: worktree.branch,
-        head: git(cwd, "rev-parse", "HEAD"),
+        head,
         files,
       };
     }
@@ -253,6 +269,9 @@ export const restoreWorkflowCheckpoint = async (
       throw new Error(`Checkpoint worktree does not match ${taskId}`);
     const cwd = target.worktreePath;
     if (
+      realpathSync(cwd) !== saved.path ||
+      realpathSync(resolve(cwd, git(cwd, "rev-parse", "--git-common-dir"))) !==
+        saved.gitCommonDir ||
       git(cwd, "branch", "--show-current") !== saved.branch ||
       git(cwd, "rev-parse", "HEAD") !== saved.head
     )
@@ -301,11 +320,13 @@ export const restoreWorkflowCheckpoint = async (
         await rm(path, { force: true });
         await symlink(file.target, path);
       } else {
+        await rm(path, { force: true });
         await writeFile(
           path,
           await readFile(
             join(checkpointPath(directory, receipt.id), "blobs", file.sha256),
           ),
+          { flag: "wx" },
         );
         await chmod(path, file.mode);
       }

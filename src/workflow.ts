@@ -127,6 +127,7 @@ export interface WorkflowOptions {
     role: string,
     session: { readonly sessionId?: string; readonly sessionFilePath?: string },
   ) => Promise<void>;
+  readonly onRoleStarted?: (taskId: string, role: string) => Promise<void>;
   readonly onRoleCompleted?: (taskId: string, role: string) => Promise<void>;
   readonly onCleanupFailure?: (taskId: string, error: unknown) => Promise<void>;
   readonly resume?: {
@@ -480,6 +481,7 @@ export const runWorkflow = async (
           throw new Error(
             `Project must supply exactly one prompt or prompt file for ${task.id}/${role}`,
           );
+        await options.onRoleStarted?.(task.id, role);
         const result = await worktree.run({
           agent: assignment.agent,
           sandbox: assignment.sandbox,
@@ -496,6 +498,7 @@ export const runWorkflow = async (
           onCleanupFailure: (error) =>
             options.onCleanupFailure?.(task.id, error) ?? Promise.resolve(),
         });
+        signal?.throwIfAborted();
         if (role === "implementation")
           usedImplementationIterations = Array.isArray(result.iterations)
             ? result.iterations.length
@@ -560,6 +563,7 @@ export const runWorkflow = async (
         };
       }
       const check = await project.check(candidate);
+      signal?.throwIfAborted();
       if (!candidateCurrent(worktree.worktreePath, candidate.head)) {
         completed.push({
           candidate,
@@ -587,6 +591,7 @@ export const runWorkflow = async (
         };
       }
       const acceptance = await project.accept(candidate, check);
+      signal?.throwIfAborted();
       completed.push({
         candidate,
         check,

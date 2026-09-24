@@ -120,6 +120,9 @@ it("stops an active workflow after session capture and restores its exact saved 
   try {
     const execution = runDurableWorkflow(options);
     await running;
+    await expect(recoverDurableWorkflow(options)).rejects.toThrow(
+      "Workflow owner is still running",
+    );
     const receipt = await checkpointStopWorkflow(directory);
     expect((await execution).revision).toBe(receipt.revision);
     expect(receipt.lifecycle).toBe("stopped");
@@ -142,7 +145,10 @@ it("stops an active workflow after session capture and restores its exact saved 
   }
 });
 
-it("withholds the stopped receipt when a required session was not captured", async () => {
+it.each([
+  { name: "session capture fails", cleanupFails: false },
+  { name: "sandbox cleanup fails", cleanupFails: true },
+])("withholds the stopped receipt when $name", async ({ cleanupFails }) => {
   const root = await mkdtemp(join(tmpdir(), "sandcastle-missing-session-"));
   git(root, "init", "-b", "main");
   git(root, "config", "user.name", "Test");
@@ -155,10 +161,12 @@ it("withholds the stopped receipt when a required session was not captured", asy
     branchStrategy: { type: "branch", branch: "unfinished" },
   });
   const directory = join(root, "control");
+  const sessionFile = join(root, "session.jsonl");
   let started!: () => void;
   const running = new Promise<void>((resolve) => {
     started = resolve;
   });
+  let calls = 0;
   const options: DurableWorkflowOptions = {
     directory,
     projectId: "project",
@@ -168,15 +176,43 @@ it("withholds the stopped receipt when a required session was not captured", asy
     worktrees: {
       a: {
         ...worktree,
-        run: async ({ signal }) => {
-          await writeFile(
-            join(worktree.worktreePath, "draft.txt"),
-            "keep me\n",
-          );
+        run: async ({ signal, onSessionCaptured, onCleanupFailure }) => {
+          calls++;
+          if (calls === 1) {
+            await writeFile(
+              join(worktree.worktreePath, "draft.txt"),
+              "keep me\n",
+            );
+            git(worktree.worktreePath, "add", "draft.txt");
+            git(worktree.worktreePath, "commit", "-m", "implementation");
+            await writeFile(sessionFile, '{"session":true}\n');
+            await onSessionCaptured?.({
+              sessionId: "implementation-session",
+              sessionFilePath: sessionFile,
+            });
+            return {
+              iterations: [
+                {
+                  sessionId: "implementation-session",
+                  sessionFilePath: sessionFile,
+                },
+              ],
+              commits: [
+                { sha: git(worktree.worktreePath, "rev-parse", "HEAD") },
+              ],
+            } as never;
+          }
           started();
           await new Promise<void>((resolve) =>
             signal?.addEventListener("abort", () => resolve(), { once: true }),
           );
+          if (cleanupFails) {
+            await onSessionCaptured?.({
+              sessionId: "review-session",
+              sessionFilePath: sessionFile,
+            });
+            await onCleanupFailure?.(new Error("close failed"));
+          }
           throw signal?.reason;
         },
       },
@@ -190,7 +226,7 @@ it("withholds the stopped receipt when a required session was not captured", asy
         state: "ready",
         dependencies: [],
         scope: ["draft.txt"],
-        requiredRoles: [],
+        requiredRoles: ["review"],
         requiredCapabilities: ["recovery"],
       }),
       reserve: async () => ({
@@ -215,6 +251,15 @@ it("withholds the stopped receipt when a required session was not captured", asy
           } as never,
           sandbox: { tag: "bind-mount", create: () => ({}) } as never,
         },
+        review: {
+          agent: {
+            captureSessions: true,
+            sessionStorage: {},
+            buildPrintCommand: () => ({}),
+            parseStreamLine: () => [],
+          } as never,
+          sandbox: { tag: "bind-mount", create: () => ({}) } as never,
+        },
       },
     },
   };
@@ -223,10 +268,11 @@ it("withholds the stopped receipt when a required session was not captured", asy
       (error: unknown) => error,
     );
     await running;
-    await expect(checkpointStopWorkflow(directory)).rejects.toThrow(
-      "Required agent session",
-    );
-    expect(String(await execution)).toContain("Required agent session");
+    const reason = cleanupFails
+      ? "Sandbox cleanup failed"
+      : "Required agent session";
+    await expect(checkpointStopWorkflow(directory)).rejects.toThrow(reason);
+    expect(String(await execution)).toContain(reason);
     expect((await workflowStatus(directory)).lifecycle).toBe(
       "recovery-required",
     );
