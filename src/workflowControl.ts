@@ -187,6 +187,8 @@ const digest = (value: unknown): string =>
 
 const statePath = (directory: string): string => join(directory, "state.json");
 const inboxPath = (directory: string): string => join(directory, "inbox");
+const responseIdentityPath = (directory: string, responseId: string): string =>
+  join(inboxPath(directory), "identities", `${responseId}.json`);
 const lockPath = (directory: string): string =>
   join(directory, "execution.lock");
 const stopPath = (directory: string): string => join(directory, "stop.json");
@@ -256,6 +258,23 @@ const publish = async (
   } finally {
     await rm(temp, { force: true });
   }
+};
+
+const claimResponseIdentity = async (
+  directory: string,
+  response: WorkflowResponse,
+): Promise<string> => {
+  const path = responseIdentityPath(directory, response.responseId);
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  try {
+    await publish(path, response, true);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const prior = JSON.parse(await readFile(path, "utf8")) as WorkflowResponse;
+    if (digest(prior) !== digest(response))
+      throw new Error("Conflicting response identity");
+  }
+  return path;
 };
 
 const ownerStart = (pid: number): string => {
@@ -477,6 +496,8 @@ export const respondWorkflow = async (options: {
     const queued = JSON.parse(await readFile(path, "utf8")) as WorkflowResponse;
     if (digest(queued) !== payloadHash)
       throw new Error("Conflicting response identity");
+    await claimResponseIdentity(directory, response);
+    await syncDirectory(inboxPath(directory));
     return { status: "queued", responseId };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -487,7 +508,9 @@ export const respondWorkflow = async (options: {
   )
     throw new Error("Request is not pending");
   try {
-    await publish(path, response, true);
+    const identity = await claimResponseIdentity(directory, response);
+    await link(identity, path);
+    await syncDirectory(inboxPath(directory));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     let prior: WorkflowResponse;
@@ -505,6 +528,7 @@ export const respondWorkflow = async (options: {
     }
     if (digest(prior) !== payloadHash)
       throw new Error("Conflicting response identity");
+    await syncDirectory(inboxPath(directory));
   }
   return { status: "queued", responseId };
 };
@@ -559,7 +583,9 @@ const applyQueued = async (
       (item) => item.responseId === response.responseId,
     );
     if (prior) {
-      if (prior.payloadHash === digest(response)) await rm(path);
+      if (prior.payloadHash !== digest(response))
+        throw new Error("Conflicting response identity");
+      await rm(path);
       continue;
     }
     const request = state.requests.find(

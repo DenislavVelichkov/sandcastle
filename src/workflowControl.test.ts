@@ -69,7 +69,10 @@ it("queues an authenticated answer under the execution lock and applies it while
         bStarted();
         await bGate;
       }
-      await writeFile(join(real.worktreePath, `${id}.txt`), `${id}\n`);
+      await writeFile(
+        join(real.worktreePath, `${id}.txt`),
+        `${id}-${invocations.length}\n`,
+      );
       git(real.worktreePath, "add", `${id}.txt`);
       git(real.worktreePath, "commit", "-m", id);
       return {
@@ -80,6 +83,7 @@ it("queues an authenticated answer under the execution lock and applies it while
   });
   let released = 0;
   let retained = 0;
+  let waitForB = false;
   const project: WorkflowProject & {
     validateHumanRequest(request: WorkflowRequest): Promise<boolean>;
   } = {
@@ -98,7 +102,7 @@ it("queues an authenticated answer under the execution lock and applies it while
     prompt: () => "fixture prompt",
     check: async () => ({ status: "passed", evidence: [evidence] }),
     accept: async (candidate) =>
-      candidate.task.id === "a"
+      candidate.task.id === "a" || waitForB
         ? {
             status: "waiting",
             evidence: [evidence],
@@ -249,6 +253,54 @@ it("queues an authenticated answer under the execution lock and applies it while
         },
       }),
     ).rejects.toThrow("Conflicting response identity");
+
+    waitForB = true;
+    const secondDirectory = join(root, "second-control");
+    const second = await runDurableWorkflow({
+      ...options,
+      directory: secondDirectory,
+      invocationId: "invocation-2",
+    });
+    const firstRequest = second.requests.find((item) => item.taskId === "a")!;
+    const secondRequest = second.requests.find((item) => item.taskId === "b")!;
+    expect(
+      (
+        await respondWorkflow({
+          directory: secondDirectory,
+          requestId: firstRequest.id,
+          responseId: "shared-id",
+          sourceEvent: {},
+          route,
+        })
+      ).status,
+    ).toBe("queued");
+    await expect(
+      respondWorkflow({
+        directory: secondDirectory,
+        requestId: secondRequest.id,
+        responseId: "shared-id",
+        sourceEvent: {},
+        route,
+      }),
+    ).rejects.toThrow("Conflicting response identity");
+    expect(
+      (
+        await respondWorkflow({
+          directory: secondDirectory,
+          requestId: secondRequest.id,
+          responseId: "second-id",
+          sourceEvent: {},
+          route,
+        })
+      ).status,
+    ).toBe("queued");
+    const processed = await processWorkflowResponses(
+      secondDirectory,
+      project.validateHumanRequest,
+    );
+    expect(processed.responses).toHaveLength(2);
+    expect(processed.tasks.a?.status).toBe("accepted");
+    expect(processed.tasks.b?.status).toBe("accepted");
   } finally {
     finishB();
     await a.close();
