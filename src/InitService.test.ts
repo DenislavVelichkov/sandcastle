@@ -220,7 +220,7 @@ describe("InitService scaffold", () => {
     },
   );
 
-  it("claude-code Dockerfile template does not install pnpm or enable corepack", async () => {
+  it("claude-code Dockerfile enables pnpm before switching to the agent user", async () => {
     const dir = await makeDir();
     await runScaffold(dir);
 
@@ -228,8 +228,10 @@ describe("InitService scaffold", () => {
       join(dir, ".sandcastle", "Dockerfile"),
       "utf-8",
     );
-    expect(dockerfile).not.toContain("corepack");
-    expect(dockerfile).not.toContain("pnpm");
+    expect(dockerfile).toContain("corepack enable pnpm");
+    expect(dockerfile.indexOf("corepack enable pnpm")).toBeLessThan(
+      dockerfile.indexOf("USER ${AGENT_UID}:${AGENT_GID}"),
+    );
   });
 
   it("skeleton prompt contains section headers and hints", async () => {
@@ -361,7 +363,7 @@ describe("InitService scaffold", () => {
     // When scaffolded with default model, simple-loop uses claude-opus-4-8
     // (rewritten from template's claude-sonnet-4-6)
     expect(mainTs).toContain("promptFile");
-    expect(mainTs).toContain("npm install");
+    expect(mainTs).toContain("pnpm install");
     expect(mainTs).toContain("onSandboxReady");
   });
 
@@ -589,7 +591,7 @@ describe("InitService scaffold", () => {
     const next = (
       template: string,
       mainFilename: string,
-      packageManager: PackageManager = "npm",
+      packageManager: PackageManager = "pnpm",
     ) =>
       getNextStepsLines(
         template,
@@ -599,27 +601,27 @@ describe("InitService scaffold", () => {
         packageManager,
       );
 
-    it("blank template returns steps mentioning .env and main filename (not npx sandcastle run)", () => {
+    it("blank template returns steps mentioning .env and main filename (not pnpm exec sandcastle run)", () => {
       const lines = next("blank", "main.mts");
       expect(lines.length).toBeGreaterThanOrEqual(2);
       const joined = lines.join("\n");
       expect(joined).toContain(".env");
       expect(joined).toContain("main.mts");
-      expect(joined).not.toContain("npx sandcastle run");
+      expect(joined).not.toContain("pnpm exec sandcastle run");
     });
 
-    it("non-blank template returns steps mentioning .env, package.json scripts, and npm run sandcastle", () => {
+    it("non-blank template returns steps mentioning .env, package.json scripts, and pnpm run sandcastle", () => {
       const lines = next("simple-loop", "main.mts");
       const joined = lines.join("\n");
       expect(joined).toContain(".env");
       expect(joined).toContain("package.json");
-      expect(joined).toContain("npm run sandcastle");
+      expect(joined).toContain("pnpm run sandcastle");
     });
 
     it("non-blank template includes a note about customizing the install command", () => {
       const lines = next("simple-loop", "main.mts");
       const joined = lines.join("\n");
-      expect(joined).toContain("npm install");
+      expect(joined).toContain("pnpm install");
       expect(joined).toContain("onSandboxReady");
     });
 
@@ -697,17 +699,20 @@ describe("InitService scaffold", () => {
     it("planner template includes a step to install a schema validator", () => {
       const lines = next("parallel-planner", "main.mts");
       const joined = lines.join("\n");
-      expect(joined).toContain("npm install zod");
+      expect(joined).toContain("pnpm add zod");
       expect(joined).toContain("standardschema.dev");
     });
 
     it("parallel-planner-with-review template includes the schema validator step", () => {
       const lines = next("parallel-planner-with-review", "main.mts");
       const joined = lines.join("\n");
-      expect(joined).toContain("npm install zod");
+      expect(joined).toContain("pnpm add zod");
     });
 
     it("planner zod step uses the detected package manager's add command", () => {
+      expect(next("parallel-planner", "main.mts", "npm").join("\n")).toContain(
+        "npm install zod",
+      );
       expect(next("parallel-planner", "main.mts", "pnpm").join("\n")).toContain(
         "pnpm add zod",
       );
@@ -774,7 +779,7 @@ describe("InitService scaffold", () => {
       expect(joined).toContain("SETUP_ISSUE_TRACKER.md");
       expect(joined).toContain(claudeCodeAgent.setupCommand);
       // The template-driven steps must not leak into the custom branch.
-      expect(joined).not.toContain("npm run sandcastle");
+      expect(joined).not.toContain("pnpm run sandcastle");
     });
 
     it("custom issue tracker warns the setup command runs on the host", () => {
@@ -826,6 +831,8 @@ describe("InitService scaffold", () => {
     );
     expect(dockerfile).toContain("FROM node:22-bookworm");
     expect(dockerfile).toContain("@openai/codex");
+    expect(dockerfile).toContain("pnpm add --global @openai/codex");
+    expect(dockerfile).toContain('ENV PATH="/opt/pnpm/bin:/opt/pnpm:$PATH"');
     expect(dockerfile).not.toContain("{{ISSUE_TRACKER_TOOLS}}");
   });
 
@@ -990,7 +997,7 @@ describe("InitService scaffold", () => {
       ).resolves.toBeUndefined();
     });
 
-    it("main.mts uses npm install hook and imports sandcastle", async () => {
+    it("main.mts uses pnpm install hook and imports sandcastle", async () => {
       const dir = await makeDir();
       await runScaffold(dir, { templateName: "parallel-planner" });
 
@@ -998,7 +1005,7 @@ describe("InitService scaffold", () => {
         join(dir, ".sandcastle", "main.mts"),
         "utf-8",
       );
-      expect(mainTs).toContain("npm install");
+      expect(mainTs).toContain("pnpm install");
       expect(mainTs).toContain("sandcastle");
     });
 
@@ -2173,6 +2180,30 @@ describe("InitService scaffold", () => {
   // --- ESM extension detection ---
 
   describe("main file extension detection", () => {
+    it("uses pnpm by default and keeps explicit npm projects working", async () => {
+      const defaultDir = await makeDir();
+      await runScaffold(defaultDir, { templateName: "simple-loop" });
+      const defaultMain = await readFile(
+        join(defaultDir, ".sandcastle", "main.mts"),
+        "utf-8",
+      );
+      expect(defaultMain).toContain('command: "pnpm install"');
+      expect(defaultMain).toContain("pnpm exec tsx");
+
+      const npmDir = await makeDir();
+      await writeFile(
+        join(npmDir, "package.json"),
+        JSON.stringify({ packageManager: "npm@10.9.2" }),
+      );
+      await runScaffold(npmDir, { templateName: "simple-loop" });
+      const npmMain = await readFile(
+        join(npmDir, ".sandcastle", "main.mts"),
+        "utf-8",
+      );
+      expect(npmMain).toContain('command: "npm install"');
+      expect(npmMain).toContain("npx tsx");
+    });
+
     it("scaffolds main.mts when no package.json exists", async () => {
       const dir = await makeDir();
       const result = await runScaffold(dir);

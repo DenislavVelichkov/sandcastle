@@ -31,7 +31,7 @@ Include only the topics you have something useful to say about. Omit the rest --
 You MAY:
 
 - Read any file.
-- Run `npm run typecheck`, focused tests, `git log`, or `git blame` to ground your assessment.
+- Run `pnpm run typecheck`, focused tests, `git log`, or `git blame` to ground your assessment.
 
 You MUST NOT:
 

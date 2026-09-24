@@ -126,6 +126,10 @@ jobs:
           git config user.email "sandcastle-agent[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
 
+      - name: Setup pnpm
+        if: steps.shape.outputs.proceed == 'true' && steps.preflight.outputs.refused != 'true'
+        uses: pnpm/action-setup@v6
+
       - name: Setup Node.js
         if: steps.shape.outputs.proceed == 'true' && steps.preflight.outputs.refused != 'true'
         uses: actions/setup-node@v4
@@ -134,15 +138,15 @@ jobs:
 
       - name: Install dependencies
         if: steps.shape.outputs.proceed == 'true' && steps.preflight.outputs.refused != 'true'
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build
         if: steps.shape.outputs.proceed == 'true' && steps.preflight.outputs.refused != 'true'
-        run: npm run build
+        run: pnpm run build
 
       - name: Install Claude Code
         if: steps.shape.outputs.proceed == 'true' && steps.preflight.outputs.refused != 'true'
-        run: npm install -g @anthropic-ai/claude-code
+        run: pnpm add --global @anthropic-ai/claude-code
 
       - name: Run implementation agent
         if: steps.shape.outputs.proceed == 'true' && steps.preflight.outputs.refused != 'true'
@@ -150,7 +154,7 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           BRANCH: ${{ steps.branch.outputs.name }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: npx tsx .sandcastle/agent-workflows/implement/implement.ts
+        run: pnpm exec tsx .sandcastle/agent-workflows/implement/implement.ts
 
       - name: Push branch
         if: steps.shape.outputs.proceed == 'true' && steps.preflight.outputs.refused != 'true' && success()

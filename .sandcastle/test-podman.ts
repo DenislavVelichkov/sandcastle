@@ -10,7 +10,7 @@ const { commits, branch } = await sandcastle.run({
     sandbox: {
       onSandboxReady: [
         {
-          command: "npm install && npm run build",
+          command: "pnpm install --frozen-lockfile && pnpm run build",
         },
       ],
     },

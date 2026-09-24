@@ -34,13 +34,13 @@ Guarded durable runs can also [check worker model availability, account windows,
 1. Install the package:
 
 ```bash
-npm install --save-dev @ai-hero/sandcastle
+pnpm add --save-dev @ai-hero/sandcastle
 ```
 
-2. Run `npx @ai-hero/sandcastle init`. This scaffolds a `.sandcastle` directory with all the files needed.
+2. Run `pnpm exec sandcastle init`. This scaffolds a `.sandcastle` directory with all the files needed.
 
 ```bash
-npx @ai-hero/sandcastle init
+pnpm exec sandcastle init
 ```
 
 3. Edit `.sandcastle/.env` and fill in your default values for `CLAUDE_CODE_OAUTH_TOKEN` (run `claude setup-token` on your host to get one). To use an Anthropic API key instead, uncomment and fill in `ANTHROPIC_API_KEY`.
@@ -49,10 +49,10 @@ npx @ai-hero/sandcastle init
 cp .sandcastle/.env.example .sandcastle/.env
 ```
 
-4. Run the `.sandcastle/main.ts` (or `main.mts`) file with `npx tsx`
+4. Run the `.sandcastle/main.ts` (or `main.mts`) file with `pnpm exec tsx`
 
 ```bash
-npx tsx .sandcastle/main.ts
+pnpm exec tsx .sandcastle/main.ts
 ```
 
 ```typescript
@@ -200,7 +200,7 @@ const result = await run({
       onSandboxReady: [{ command: "echo setup done" }],
     },
     sandbox: {
-      onSandboxReady: [{ command: "npm install" }],
+      onSandboxReady: [{ command: "pnpm install" }],
     },
   },
 
@@ -296,7 +296,7 @@ import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 await using sandbox = await createSandbox({
   branch: "agent/fix-42",
   sandbox: docker(),
-  hooks: { sandbox: { onSandboxReady: [{ command: "npm install" }] } },
+  hooks: { sandbox: { onSandboxReady: [{ command: "pnpm install" }] } },
 });
 
 // Step 1: implement
@@ -321,7 +321,7 @@ Commits from all `run()` calls accumulate on the same branch. The sandbox contai
 await using sandbox = await createSandbox({
   branch: "agent/fix-42",
   sandbox: docker(),
-  hooks: { sandbox: { onSandboxReady: [{ command: "npm install" }] } },
+  hooks: { sandbox: { onSandboxReady: [{ command: "pnpm install" }] } },
 });
 
 await sandbox.run({
@@ -331,7 +331,7 @@ await sandbox.run({
 });
 
 // Verify before review — non-zero exitCode is returned, not thrown.
-const tests = await sandbox.exec("npm test");
+const tests = await sandbox.exec("pnpm test");
 if (tests.exitCode !== 0) {
   throw new Error(`Tests failed:\n${tests.stdout}\n${tests.stderr}`);
 }
@@ -460,7 +460,7 @@ import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 await using sandbox = await wt.createSandbox({
   sandbox: docker(),
-  hooks: { sandbox: { onSandboxReady: [{ command: "npm install" }] } },
+  hooks: { sandbox: { onSandboxReady: [{ command: "pnpm install" }] } },
 });
 
 // sandbox.close() tears down the container only — the worktree stays
@@ -771,7 +771,7 @@ Select a template during `sandcastle init` when prompted, or re-run init in a fr
 
 Scaffolds the `.sandcastle/` config directory and builds the container image. This is the first command you run in a new repo. You choose a sandbox provider (Docker or Podman) during init — selecting Podman writes a `Containerfile` instead of `Dockerfile` and uses `sandcastle podman build-image` for the build step.
 
-Init detects your host package manager (npm, pnpm, yarn, or bun) from a `packageManager` field or lockfile, defaulting to npm. Templates whose `main` file imports a host dependency — the planner templates import [Zod](https://zod.dev) for their `<plan>` output schema — prompt you to install it with that package manager when it isn't already in your `package.json`, so the first `npx tsx .sandcastle/main.ts` doesn't fail with `ERR_MODULE_NOT_FOUND`.
+Init detects your host package manager (npm, pnpm, yarn, or bun) from a `packageManager` field or lockfile, defaulting to pnpm. Templates whose `main` file imports a host dependency — the planner templates import [Zod](https://zod.dev) for their `<plan>` output schema — prompt you to install it with that package manager when it isn't already in your `package.json`, so the first `pnpm exec tsx .sandcastle/main.ts` doesn't fail with `ERR_MODULE_NOT_FOUND`.
 
 Every interactive prompt has a paired `--flag` so the entire init can run non-interactively (e.g. in CI or a scripted setup). When stdin is not a TTY and a required flag is missing, init fails fast with a clear error rather than wedging on a prompt.
 
@@ -1368,7 +1368,7 @@ hooks: {
   },
   sandbox: {
     onSandboxReady: [
-      { command: "npm install", timeoutMs: 300_000 },
+      { command: "pnpm install", timeoutMs: 300_000 },
       { command: "apt-get install -y ffmpeg", sudo: true },
     ],
   },
@@ -1393,10 +1393,10 @@ hooks: {
 ## Development
 
 ```bash
-npm install
-npm run build    # Bundle with tsup
-npm test         # Run tests with vitest
-npm run typecheck # Type-check
+pnpm install
+pnpm run build    # Bundle with tsup
+pnpm test         # Run tests with vitest
+pnpm run typecheck # Type-check
 ```
 
 ## License

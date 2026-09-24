@@ -34,25 +34,28 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
       - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
+        run: pnpm add --global @anthropic-ai/claude-code
 
       - name: Run explore agent
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: npx tsx .sandcastle/agent-workflows/explore/explore.ts
+        run: pnpm exec tsx .sandcastle/agent-workflows/explore/explore.ts
 
       - name: Post exploration comment
         if: success()

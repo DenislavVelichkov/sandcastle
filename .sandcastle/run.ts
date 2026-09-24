@@ -64,7 +64,9 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
           copyToWorktree: ["node_modules"],
           hooks: {
             sandbox: {
-              onSandboxReady: [{ command: "npm install && npm run build" }],
+              onSandboxReady: [
+                { command: "pnpm install --frozen-lockfile && pnpm run build" },
+              ],
             },
           },
         });

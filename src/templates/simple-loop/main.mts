@@ -2,8 +2,8 @@ import { run, claudeCode } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 // Simple loop: an agent that picks open issues one by one and closes them.
-// Run this with: npx tsx .sandcastle/main.mts
-// Or add to package.json scripts: "sandcastle": "npx tsx .sandcastle/main.mts"
+// Run this with: pnpm exec tsx .sandcastle/main.mts
+// Or add to package.json scripts: "sandcastle": "pnpm exec tsx .sandcastle/main.mts"
 
 await run({
   // A name for this run, shown as a prefix in log output.
@@ -33,8 +33,8 @@ await run({
   branchStrategy: { type: "merge-to-head" },
 
   // Copy node_modules from the host into the worktree before the sandbox
-  // starts. This avoids a full npm install from scratch on every iteration.
-  // The onSandboxReady hook still runs npm install as a safety net to handle
+  // starts. This avoids a full pnpm install from scratch on every iteration.
+  // The onSandboxReady hook still runs pnpm install as a safety net to handle
   // platform-specific binaries and any packages added since the last copy.
   copyToWorktree: ["node_modules"],
 
@@ -44,7 +44,7 @@ await run({
       // onSandboxReady runs once after the sandbox is initialised and the repo is
       // synced in, before the agent starts. Use it to install dependencies or run
       // any other setup steps your project needs.
-      onSandboxReady: [{ command: "npm install" }],
+      onSandboxReady: [{ command: "pnpm install" }],
     },
   },
 });

@@ -3,6 +3,7 @@ The role of this file is to describe common mistakes, critical rules (marked as 
 ---
 
 Use `pnpm run typecheck` for type checking.
+Use `pnpm` for installs, scripts, and package executables in this repository; keep its pnpm lockfiles and generated worker commands aligned.
 
 Check [./CONTEXT.md](./CONTEXT.md) for terminology questions.
 

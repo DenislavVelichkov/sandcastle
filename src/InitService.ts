@@ -21,10 +21,10 @@ export interface TemplateMetadata {
   name: string;
   description: string;
   /**
-   * Host-side npm packages the template's `main` file imports directly (e.g.
+   * Host-side packages the template's `main` file imports directly (e.g.
    * the planner templates import `zod` for their `<plan>` output schema). Init
    * offers to install these with the detected package manager so that
-   * `npx tsx .sandcastle/main.ts` doesn't crash with ERR_MODULE_NOT_FOUND.
+   * `pnpm exec tsx .sandcastle/main.ts` doesn't crash with ERR_MODULE_NOT_FOUND.
    */
   dependencies?: readonly string[];
 }
@@ -60,7 +60,7 @@ const TEMPLATES: TemplateMetadata[] = [
 export const listTemplates = (): TemplateMetadata[] => TEMPLATES;
 
 /**
- * Host-side npm packages the given template imports directly. Empty when the
+ * Host-side packages the given template imports directly. Empty when the
  * template name is unknown or the template declares no extra dependencies.
  */
 export const getTemplateDependencies = (
@@ -90,7 +90,7 @@ const LOCKFILES: ReadonlyArray<readonly [string, PackageManager]> = [
 /**
  * Detect the host project's package manager. An explicit corepack-style
  * `packageManager` field in package.json wins; otherwise the first matching
- * lockfile decides. Defaults to npm when nothing matches.
+ * lockfile decides. Defaults to pnpm when nothing matches.
  */
 export const detectPackageManager = (
   repoDir: string,
@@ -126,7 +126,7 @@ export const detectPackageManager = (
       if (exists) return pm;
     }
 
-    return "npm";
+    return "pnpm";
   });
 
 /** Build the command that adds a runtime dependency for the given package manager. */
@@ -145,6 +145,19 @@ export const addDependencyCommand = (
       return `npm install ${pkg}`;
   }
 };
+
+const packageCommands = (pm: PackageManager) => ({
+  exec: { npm: "npx", pnpm: "pnpm exec", yarn: "yarn", bun: "bunx" }[pm],
+  install: {
+    npm: "npm install",
+    pnpm: "pnpm install",
+    yarn: "yarn install",
+    bun: "bun install",
+  }[pm],
+  run: { npm: "npm run", pnpm: "pnpm run", yarn: "yarn run", bun: "bun run" }[
+    pm
+  ],
+});
 
 /**
  * Whether the host package.json already declares `pkg` in any of its dependency
@@ -223,6 +236,7 @@ ARG AGENT_GID=1000
 
 # Rename the base image's "node" user to "agent" and align UID/GID.
 RUN groupmod -o -g $AGENT_GID node && usermod -o -u $AGENT_UID -g $AGENT_GID -d /home/agent -m -l agent node
+RUN corepack enable pnpm && corepack prepare pnpm@11.19.0 --activate
 USER \${AGENT_UID}:\${AGENT_GID}
 
 # Install Claude Code CLI
@@ -260,7 +274,9 @@ ARG AGENT_GID=1000
 RUN groupmod -o -g $AGENT_GID node && usermod -o -u $AGENT_UID -g $AGENT_GID -d /home/agent -m -l agent node
 
 # Install pi coding agent (run as root before USER agent)
-RUN npm install -g @mariozechner/pi-coding-agent
+ENV PNPM_HOME=/opt/pnpm
+ENV PATH="/opt/pnpm/bin:/opt/pnpm:$PATH"
+RUN mkdir -p /opt/pnpm && corepack enable pnpm && corepack prepare pnpm@11.19.0 --activate && pnpm add --global @mariozechner/pi-coding-agent
 
 USER \${AGENT_UID}:\${AGENT_GID}
 
@@ -293,7 +309,9 @@ ARG AGENT_GID=1000
 RUN groupmod -o -g $AGENT_GID node && usermod -o -u $AGENT_UID -g $AGENT_GID -d /home/agent -m -l agent node
 
 # Install Codex CLI (run as root before USER agent)
-RUN npm install -g @openai/codex
+ENV PNPM_HOME=/opt/pnpm
+ENV PATH="/opt/pnpm/bin:/opt/pnpm:$PATH"
+RUN mkdir -p /opt/pnpm && corepack enable pnpm && corepack prepare pnpm@11.19.0 --activate && pnpm add --global @openai/codex
 
 USER \${AGENT_UID}:\${AGENT_GID}
 
@@ -324,6 +342,7 @@ ARG AGENT_GID=1000
 
 # Rename the base image's "node" user to "agent" and align UID/GID.
 RUN groupmod -o -g $AGENT_GID node && usermod -o -u $AGENT_UID -g $AGENT_GID -d /home/agent -m -l agent node
+RUN corepack enable pnpm && corepack prepare pnpm@11.19.0 --activate
 USER \${AGENT_UID}:\${AGENT_GID}
 
 # Install Cursor Agent CLI
@@ -361,7 +380,9 @@ ARG AGENT_GID=1000
 RUN groupmod -o -g $AGENT_GID node && usermod -o -u $AGENT_UID -g $AGENT_GID -d /home/agent -m -l agent node
 
 # Install OpenCode CLI (run as root before USER agent)
-RUN npm install -g opencode-ai@latest
+ENV PNPM_HOME=/opt/pnpm
+ENV PATH="/opt/pnpm/bin:/opt/pnpm:$PATH"
+RUN mkdir -p /opt/pnpm && corepack enable pnpm && corepack prepare pnpm@11.19.0 --activate && pnpm add --global opencode-ai@latest
 
 USER \${AGENT_UID}:\${AGENT_GID}
 
@@ -394,7 +415,9 @@ ARG AGENT_GID=1000
 RUN groupmod -o -g $AGENT_GID node && usermod -o -u $AGENT_UID -g $AGENT_GID -d /home/agent -m -l agent node
 
 # Install GitHub Copilot CLI (run as root before USER agent)
-RUN npm install -g @github/copilot
+ENV PNPM_HOME=/opt/pnpm
+ENV PATH="/opt/pnpm/bin:/opt/pnpm:$PATH"
+RUN mkdir -p /opt/pnpm && corepack enable pnpm && corepack prepare pnpm@11.19.0 --activate && pnpm add --global @github/copilot
 
 USER \${AGENT_UID}:\${AGENT_GID}
 
@@ -626,6 +649,7 @@ export function getNextStepsLines(
   agent: AgentEntry,
   packageManager: PackageManager,
 ): string[] {
+  const commands = packageCommands(packageManager);
   // The custom issue tracker scaffolds a broken-until-configured project, so
   // its next steps are about running the setup prompt — not the template's
   // normal "set env vars and go" flow. This branch wins over template-specific
@@ -653,8 +677,8 @@ export function getNextStepsLines(
     lines.push(
       "2. Read and customize .sandcastle/prompt.md to describe what you want the agent to do",
       `3. Customize .sandcastle/${mainFilename} — it uses the JS API (\`run()\`) to control how the agent runs`,
-      `4. Add "sandcastle": "npx tsx .sandcastle/${mainFilename}" to your package.json scripts`,
-      "5. Run `npm run sandcastle` to start the agent",
+      `4. Add "sandcastle": "${commands.exec} tsx .sandcastle/${mainFilename}" to your package.json scripts`,
+      `5. Run \`${commands.run} sandcastle\` to start the agent`,
     );
     return lines;
   } else {
@@ -671,8 +695,8 @@ export function getNextStepsLines(
       );
     }
     lines.push(
-      `${step++}. Add "sandcastle": "npx tsx .sandcastle/${mainFilename}" to your package.json scripts`,
-      `${step++}. Templates use \`copyToWorktree: ["node_modules"]\` to copy your host node_modules into the sandbox for fast startup — the \`npm install\` in the onSandboxReady hook is a safety net for platform-specific binaries. Adjust both if you use a different package manager`,
+      `${step++}. Add "sandcastle": "${commands.exec} tsx .sandcastle/${mainFilename}" to your package.json scripts`,
+      `${step++}. Templates use \`copyToWorktree: ["node_modules"]\` to copy your host node_modules into the sandbox for fast startup — the \`${commands.install}\` in the onSandboxReady hook is a safety net for platform-specific binaries`,
     );
     if (usesPlanSchema) {
       lines.push(
@@ -687,7 +711,9 @@ export function getNextStepsLines(
         `${step++}. Customize .sandcastle/CODING_STANDARDS.md with your project's standards — the reviewer agent loads it during review`,
       );
     }
-    lines.push(`${step++}. Run \`npm run sandcastle\` to start the agent`);
+    lines.push(
+      `${step++}. Run \`${commands.run} sandcastle\` to start the agent`,
+    );
     return lines;
   }
 }
@@ -750,6 +776,41 @@ const copyTemplateFiles = (
             .copyFile(join(templateDir, f), join(destDir, destName))
             .pipe(Effect.mapError((e) => new Error(e.message)));
         }),
+      { concurrency: "unbounded" },
+    );
+  });
+
+const rewriteTemplatePackageCommands = (
+  configDir: string,
+  packageManager: PackageManager,
+): Effect.Effect<void, Error, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    if (packageManager === "pnpm") return;
+    const fs = yield* FileSystem.FileSystem;
+    const commands = packageCommands(packageManager);
+    const files = yield* fs
+      .readDirectory(configDir)
+      .pipe(Effect.mapError((e) => new Error(e.message)));
+    yield* Effect.all(
+      files
+        .filter((file) => /\.(md|mts|ts)$/.test(file))
+        .map((file) =>
+          Effect.gen(function* () {
+            const path = join(configDir, file);
+            const content = yield* fs
+              .readFileString(path)
+              .pipe(Effect.mapError((e) => new Error(e.message)));
+            const updated = content
+              .replaceAll("pnpm exec", commands.exec)
+              .replaceAll("pnpm install", commands.install)
+              .replaceAll("pnpm run", commands.run);
+            if (updated !== content) {
+              yield* fs
+                .writeFileString(path, updated)
+                .pipe(Effect.mapError((e) => new Error(e.message)));
+            }
+          }),
+        ),
       { concurrency: "unbounded" },
     );
   });
@@ -1042,6 +1103,7 @@ export const scaffold = (
     }
 
     const mainFilename = yield* detectMainFilename(repoDir);
+    const packageManager = yield* detectPackageManager(repoDir);
 
     yield* fs
       .makeDirectory(configDir, { recursive: false })
@@ -1074,6 +1136,8 @@ export const scaffold = (
       ],
       { concurrency: "unbounded" },
     );
+
+    yield* rewriteTemplatePackageCommands(configDir, packageManager);
 
     // Rewrite main file with the selected agent factory, model, and sandbox provider
     yield* rewriteMainTs(

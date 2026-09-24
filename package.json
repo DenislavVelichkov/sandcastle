@@ -44,10 +44,10 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "release": "changeset publish",
-    "sandcastle": "npm run build && tsx .sandcastle/run.ts",
-    "test-podman": "npm run build && tsx --env-file=.sandcastle/.env .sandcastle/test-podman.ts",
-    "test-vercel": "npm run build && tsx --env-file=.sandcastle/.env .sandcastle/test-vercel.ts",
-    "test-interactive": "npm run build && tsx --env-file=.sandcastle/.env .sandcastle/test-interactive.ts"
+    "sandcastle": "pnpm run build && tsx .sandcastle/run.ts",
+    "test-podman": "pnpm run build && tsx --env-file=.sandcastle/.env .sandcastle/test-podman.ts",
+    "test-vercel": "pnpm run build && tsx --env-file=.sandcastle/.env .sandcastle/test-vercel.ts",
+    "test-interactive": "pnpm run build && tsx --env-file=.sandcastle/.env .sandcastle/test-interactive.ts"
   },
   "keywords": [
     "cli",
@@ -56,7 +56,7 @@
     "ai",
     "agent"
   ],
-  "packageManager": "npm@10.9.2",
+  "packageManager": "pnpm@11.19.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/mattpocock/sandcastle"

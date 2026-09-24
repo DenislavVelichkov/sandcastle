@@ -27,7 +27,7 @@ const { commits, branch } = await sandcastle.run({
         claudeInstallHook,
         ghCliInstallHook,
         {
-          command: "npm install && npm run build",
+          command: "pnpm install --frozen-lockfile && pnpm run build",
         },
       ],
     },

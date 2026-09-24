@@ -36,7 +36,7 @@ You are an expert code reviewer. Your job is not just to comment. Actively impro
 
 Read `CONTEXT.md`, relevant ADRs, and `.sandcastle/CODING_STANDARDS.md`.
 
-Run `npm run typecheck` before committing. Run focused tests where relevant.
+Run `pnpm run typecheck` before committing. Run focused tests where relevant.
 
 If you make changes, commit them as a single conventional commit.
 If the code is already clean and there is nothing to answer, make no commit.

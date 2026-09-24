@@ -52,6 +52,10 @@ jobs:
           git config user.name "sandcastle-agent[bot]"
           git config user.email "sandcastle-agent[bot]@users.noreply.github.com"
 
+      - name: Setup pnpm
+        if: github.event.pull_request.state == 'open'
+        uses: pnpm/action-setup@v6
+
       - name: Setup Node.js
         if: github.event.pull_request.state == 'open'
         uses: actions/setup-node@v4
@@ -60,22 +64,22 @@ jobs:
 
       - name: Install dependencies
         if: github.event.pull_request.state == 'open'
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build
         if: github.event.pull_request.state == 'open'
-        run: npm run build
+        run: pnpm run build
 
       - name: Install Claude Code
         if: github.event.pull_request.state == 'open'
-        run: npm install -g @anthropic-ai/claude-code
+        run: pnpm add --global @anthropic-ai/claude-code
 
       - name: Run implement-PR agent
         if: github.event.pull_request.state == 'open'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           OUTPUT_DIR: ${{ runner.temp }}
-        run: npx tsx .sandcastle/agent-workflows/implement-pr/implement-pr.ts
+        run: pnpm exec tsx .sandcastle/agent-workflows/implement-pr/implement-pr.ts
 
       - name: Push branch
         if: github.event.pull_request.state == 'open' && success()

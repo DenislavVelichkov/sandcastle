@@ -32,7 +32,7 @@ For each actionable comment or unresolved thread:
 - Decline clearly when the requested change is wrong or out of scope.
 - Ignore stale/context-only comments.
 
-Run `npm run typecheck` before committing. Run focused tests where relevant.
+Run `pnpm run typecheck` before committing. Run focused tests where relevant.
 
 If you change code, commit with a conventional commit message.
 

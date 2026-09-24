@@ -19,9 +19,9 @@ describe("detectPackageManager", () => {
       detectPackageManager(dir).pipe(Effect.provide(NodeFileSystem.layer)),
     );
 
-  it("defaults to npm when no lockfile or packageManager field is present", async () => {
+  it("defaults to pnpm when no lockfile or packageManager field is present", async () => {
     const dir = await makeDir();
-    expect(await detect(dir)).toBe("npm");
+    expect(await detect(dir)).toBe("pnpm");
   });
 
   it.each([
