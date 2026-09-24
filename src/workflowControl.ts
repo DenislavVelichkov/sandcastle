@@ -2415,6 +2415,7 @@ const driveWithPilotBudget = async (
   }
 };
 
+/** Start selected tasks with a retained reservation and optional guarded usage. */
 export const runDurableWorkflow = (
   options: DurableWorkflowOptions,
 ): Promise<WorkflowSnapshot> => driveWithPilotBudget(options);
