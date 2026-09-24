@@ -115,7 +115,7 @@ describe("public workflow", () => {
       },
     };
     const policy = {
-      iterations: 1,
+      iterations: 2,
       roles: {
         implementation: { agent: claudeCode("test"), sandbox },
         review: { agent: claudeCode("test"), sandbox },

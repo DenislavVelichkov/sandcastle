@@ -46,7 +46,6 @@ export interface WorkflowProject {
   prompt(
     task: WorkflowTask,
     role: string,
-    iteration: number,
   ):
     | string
     | Pick<
@@ -355,30 +354,27 @@ export const runWorkflow = async (
       const completedRoles: string[] = [];
       const roles = ["implementation", ...task.requiredRoles];
       for (const role of roles) {
-        const count = role === "implementation" ? policy.iterations : 1;
         const assignment = policy.roles[role];
         if (!assignment) throw new Error(`Required role disappeared: ${role}`);
-        for (let iteration = 1; iteration <= count; iteration++) {
-          signal?.throwIfAborted();
-          const provided = project.prompt(task, role, iteration);
-          const invocation =
-            typeof provided === "string" ? { prompt: provided } : provided;
-          if (
-            !invocation ||
-            Boolean(invocation.prompt) === Boolean(invocation.promptFile)
-          )
-            throw new Error(
-              `Project must supply exactly one prompt or prompt file for ${task.id}/${role}`,
-            );
-          const result = await worktree.run({
-            agent: assignment.agent,
-            sandbox: assignment.sandbox,
-            ...invocation,
-            maxIterations: 1,
-            signal,
-          });
-          commits.push(...result.commits);
-        }
+        signal?.throwIfAborted();
+        const provided = project.prompt(task, role);
+        const invocation =
+          typeof provided === "string" ? { prompt: provided } : provided;
+        if (
+          !invocation ||
+          Boolean(invocation.prompt) === Boolean(invocation.promptFile)
+        )
+          throw new Error(
+            `Project must supply exactly one prompt or prompt file for ${task.id}/${role}`,
+          );
+        const result = await worktree.run({
+          agent: assignment.agent,
+          sandbox: assignment.sandbox,
+          ...invocation,
+          maxIterations: role === "implementation" ? policy.iterations : 1,
+          signal,
+        });
+        commits.push(...result.commits);
         completedRoles.push(role);
       }
       const candidate: WorkflowCandidate = {
