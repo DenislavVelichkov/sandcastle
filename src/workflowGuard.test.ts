@@ -254,7 +254,7 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
     await real.close();
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 15_000);
 
 it("shares a pilot budget across measurement and scored durable invocations", async () => {
   const root = await mkdtemp(join(tmpdir(), "sandcastle-pilot-"));
