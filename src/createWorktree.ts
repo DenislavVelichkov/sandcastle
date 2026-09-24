@@ -155,8 +155,9 @@ export interface WorktreeRunOptions {
   readonly signal?: AbortSignal;
   /** Host session capture receipt, including an interrupted iteration. */
   readonly onSessionCaptured?: (session: IterationResult) => Promise<void>;
-  /** Guarded workflows use these hooks at the actual provider boundary. */
+  /** Called before each provider invocation, after sandbox preparation. */
   readonly onIterationStart?: (iteration: number) => Promise<void>;
+  /** Called with settled usage after a completed provider iteration. */
   readonly onIterationComplete?: (
     iteration: number,
     result: IterationResult,

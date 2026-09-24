@@ -291,7 +291,9 @@ export interface OrchestrateOptions {
   readonly keepSourceBranch?: boolean;
   /** Called after a session reaches the host, including interrupted runs. */
   readonly onSessionCaptured?: (session: IterationResult) => Promise<void>;
+  /** Called before each provider invocation, after sandbox preparation. */
   readonly onIterationStart?: (iteration: number) => Promise<void>;
+  /** Called with settled usage after a completed provider iteration. */
   readonly onIterationComplete?: (
     iteration: number,
     result: IterationResult,

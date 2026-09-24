@@ -122,15 +122,21 @@ export interface WorkflowOptions {
   }[];
   readonly policy: WorkflowPolicy;
   readonly signal?: AbortSignal;
+  /** Report a captured provider session, including interrupted work. */
   readonly onSessionCaptured?: (
     taskId: string,
     role: string,
     session: { readonly sessionId?: string; readonly sessionFilePath?: string },
   ) => Promise<void>;
+  /** Record that a required role reached its first provider invocation. */
   readonly onRoleStarted?: (taskId: string, role: string) => Promise<void>;
+  /** Record that a required role completed. */
   readonly onRoleCompleted?: (taskId: string, role: string) => Promise<void>;
+  /** Report cleanup failure so a durable owner can retain recovery state. */
   readonly onCleanupFailure?: (taskId: string, error: unknown) => Promise<void>;
+  /** Reserve an invocation and guard account usage before provider dispatch. */
   readonly onInvocationStart?: (taskId: string, role: string) => Promise<void>;
+  /** Settle a completed invocation's usage before another can start. */
   readonly onInvocationComplete?: (
     taskId: string,
     role: string,
