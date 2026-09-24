@@ -53,6 +53,10 @@ export interface WorkflowResponseReceipt {
   readonly decision: Decision;
   readonly payloadHash: string;
   readonly observedAt: string;
+  readonly owner: string;
+  readonly sourceRef: string;
+  readonly eventId: string;
+  readonly originalText: string;
   readonly reason?: string;
 }
 
@@ -83,7 +87,8 @@ export interface WorkflowSnapshot {
   readonly invocationId: string;
   readonly projectRoot: string;
   readonly observedAt: string;
-  readonly lifecycle: "running" | "stopped";
+  readonly lifecycle: "running" | "stopped" | "recovery-required";
+  readonly failure?: string;
   readonly owner: { readonly pid: number; readonly start: string };
   readonly tasks: Record<
     string,
@@ -420,6 +425,10 @@ const applyQueued = async (
       decision: response.decision,
       payloadHash: digest(response),
       observedAt: new Date().toISOString(),
+      owner: response.owner,
+      sourceRef: response.sourceRef,
+      eventId: response.eventId,
+      originalText: response.originalText,
       ...(!current
         ? { reason: "Request binding, candidate, evidence or contract changed" }
         : {}),
@@ -466,7 +475,12 @@ export const processWorkflowResponses = async (
 ): Promise<WorkflowSnapshot> => {
   await mkdir(lockPath(directory));
   try {
-    return await applyQueued(directory, await readState(directory), validate);
+    const state = await readState(directory);
+    if (state.lifecycle === "recovery-required")
+      throw new Error(
+        "Workflow requires recovery before answers can be applied",
+      );
+    return await applyQueued(directory, state, validate);
   } finally {
     await rm(lockPath(directory), { recursive: true, force: true });
   }
@@ -588,12 +602,19 @@ export const runDurableWorkflow = async (
       ...options,
       worktree,
       selected: [{ id: task.id, reference: task.reference }],
+      project: {
+        ...options.project,
+        getTask: async (id) => {
+          const found = await options.project.getTask(id);
+          return found &&
+            id !== task.id &&
+            admission.tasks.some((item) => item.id === id)
+            ? { ...found, state: "complete" }
+            : found;
+        },
+      },
     });
-    if (
-      check.worktreeState?.clean !== true ||
-      check.worktreeState.branch !== worktree.branch ||
-      check.reasons.some((reason) => !reason.includes("unfinished dependency"))
-    )
+    if (check.status !== "ready")
       throw new Error(
         check.reasons.join("; ") || `Invalid worktree for ${task.id}`,
       );
@@ -613,6 +634,12 @@ export const runDurableWorkflow = async (
     reservation = await options.project.reserve({
       tasks: admission.tasks,
       branch: first.branch,
+      branches: Object.fromEntries(
+        admission.tasks.map((task) => [
+          task.id,
+          options.worktrees[task.id]!.branch,
+        ]),
+      ),
       implementationIterations: options.policy.iterations,
       roles: Object.fromEntries(
         admission.tasks.map((task) => [
@@ -685,6 +712,7 @@ export const runDurableWorkflow = async (
         continue;
       }
       const worktree = options.worktrees[task.id]!;
+      const activeAbort = new AbortController();
       state = await update(options.directory, state, {
         active: [task.id],
         tasks: {
@@ -698,6 +726,9 @@ export const runDurableWorkflow = async (
       });
       const resultPromise = runWorkflow({
         ...options,
+        signal: options.signal
+          ? AbortSignal.any([options.signal, activeAbort.signal])
+          : activeAbort.signal,
         worktree,
         selected: [{ id: task.id, reference: task.reference }],
         project: {
@@ -724,15 +755,21 @@ export const runDurableWorkflow = async (
           finished = true;
         },
       );
-      while (!finished) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        state = await applyQueued(
-          options.directory,
-          state,
-          options.project.validateHumanRequest,
-        );
-        if (Date.now() - Date.parse(state.observedAt) > 1000)
-          state = await update(options.directory, state, {});
+      try {
+        while (!finished) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          state = await applyQueued(
+            options.directory,
+            state,
+            options.project.validateHumanRequest,
+          );
+          if (Date.now() - Date.parse(state.observedAt) > 1000)
+            state = await update(options.directory, state, {});
+        }
+      } catch (error) {
+        activeAbort.abort(error);
+        await resultPromise.catch(() => {});
+        throw error;
       }
       if (failure) {
         state = await update(options.directory, state, {
@@ -809,6 +846,22 @@ export const runDurableWorkflow = async (
       resources: { ...state.resources, retained: waiting },
     });
     return state;
+  } catch (error) {
+    if (state) {
+      try {
+        if (reservation && typeof reservation !== "function")
+          await reservation.retain();
+        state = await update(options.directory, state, {
+          lifecycle: "recovery-required",
+          active: [],
+          failure: String(error),
+          resources: { ...state.resources, retained: true },
+        });
+      } catch {
+        // Keep the last complete snapshot and retained work for owner recovery.
+      }
+    }
+    throw error;
   } finally {
     await rm(lockPath(options.directory), { recursive: true, force: true });
     if (!state && reservation && typeof reservation !== "function")

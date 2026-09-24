@@ -172,13 +172,19 @@ it("queues an authenticated answer under the execution lock and applies it while
         originalText: "Approve",
       }),
     };
-    const delivered = await respondWorkflow({
-      directory,
-      requestId,
-      responseId: "response-1",
-      sourceEvent: {},
-      route,
-    });
+    const delivered = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "--input-type=module",
+          "-e",
+          `import { respondWorkflow } from './src/workflowControl.ts'; console.log(JSON.stringify(await respondWorkflow({ directory: ${JSON.stringify(directory)}, requestId: ${JSON.stringify(requestId)}, responseId: 'response-1', sourceEvent: {}, route: { authenticate: async () => ({ owner: 'owner-1', questionId: 'question-1', sourceRef: 'host-question-1', eventId: 'human-event-1', originalText: 'Approve' }) } })))`,
+        ],
+        { cwd: process.cwd(), encoding: "utf8" },
+      ),
+    ) as { status: string; responseId: string };
     expect(delivered.status).toBe("queued");
     expect(
       await respondWorkflow({
@@ -202,6 +208,12 @@ it("queues an authenticated answer under the execution lock and applies it while
     const final = await running;
     expect(final.tasks.b?.status).toBe("accepted");
     expect(final.responses[0]?.status).toBe("applied");
+    expect(final.responses[0]).toMatchObject({
+      owner: "owner-1",
+      sourceRef: "host-question-1",
+      eventId: "human-event-1",
+      originalText: "Approve",
+    });
     expect(invocations).toEqual(["a", "b"]);
     expect(released).toBe(1);
     expect(retained).toBe(0);

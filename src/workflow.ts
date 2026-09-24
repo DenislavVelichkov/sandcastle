@@ -93,6 +93,8 @@ export interface WorkflowProject {
 export interface WorkflowReservation {
   readonly tasks: readonly WorkflowTask[];
   readonly branch: string;
+  /** Per-task branch identities when selected tasks use separate worktrees. */
+  readonly branches?: Readonly<Record<string, string>>;
   readonly implementationIterations: number;
   readonly roles: Readonly<Record<string, readonly string[]>>;
 }
