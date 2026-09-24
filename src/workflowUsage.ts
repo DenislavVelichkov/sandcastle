@@ -1,14 +1,20 @@
 import type { IterationUsage } from "./AgentProvider.js";
 
 export interface AccountObservation {
+  /** Stable identity of the account that owns both usage windows. */
   readonly accountId: string;
+  /** Time of the authoritative reading, in Unix milliseconds. */
   readonly observedAt: number;
+  /** Whether ordinary subscription usage was denied. */
   readonly denied: boolean;
+  /** Applicable account windows, keyed by stable window name. */
   readonly windows: Readonly<
     Record<
       string,
       {
+        /** Percent of the window already used. */
         readonly usedPercent: number;
+        /** Unix milliseconds when this window resets. */
         readonly resetsAt: number;
       }
     >
@@ -16,12 +22,17 @@ export interface AccountObservation {
 }
 
 export interface ModelCatalogPage {
+  /** Model entries returned by one worker model/list page. */
   readonly data: readonly {
+    /** Exact model identifier accepted by Codex. */
     readonly model: string;
+    /** Reasoning choices the worker offers for this model. */
     readonly supportedReasoningEfforts: readonly {
+      /** Exact effort value accepted by Codex. */
       readonly reasoningEffort: string;
     }[];
   }[];
+  /** Cursor for the next page, absent after the final page. */
   readonly nextCursor?: string | null;
 }
 
@@ -103,22 +114,31 @@ export const accountGuardReason = (
 };
 
 export interface TokenCounter {
+  /** Stable identifier for one cumulative counter. */
   readonly counterId: string;
+  /** Scope used to detect overlapping counters. */
   readonly coverageId: string;
+  /** Cumulative token values for this counter. */
   readonly usage: IterationUsage;
 }
 
 export interface TokenLedger {
+  /** Latest verified value for each cumulative counter. */
   readonly counters: Readonly<Record<string, TokenCounter>>;
+  /** Verified increments, deduplicated across resumed observations. */
   readonly deltas: Readonly<Record<string, IterationUsage>>;
+  /** Nullable last-message snapshots, separate from verified totals. */
   readonly estimates: Readonly<Record<string, IterationUsage | null>>;
+  /** Invocation or coverage identities whose attributable cost is incomplete. */
   readonly unknown: readonly string[];
 }
 
 export interface WorkflowUsageOptions {
   /** Stable policy identity; changing it requires a new invocation. */
   readonly policyId: string;
+  /** Bound activity whose ceilings apply to this invocation. */
   readonly activity: "library-proof" | "pilot" | "measurement";
+  /** Read both applicable windows from the worker's ordinary account. */
   readonly readAccount: () => Promise<AccountObservation>;
   /** Run model/list in the same isolated Codex Home, CLI, image and account as the worker. */
   readonly listModels: (cursor?: string) => Promise<ModelCatalogPage>;
@@ -165,9 +185,13 @@ export const validateActivityConfiguration = (
 };
 
 export interface WorkflowUsageState {
+  /** Frozen policy identity. */
   readonly policyId: string;
+  /** Activity whose ceilings govern this run. */
   readonly activity: WorkflowUsageOptions["activity"];
+  /** Frozen worker CLI, image, home and account configuration identity. */
   readonly runtimeIdentity: string;
+  /** Explicit settings requested for each role. */
   readonly requested: Readonly<
     Record<
       string,
@@ -178,29 +202,44 @@ export interface WorkflowUsageState {
       }
     >
   >;
+  /** Effective worker settings, unavailable without separate runtime proof. */
   readonly effective: null;
+  /** Per-response settings, unavailable from catalog discovery alone. */
   readonly observed: null;
+  /** Original account reading retained across resumes. */
   readonly baseline: AccountObservation;
+  /** Most recent account reading. */
   readonly latest: AccountObservation;
+  /** Account readings retained for delayed usage and comparison audit. */
   readonly accountHistory: readonly {
     readonly taskId?: string;
     readonly reading: AccountObservation;
   }[];
+  /** Unused provider calls by task and role. */
   readonly remaining: Readonly<
     Record<string, Readonly<Record<string, number>>>
   >;
+  /** Cumulative active wall time in milliseconds. */
   readonly activeMs: number;
+  /** Last wall-clock update used to accrue active time. */
   readonly activeUpdatedAt: number;
+  /** Active evaluation time by task, in milliseconds. */
   readonly taskMs: Readonly<Record<string, number>>;
+  /** Task whose evaluation clock is currently running. */
   readonly currentTask?: string;
+  /** Provider phase time by task and role, in milliseconds. */
   readonly roleMs: Readonly<Record<string, number>>;
+  /** Number of reserved provider calls already spent. */
   readonly invocations: number;
+  /** Provider call that has started but not settled. */
   readonly active?: {
     readonly taskId: string;
     readonly role: string;
     readonly startedAt: number;
   };
+  /** Verified token deltas and incomplete estimates. */
   readonly tokens: TokenLedger;
+  /** Guard reason that denies further dispatch. */
   readonly stopReason?: string;
 }
 
