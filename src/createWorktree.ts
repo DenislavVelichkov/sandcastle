@@ -60,8 +60,7 @@ import type { Timeouts } from "./run.js";
 
 /** Branch strategies valid for createWorktree — head is excluded. */
 export type WorktreeBranchStrategy =
-  | MergeToHeadBranchStrategy
-  | NamedBranchStrategy;
+  MergeToHeadBranchStrategy | NamedBranchStrategy;
 
 export interface CreateWorktreeOptions {
   /** Branch strategy — only 'branch' and 'merge-to-head' are allowed. */
@@ -191,6 +190,8 @@ export interface WorktreeCreateSandboxOptions {
 export interface Worktree {
   /** The branch the worktree is on. */
   readonly branch: string;
+  /** Strategy captured when this handle was created. */
+  readonly branchStrategyType: WorktreeBranchStrategy["type"];
   /** Host path to the worktree (worktree). */
   readonly worktreePath: string;
   /** Run an AFK agent in this worktree with a required sandbox. */
@@ -215,13 +216,12 @@ export interface Worktree {
 export const createWorktree = async (
   options: CreateWorktreeOptions,
 ): Promise<Worktree> => {
+  const branchStrategyType = options.branchStrategy.type;
   const branch =
-    options.branchStrategy.type === "branch"
-      ? options.branchStrategy.branch
-      : undefined;
+    branchStrategyType === "branch" ? options.branchStrategy.branch : undefined;
 
   const baseBranch =
-    options.branchStrategy.type === "branch"
+    branchStrategyType === "branch"
       ? options.branchStrategy.baseBranch
       : undefined;
 
@@ -229,7 +229,7 @@ export const createWorktree = async (
   // can route the branch correctly into `SandboxLifecycle`: in `merge-to-head`
   // mode they pass `branch: undefined` (to trigger the merge step) plus
   // `keepSourceBranch: true` (so the worktree's source branch survives).
-  const isMergeToHead = options.branchStrategy.type === "merge-to-head";
+  const isMergeToHead = branchStrategyType === "merge-to-head";
 
   const { hostRepoDir, worktreeInfo } = await Effect.gen(function* () {
     const hostRepoDir = yield* resolveCwd(options.cwd);
@@ -345,9 +345,7 @@ export const createWorktree = async (
 
       // 4. Start sandbox
       let handle:
-        | BindMountSandboxHandle
-        | IsolatedSandboxHandle
-        | NoSandboxHandle;
+        BindMountSandboxHandle | IsolatedSandboxHandle | NoSandboxHandle;
 
       if (resolvedSandbox.tag === "none") {
         handle = yield* Effect.promise(() =>
@@ -552,9 +550,7 @@ export const createWorktree = async (
 
       // 4. Start sandbox
       let handle:
-        | BindMountSandboxHandle
-        | IsolatedSandboxHandle
-        | NoSandboxHandle;
+        BindMountSandboxHandle | IsolatedSandboxHandle | NoSandboxHandle;
       let sandboxRepoDir: string;
 
       if (sandboxProvider.tag === "isolated") {
@@ -752,6 +748,7 @@ export const createWorktree = async (
 
   return {
     branch: worktreeInfo.branch,
+    branchStrategyType,
     worktreePath: worktreeInfo.path,
     run: worktreeRun,
     interactive: worktreeInteractive,

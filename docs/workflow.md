@@ -1,6 +1,6 @@
 # Run a selected task
 
-`runWorkflow()` is an opt-in entry for a project that already has a task tracker, prompts, reservations, checks, and acceptance rules. It runs exact selected task identities on an existing named-branch worktree. It does not merge the branch or decide project acceptance from agent output or commits.
+`runWorkflow()` is an opt-in entry for a project that already has a task tracker, prompts, reservations, checks, and acceptance rules. It runs exact selected task identities on an existing branch-strategy worktree. It rejects merge-to-head worktrees, so project checks and acceptance run before any separate integration step.
 
 ```ts
 import {
@@ -52,7 +52,7 @@ Before the first task, implement the six project functions against the project's
 For the first task:
 
 1. Select its exact tracker identity and reference. Check its dependencies, allowed paths, required roles, and capabilities in the tracker record.
-2. Create a named-branch worktree and supply the project's ordinary functions as shown above.
+2. Create a branch-strategy worktree and supply the project's ordinary functions as shown above.
 3. Call `inspectWorkflow()` with the same options. Its reasons, selected tasks, capabilities, and worktree head/clean state are read-only; resolve a blocked result before running.
 4. Call `runWorkflow()`. A returned `accepted` status means the project's checks and acceptance approved the candidate head. A `blocked` status includes the reason. Review the worktree and evidence before any separate integration step.
 

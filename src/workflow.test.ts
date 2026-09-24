@@ -11,7 +11,7 @@ import {
   runWorkflow,
   type WorkflowProject,
   type WorkflowTask,
-} from "./workflow.js";
+} from "./index.js";
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -41,6 +41,7 @@ describe("public workflow", () => {
       branchStrategy: { type: "branch", branch: "workflow-test" },
     });
     let invocations = 0;
+    let editFolder = "src";
     const sandbox = createBindMountSandboxProvider({
       name: "workflow-fixture",
       create: async ({ worktreePath }) => ({
@@ -50,12 +51,12 @@ describe("public workflow", () => {
           if (command.startsWith("claude ")) {
             expect(options?.stdin).toMatch(/Task [12]/);
             invocations++;
-            await mkdir(join(worktreePath, "src"), { recursive: true });
+            await mkdir(join(worktreePath, editFolder), { recursive: true });
             await writeFile(
-              join(worktreePath, "src", `${invocations}.txt`),
+              join(worktreePath, editFolder, `${invocations}.txt`),
               "work\n",
             );
-            git(worktreePath, "add", "src");
+            git(worktreePath, "add", editFolder);
             git(worktreePath, "commit", "-m", `role ${invocations}`);
             const lines = [
               JSON.stringify({
@@ -132,6 +133,25 @@ describe("public workflow", () => {
         branch: "workflow-test",
         clean: true,
       });
+      const mergeWorktree = await createWorktree({
+        cwd: root,
+        branchStrategy: { type: "merge-to-head" },
+      });
+      try {
+        const rejected = await inspectWorkflow({
+          ...options,
+          worktree: mergeWorktree,
+        });
+        expect(rejected.reasons).toContain(
+          "Selected worktree must use the branch strategy",
+        );
+        expect(
+          (await runWorkflow({ ...options, worktree: mergeWorktree })).status,
+        ).toBe("blocked");
+        expect(invocations).toBe(0);
+      } finally {
+        await mergeWorktree.close();
+      }
       expect(
         (
           await inspectWorkflow({
@@ -215,6 +235,44 @@ describe("public workflow", () => {
         ).reasons,
       ).toContain("Task 2 requires unsupported capability: human-acceptance");
       expect(invocations).toBe(0);
+      const changedIterations = {
+        iterations: policy.iterations,
+        roles: { ...policy.roles },
+      };
+      const iterationDrift = await runWorkflow({
+        ...options,
+        policy: changedIterations,
+        project: {
+          ...project,
+          reserve: async () => {
+            changedIterations.iterations++;
+            return () => {};
+          },
+        },
+      });
+      expect(iterationDrift.reason).toBe(
+        "Fixed policy changed during reservation",
+      );
+      const changedRoles = {
+        iterations: policy.iterations,
+        roles: { ...policy.roles },
+      };
+      const roleDrift = await runWorkflow({
+        ...options,
+        policy: changedRoles,
+        project: {
+          ...project,
+          reserve: async () => {
+            changedRoles.roles.review = {
+              agent: claudeCode("changed"),
+              sandbox,
+            };
+            return () => {};
+          },
+        },
+      });
+      expect(roleDrift.reason).toBe("Fixed policy changed during reservation");
+      expect(invocations).toBe(0);
       const result = await runWorkflow(options);
       expect(result.status).toBe("blocked");
       expect(result.reason).toBe("project check failed");
@@ -243,6 +301,13 @@ describe("public workflow", () => {
         selected: [{ id: "2", reference: "issue:2" }],
       });
       expect(outside.reason).toContain("edited outside its scope");
+      editFolder = " src";
+      const whitespacePath = await runWorkflow({
+        ...options,
+        project: passingProject,
+      });
+      expect(whitespacePath.reason).toContain("edited outside its scope");
+      editFolder = "src";
       const mutatingProject: WorkflowProject = {
         ...passingProject,
         check: async () => {
@@ -265,5 +330,5 @@ describe("public workflow", () => {
       await worktree.close();
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 });

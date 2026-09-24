@@ -112,7 +112,7 @@ export interface WorkflowPolicy {
 
 export interface WorkflowOptions {
   readonly project: WorkflowProject;
-  /** An existing named-branch worktree. The workflow never merges it. */
+  /** An existing branch-strategy worktree. The workflow never merges it. */
   readonly worktree: Worktree;
   readonly selected: readonly {
     readonly id: string;
@@ -135,7 +135,7 @@ export interface WorkflowAdmission {
 }
 
 const git = (cwd: string, ...args: string[]): string =>
-  execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  execFileSync("git", args, { cwd, encoding: "utf8" }).trimEnd();
 
 const repository = (cwd: string): string =>
   realpathSync(resolve(cwd, git(cwd, "rev-parse", "--git-common-dir")));
@@ -204,6 +204,9 @@ export const inspectWorkflow = async (
   }
   if (!validAssignment(policy.roles?.implementation)) {
     reasons.push("An implementation agent and sandbox are required");
+  }
+  if (worktree.branchStrategyType !== "branch") {
+    reasons.push("Selected worktree must use the branch strategy");
   }
   try {
     const root = realpathSync(project.root);
@@ -336,7 +339,7 @@ export interface WorkflowResult {
   readonly reason?: string;
 }
 
-/** Run selected tasks on their named branch. Project acceptance remains authoritative. */
+/** Run selected tasks on their branch. Project acceptance remains authoritative. */
 export const runWorkflow = async (
   options: WorkflowOptions,
 ): Promise<WorkflowResult> => {
@@ -349,10 +352,23 @@ export const runWorkflow = async (
     };
   const { project, worktree, policy, signal } = options;
   const admittedTasks = JSON.stringify(admission.tasks);
+  const iterations = policy.iterations;
+  const assignments = new Map(
+    admission.tasks
+      .flatMap((task) => ["implementation", ...task.requiredRoles])
+      .map((role) => {
+        const assignment = policy.roles[role];
+        if (!assignment) throw new Error(`Required role disappeared: ${role}`);
+        return [
+          role,
+          { agent: assignment.agent, sandbox: assignment.sandbox },
+        ] as const;
+      }),
+  );
   const release = await project.reserve({
     tasks: admission.tasks,
     branch: worktree.branch,
-    implementationIterations: policy.iterations,
+    implementationIterations: iterations,
     roles: Object.fromEntries(
       admission.tasks.map((task) => [
         task.id,
@@ -377,6 +393,20 @@ export const runWorkflow = async (
         reason: "Selected task metadata changed during reservation",
       };
     }
+    if (
+      policy.iterations !== iterations ||
+      [...assignments].some(
+        ([role, assignment]) =>
+          policy.roles[role]?.agent !== assignment.agent ||
+          policy.roles[role]?.sandbox !== assignment.sandbox,
+      )
+    ) {
+      return {
+        status: "blocked",
+        completed: [],
+        reason: "Fixed policy changed during reservation",
+      };
+    }
     const completed: {
       candidate: WorkflowCandidate;
       check: WorkflowDecision;
@@ -390,7 +420,7 @@ export const runWorkflow = async (
       let usedImplementationIterations = 0;
       const roles = ["implementation", ...task.requiredRoles];
       for (const role of roles) {
-        const assignment = policy.roles[role];
+        const assignment = assignments.get(role);
         if (!assignment) throw new Error(`Required role disappeared: ${role}`);
         signal?.throwIfAborted();
         const provided = project.prompt(task, role);
@@ -407,13 +437,13 @@ export const runWorkflow = async (
           agent: assignment.agent,
           sandbox: assignment.sandbox,
           ...invocation,
-          maxIterations: role === "implementation" ? policy.iterations : 1,
+          maxIterations: role === "implementation" ? iterations : 1,
           signal,
         });
         if (role === "implementation")
           usedImplementationIterations = Array.isArray(result.iterations)
             ? result.iterations.length
-            : policy.iterations;
+            : iterations;
         commits.push(...result.commits);
         completedRoles.push(role);
       }
