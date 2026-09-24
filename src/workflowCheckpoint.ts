@@ -181,7 +181,8 @@ export const captureWorkflowCheckpoint = async (
         JSON.stringify(files) !== JSON.stringify(second) ||
         JSON.stringify(paths) !==
           JSON.stringify(await pathsFor(cwd, ignored[taskId] ?? [])) ||
-        head !== git(cwd, "rev-parse", "HEAD")
+        head !== git(cwd, "rev-parse", "HEAD") ||
+        worktree.branch !== git(cwd, "branch", "--show-current")
       )
         throw new Error(`Checkpoint source changed during capture: ${taskId}`);
       manifest.worktrees[taskId] = {

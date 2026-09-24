@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,6 +39,7 @@ it("stops an active workflow after session capture and restores its exact saved 
   let retained = 0;
   let calls = 0;
   let resumedSession: string | undefined;
+  let child: ReturnType<typeof spawn> | undefined;
   const task = {
     id: "a",
     reference: "issue:a",
@@ -145,16 +147,26 @@ it("stops an active workflow after session capture and restores its exact saved 
       }),
     ).rejects.toThrow("iteration allowance changed");
     const stateFile = join(directory, "state.json");
+    child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      stdio: "ignore",
+    });
+    await once(child, "spawn");
+    const processStat = await readFile(`/proc/${child.pid}/stat`, "utf8");
+    const childStart =
+      processStat.slice(processStat.lastIndexOf(")") + 2).split(" ")[19] ?? "";
     const interrupted = {
       ...receipt,
       lifecycle: "running",
       owner: { ...receipt.owner, start: "expired" },
-      processes: [receipt.owner],
+      processes: [{ pid: child.pid, start: childStart }],
     };
     await writeFile(stateFile, JSON.stringify(interrupted));
     await expect(recoverDurableWorkflow(options)).rejects.toThrow(
       "Owned descendant survived",
     );
+    child.kill("SIGKILL");
+    await once(child, "exit");
+    child = undefined;
     await writeFile(
       stateFile,
       JSON.stringify({ ...interrupted, processes: [] }),
@@ -184,6 +196,7 @@ it("stops an active workflow after session capture and restores its exact saved 
       "recovery-required",
     );
   } finally {
+    child?.kill("SIGKILL");
     await worktree.close();
     await rm(root, { recursive: true, force: true });
   }
