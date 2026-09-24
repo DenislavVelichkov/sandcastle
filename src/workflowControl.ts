@@ -1780,6 +1780,32 @@ const driveDurableWorkflow = async (
         await resultPromise.catch(() => {});
         throw error;
       }
+      if (options.usage && usageState?.currentTask) {
+        const until =
+          Date.now() + (options.usage.activity === "pilot" ? 120_000 : 0);
+        do {
+          try {
+            const reading = await readGuardedAccount(options.usage);
+            await mutateUsage((current) =>
+              observeWorkflowUsage(current, reading, Date.now()),
+            );
+          } catch (error) {
+            await mutateUsage((current) => ({
+              ...current,
+              stopReason: String(error),
+            }));
+          }
+          if (
+            usageState?.stopReason ||
+            Date.now() >= until ||
+            (await stopRequested(options.directory))
+          )
+            break;
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.min(30_000, until - Date.now())),
+          );
+        } while (true);
+      }
       if (usageState?.currentTask)
         await mutateUsage((current) =>
           observeWorkflowUsage(current, current.latest, Date.now()),

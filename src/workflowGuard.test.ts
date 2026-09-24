@@ -38,6 +38,7 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
   };
   let dispatched = 0;
   let pages = 0;
+  let accountReads = 0;
   const now = Date.now();
   const usage = {
     policyId: "sol-high-fixed",
@@ -47,7 +48,10 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
       observedAt: Date.now(),
       denied: false,
       windows: {
-        short: { usedPercent: 20, resetsAt: now + 1_000_000 },
+        short: {
+          usedPercent: 20 + (accountReads++ === 2 ? 1 : 0),
+          resetsAt: now + 1_000_000,
+        },
         weekly: { usedPercent: 30, resetsAt: now + 2_000_000 },
       },
     }),
@@ -156,6 +160,10 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
     expect(completed.tasks.one?.status).toBe("accepted");
     expect(completed.usage?.remaining.one?.implementation).toBe(1);
     expect(completed.usage?.tokens.deltas["session-1"]?.inputTokens).toBe(10);
+    expect(
+      completed.usage?.accountHistory.at(-1)?.reading.windows.short
+        ?.usedPercent,
+    ).toBe(21);
     expect(pages).toBe(2);
     expect(dispatched).toBe(1);
     let reads = 0;

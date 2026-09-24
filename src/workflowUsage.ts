@@ -182,6 +182,10 @@ export interface WorkflowUsageState {
   readonly observed: null;
   readonly baseline: AccountObservation;
   readonly latest: AccountObservation;
+  readonly accountHistory: readonly {
+    readonly taskId?: string;
+    readonly reading: AccountObservation;
+  }[];
   readonly remaining: Readonly<
     Record<string, Readonly<Record<string, number>>>
   >;
@@ -235,6 +239,7 @@ export const initialWorkflowUsage = (
     observed: null,
     baseline,
     latest: baseline,
+    accountHistory: [{ reading: baseline }],
     remaining: Object.fromEntries(
       tasks.map((task) => [
         task.id,
@@ -330,6 +335,16 @@ export const observeWorkflowUsage = (
   return {
     ...state,
     latest: reading,
+    accountHistory:
+      reading === state.latest
+        ? state.accountHistory
+        : [
+            ...state.accountHistory,
+            {
+              ...(state.currentTask ? { taskId: state.currentTask } : {}),
+              reading,
+            },
+          ],
     ...(reason ? { stopReason: reason } : {}),
   };
 };
@@ -415,12 +430,16 @@ export const resumeWorkflowUsage = (
   now: number,
 ): WorkflowUsageState => {
   const reason = accountGuardReason(state.baseline, reading, now);
-  if (reason) return { ...state, latest: reading, stopReason: reason };
-  if (state.stopReason && !/denied|stale|missing/.test(state.stopReason))
-    return state;
-  return {
+  const observed = {
     ...state,
     latest: reading,
+    accountHistory: [...state.accountHistory, { reading }],
+  };
+  if (reason) return { ...observed, stopReason: reason };
+  if (state.stopReason && !/denied|stale|missing/.test(state.stopReason))
+    return observed;
+  return {
+    ...observed,
     stopReason: undefined,
     activeUpdatedAt: now,
   };
