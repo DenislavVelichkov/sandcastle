@@ -97,6 +97,8 @@ export interface WorkflowReservation {
   readonly branches?: Readonly<Record<string, string>>;
   readonly implementationIterations: number;
   readonly roles: Readonly<Record<string, readonly string[]>>;
+  /** Existing reservation identity when an explicitly stopped invocation resumes. */
+  readonly resumeId?: string;
 }
 
 export interface WorkflowPolicy {
@@ -120,6 +122,20 @@ export interface WorkflowOptions {
   }[];
   readonly policy: WorkflowPolicy;
   readonly signal?: AbortSignal;
+  readonly onSessionCaptured?: (
+    taskId: string,
+    role: string,
+    session: { readonly sessionId?: string; readonly sessionFilePath?: string },
+  ) => Promise<void>;
+  readonly onRoleCompleted?: (taskId: string, role: string) => Promise<void>;
+  readonly onCleanupFailure?: (taskId: string, error: unknown) => Promise<void>;
+  readonly resume?: {
+    readonly taskId: string;
+    readonly role: string;
+    readonly sessionId?: string;
+    readonly baselineHead: string;
+    readonly completedRoles: readonly string[];
+  };
 }
 
 export interface WorkflowAdmission {
@@ -224,7 +240,14 @@ export const inspectWorkflow = async (
     if (branch !== worktree.branch) {
       reasons.push("Selected worktree branch does not match its handle");
     }
-    if (!clean) {
+    if (
+      !clean &&
+      !(
+        options.resume &&
+        selected.length === 1 &&
+        selected[0]?.id === options.resume.taskId
+      )
+    ) {
       reasons.push("Selected worktree has uncommitted changes");
     }
   } catch {
@@ -332,6 +355,11 @@ export interface WorkflowResult {
     readonly check: WorkflowDecision;
     readonly acceptance?: WorkflowAcceptance;
     readonly usedImplementationIterations: number;
+    readonly sessions: readonly {
+      readonly role: string;
+      readonly id: string;
+      readonly path?: string;
+    }[];
   }[];
   readonly reason?: string;
 }
@@ -382,14 +410,33 @@ export const runWorkflow = async (
       check: WorkflowDecision;
       acceptance?: WorkflowAcceptance;
       usedImplementationIterations: number;
+      sessions: { role: string; id: string; path?: string }[];
     }[] = [];
     for (const task of current.tasks) {
-      const startHead = git(worktree.worktreePath, "rev-parse", "HEAD");
-      const commits: { sha: string }[] = [];
-      const completedRoles: string[] = [];
+      const resumed =
+        options.resume?.taskId === task.id ? options.resume : undefined;
+      const startHead =
+        resumed?.baselineHead ??
+        git(worktree.worktreePath, "rev-parse", "HEAD");
+      const commits: { sha: string }[] = resumed
+        ? git(
+            worktree.worktreePath,
+            "rev-list",
+            "--reverse",
+            `${startHead}..HEAD`,
+          )
+            .split("\n")
+            .filter(Boolean)
+            .map((sha) => ({ sha }))
+        : [];
+      const completedRoles: string[] = [...(resumed?.completedRoles ?? [])];
+      const sessions: { role: string; id: string; path?: string }[] = [];
       let usedImplementationIterations = 0;
       const roles = ["implementation", ...task.requiredRoles];
-      for (const role of roles) {
+      const startRole = resumed ? roles.indexOf(resumed.role) : 0;
+      if (startRole < 0)
+        throw new Error(`Resume role disappeared: ${resumed?.role}`);
+      for (const role of roles.slice(startRole)) {
         const assignment = policy.roles[role];
         if (!assignment) throw new Error(`Required role disappeared: ${role}`);
         signal?.throwIfAborted();
@@ -407,14 +454,33 @@ export const runWorkflow = async (
           agent: assignment.agent,
           sandbox: assignment.sandbox,
           ...invocation,
-          maxIterations: role === "implementation" ? policy.iterations : 1,
+          maxIterations:
+            role === "implementation" ? (resumed ? 1 : policy.iterations) : 1,
+          ...(resumed?.sessionId && role === resumed.role
+            ? { resumeSession: resumed.sessionId }
+            : {}),
           signal,
+          onSessionCaptured: (session) =>
+            options.onSessionCaptured?.(task.id, role, session) ??
+            Promise.resolve(),
+          onCleanupFailure: (error) =>
+            options.onCleanupFailure?.(task.id, error) ?? Promise.resolve(),
         });
         if (role === "implementation")
           usedImplementationIterations = Array.isArray(result.iterations)
             ? result.iterations.length
             : policy.iterations;
         commits.push(...result.commits);
+        await options.onRoleCompleted?.(task.id, role);
+        for (const iteration of result.iterations)
+          if (iteration.sessionId)
+            sessions.push({
+              role,
+              id: iteration.sessionId,
+              ...(iteration.sessionFilePath
+                ? { path: iteration.sessionFilePath }
+                : {}),
+            });
         completedRoles.push(role);
       }
       const candidate: WorkflowCandidate = {
@@ -463,7 +529,12 @@ export const runWorkflow = async (
       }
       const check = await project.check(candidate);
       if (!candidateCurrent(worktree.worktreePath, candidate.head)) {
-        completed.push({ candidate, check, usedImplementationIterations });
+        completed.push({
+          candidate,
+          check,
+          usedImplementationIterations,
+          sessions,
+        });
         return {
           status: "blocked",
           completed,
@@ -471,7 +542,12 @@ export const runWorkflow = async (
         };
       }
       if (check.status !== "passed") {
-        completed.push({ candidate, check, usedImplementationIterations });
+        completed.push({
+          candidate,
+          check,
+          usedImplementationIterations,
+          sessions,
+        });
         return {
           status: "blocked",
           completed,
@@ -484,6 +560,7 @@ export const runWorkflow = async (
         check,
         acceptance,
         usedImplementationIterations,
+        sessions,
       });
       if (!candidateCurrent(worktree.worktreePath, candidate.head)) {
         return {

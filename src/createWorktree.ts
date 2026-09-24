@@ -60,8 +60,7 @@ import type { Timeouts } from "./run.js";
 
 /** Branch strategies valid for createWorktree — head is excluded. */
 export type WorktreeBranchStrategy =
-  | MergeToHeadBranchStrategy
-  | NamedBranchStrategy;
+  MergeToHeadBranchStrategy | NamedBranchStrategy;
 
 export interface CreateWorktreeOptions {
   /** Branch strategy — only 'branch' and 'merge-to-head' are allowed. */
@@ -154,6 +153,10 @@ export interface WorktreeRunOptions {
    * - The `Worktree` handle remains usable for subsequent operations.
    */
   readonly signal?: AbortSignal;
+  /** Host session capture receipt, including an interrupted iteration. */
+  readonly onSessionCaptured?: (session: IterationResult) => Promise<void>;
+  /** Report a sandbox close failure to the workflow owner. */
+  readonly onCleanupFailure?: (error: unknown) => Promise<void>;
 }
 
 export interface WorktreeRunResult {
@@ -345,9 +348,7 @@ export const createWorktree = async (
 
       // 4. Start sandbox
       let handle:
-        | BindMountSandboxHandle
-        | IsolatedSandboxHandle
-        | NoSandboxHandle;
+        BindMountSandboxHandle | IsolatedSandboxHandle | NoSandboxHandle;
 
       if (resolvedSandbox.tag === "none") {
         handle = yield* Effect.promise(() =>
@@ -552,9 +553,7 @@ export const createWorktree = async (
 
       // 4. Start sandbox
       let handle:
-        | BindMountSandboxHandle
-        | IsolatedSandboxHandle
-        | NoSandboxHandle;
+        BindMountSandboxHandle | IsolatedSandboxHandle | NoSandboxHandle;
       let sandboxRepoDir: string;
 
       if (sandboxProvider.tag === "isolated") {
@@ -684,6 +683,7 @@ export const createWorktree = async (
           name: opts.name,
           resumeSession: opts.resumeSession,
           signal: opts.signal,
+          onSessionCaptured: opts.onSessionCaptured,
           skipPromptExpansion: isInlinePrompt,
           timeouts: options.timeouts,
           keepSourceBranch: isMergeToHead,
@@ -705,7 +705,16 @@ export const createWorktree = async (
       }).pipe(
         Effect.provide(runLayer),
         // Always close sandbox handle
-        Effect.ensuring(Effect.promise(() => handle.close().catch(() => {}))),
+        Effect.ensuring(
+          Effect.promise(async () => {
+            try {
+              await handle.close();
+            } catch (error) {
+              await opts.onCleanupFailure?.(error);
+              if (opts.onCleanupFailure) throw error;
+            }
+          }),
+        ),
       );
 
       return {

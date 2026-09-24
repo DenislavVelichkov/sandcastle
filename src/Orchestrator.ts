@@ -36,6 +36,7 @@ const invokeAgent = (
   resumeSession?: string,
   forkSession?: boolean,
   signal?: AbortSignal,
+  onSessionId?: (id: string) => void,
 ): Effect.Effect<
   { result: string; sessionId?: string; usage?: IterationUsage },
   SandboxError
@@ -167,6 +168,7 @@ const invokeAgent = (
               onToolCall(parsed.name, parsed.args);
             } else if (parsed.type === "session_id") {
               sessionId = parsed.sessionId;
+              onSessionId?.(sessionId);
             } else if (parsed.type === "usage") {
               usage = parsed.usage;
             }
@@ -287,6 +289,8 @@ export interface OrchestrateOptions {
   readonly timeouts?: Timeouts;
   /** Forwarded to `withSandboxLifecycle` — see `SandboxLifecycleOptions.keepSourceBranch`. */
   readonly keepSourceBranch?: boolean;
+  /** Called after a session reaches the host, including interrupted runs. */
+  readonly onSessionCaptured?: (session: IterationResult) => Promise<void>;
 }
 
 /** Per-iteration result carrying an optional session ID. */
@@ -471,6 +475,7 @@ export const orchestrate = (
                     ),
                   );
                 };
+                let interruptedSessionId: string | undefined;
                 const {
                   result: agentOutput,
                   sessionId,
@@ -492,6 +497,40 @@ export const orchestrate = (
                   iterationResumeSession,
                   iterationForkSession,
                   options.signal,
+                  (id) => {
+                    interruptedSessionId = id;
+                  },
+                ).pipe(
+                  Effect.onExit(() =>
+                    Effect.promise(async () => {
+                      if (
+                        !options.signal?.aborted ||
+                        !interruptedSessionId ||
+                        !provider.captureSessions ||
+                        !provider.sessionStorage ||
+                        !bindMountHandle
+                      )
+                        return;
+                      try {
+                        await provider.sessionStorage.captureToHost({
+                          hostCwd: hostRepoDir,
+                          sandboxCwd: ctx.sandboxRepoDir,
+                          sessionId: interruptedSessionId,
+                          handle: bindMountHandle,
+                        });
+                        await options.onSessionCaptured?.({
+                          sessionId: interruptedSessionId,
+                          sessionFilePath:
+                            provider.sessionStorage.hostSessionFilePath(
+                              hostRepoDir,
+                              interruptedSessionId,
+                            ),
+                        });
+                      } catch {
+                        // The workflow refuses a stopped receipt without this file.
+                      }
+                    }),
+                  ),
                 );
 
                 // Flush any remaining buffered text deltas
@@ -528,6 +567,13 @@ export const orchestrate = (
                   sessionFilePath = provider.sessionStorage.hostSessionFilePath(
                     hostRepoDir,
                     sessionId,
+                  );
+                  yield* Effect.promise(
+                    () =>
+                      options.onSessionCaptured?.({
+                        sessionId,
+                        sessionFilePath,
+                      }) ?? Promise.resolve(),
                   );
 
                   // Parse token usage from the captured session JSONL
