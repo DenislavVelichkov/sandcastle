@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -21,7 +28,10 @@ it("captures edits, deletions, untracked and required ignored files without over
   await writeFile(join(root, ".gitignore"), "proof.txt\n");
   await writeFile(join(root, "edit.txt"), "base\n");
   await writeFile(join(root, "delete.txt"), "base\n");
-  git(root, "add", ".gitignore", "edit.txt", "delete.txt");
+  const outside = join(root, "outside.txt");
+  await writeFile(outside, "outside is untouched\n");
+  await symlink(outside, join(root, "link.txt"));
+  git(root, "add", ".gitignore", "edit.txt", "delete.txt", "link.txt");
   git(root, "commit", "-m", "base");
   const worktree = await createWorktree({
     cwd: root,
@@ -34,6 +44,8 @@ it("captures edits, deletions, untracked and required ignored files without over
     await rm(join(path, "delete.txt"));
     await writeFile(join(path, "new.txt"), "untracked\n");
     await writeFile(join(path, "proof.txt"), "ignored proof\n");
+    await rm(join(path, "link.txt"));
+    await writeFile(join(path, "link.txt"), "saved regular file\n");
     const receipt = await captureWorkflowCheckpoint(
       directory,
       { a: worktree },
@@ -41,6 +53,18 @@ it("captures edits, deletions, untracked and required ignored files without over
       [],
     );
     await verifyWorkflowCheckpoint(directory, receipt);
+    await expect(
+      captureWorkflowCheckpoint(
+        directory,
+        { a: worktree },
+        { a: ["proof.txt"] },
+        [join(root, "missing-evidence.txt")],
+      ),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await readdir(join(directory, "checkpoints"))).sort()).toEqual([
+      receipt.id,
+    ]);
+    expect(await readFile(join(path, "edit.txt"), "utf8")).toBe("saved edit\n");
     await writeFile(join(path, "edit.txt"), "later edit\n");
     await expect(
       restoreWorkflowCheckpoint(
@@ -73,6 +97,10 @@ it("captures edits, deletions, untracked and required ignored files without over
     expect(await readFile(join(path, "proof.txt"), "utf8")).toBe(
       "ignored proof\n",
     );
+    expect(await readFile(join(path, "link.txt"), "utf8")).toBe(
+      "saved regular file\n",
+    );
+    expect(await readFile(outside, "utf8")).toBe("outside is untouched\n");
     await expect(readFile(join(path, "delete.txt"))).rejects.toMatchObject({
       code: "ENOENT",
     });
