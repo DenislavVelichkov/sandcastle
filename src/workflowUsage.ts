@@ -7,7 +7,7 @@ export interface AccountObservation {
   readonly observedAt: number;
   /** Whether ordinary subscription usage was denied. */
   readonly denied: boolean;
-  /** Applicable account windows, keyed by stable window name. */
+  /** Non-null applicable account windows, keyed by stable window name. */
   readonly windows: Readonly<
     Record<
       string,
@@ -83,12 +83,13 @@ export const accountGuardReason = (
     return "Account identity or observation is missing or stale";
   if (current.denied !== false) return "Ordinary account usage was denied";
   const names = Object.keys(baseline.windows);
+  const currentNames = Object.keys(current.windows ?? {});
   if (
-    names.length < 2 ||
-    !current.windows ||
+    names.length < 1 ||
+    currentNames.length !== names.length ||
     names.some((name) => !(name in current.windows))
   )
-    return "Applicable account window is missing";
+    return "Applicable account window is missing or changed";
   for (const name of names) {
     const before = baseline.windows[name]!;
     const after = current.windows[name]!;
@@ -142,7 +143,7 @@ export interface WorkflowUsageOptions {
   readonly pilot?: { readonly id: string; readonly directory: string };
   /** Explicit owner decision to continue after an account-window reset. */
   readonly resetContinuation?: { readonly id: string; readonly reason: string };
-  /** Read both applicable windows from the worker's ordinary account. */
+  /** Read every non-null applicable window from the worker's ordinary account. */
   readonly readAccount: () => Promise<AccountObservation>;
   /** Run model/list in the same isolated Codex Home, CLI, image and account as the worker. */
   readonly listModels: (cursor?: string) => Promise<ModelCatalogPage>;

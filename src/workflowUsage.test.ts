@@ -132,6 +132,13 @@ it("blocks denied, stale, reset and exhausted account readings", () => {
       now,
     ),
   ).toMatch(/20%/);
+  const weeklyOnly = {
+    ...baseline,
+    windows: { weekly: baseline.windows.weekly! },
+  };
+  expect(accountGuardReason(weeklyOnly, weeklyOnly, now)).toBeUndefined();
+  expect(accountGuardReason(weeklyOnly, baseline, now)).toMatch(/changed/);
+  expect(accountGuardReason(baseline, weeklyOnly, now)).toMatch(/missing/);
 });
 
 it("continues only an explicit reset and retains spent allowances and original baseline", () => {
