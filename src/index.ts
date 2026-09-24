@@ -1,10 +1,28 @@
 export { run } from "./run.js";
 export { inspectWorkflow, runWorkflow } from "./workflow.js";
+export {
+  runDurableWorkflow,
+  workflowStatus,
+  respondWorkflow,
+  processWorkflowResponses,
+  cancelWorkflowTask,
+  requestWorkflowRework,
+} from "./workflowControl.js";
+export type {
+  DurableWorkflowOptions,
+  WorkflowRequest,
+  WorkflowResponseReceipt,
+  WorkflowSnapshot,
+  WorkflowStatus,
+  WorkflowAuthenticatedAnswer,
+  WorkflowResponseRoute,
+} from "./workflowControl.js";
 export type {
   WorkflowTask,
   WorkflowCandidate,
   WorkflowDecision,
   WorkflowAcceptance,
+  WorkflowHumanQuestion,
   WorkflowProject,
   WorkflowReservation,
   WorkflowPolicy,

@@ -32,9 +32,32 @@ export interface WorkflowDecision {
 }
 
 export interface WorkflowAcceptance {
-  readonly status: "accepted" | "blocked";
+  readonly status: "accepted" | "blocked" | "waiting";
   readonly evidence: readonly string[];
   readonly reason?: string;
+  /** Required when the project has presented an exact question to its owner. */
+  readonly request?: WorkflowHumanQuestion;
+}
+
+export interface WorkflowHumanQuestion {
+  readonly owner: string;
+  readonly phase: string;
+  readonly target: string;
+  readonly question: string;
+  readonly contract: string;
+  /** Project-owned source, build, environment and acceptance manifest digest. */
+  readonly manifest: string;
+  readonly checkpoint: string;
+  readonly evidence: readonly {
+    readonly path: string;
+    readonly sha256: string;
+  }[];
+  /** The trusted host route's durable displayed-question mapping. */
+  readonly display: {
+    readonly questionId: string;
+    readonly sourceRef: string;
+    readonly route: "host";
+  };
 }
 
 /** Project functions retain tracker, reservation, check and acceptance authority. */
@@ -42,7 +65,15 @@ export interface WorkflowProject {
   readonly root: string;
   readonly capabilities: readonly string[];
   getTask(id: string): Promise<WorkflowTask | undefined>;
-  reserve(request: WorkflowReservation): Promise<() => Promise<void> | void>;
+  reserve(request: WorkflowReservation): Promise<
+    | (() => Promise<void> | void)
+    | {
+        readonly id: string;
+        release(): Promise<void> | void;
+        /** Preserve a logical reservation after the controller stops waiting. */
+        retain(): Promise<void> | void;
+      }
+  >;
   prompt(
     task: WorkflowTask,
     role: string,
@@ -298,6 +329,7 @@ export interface WorkflowResult {
     readonly candidate: WorkflowCandidate;
     readonly check: WorkflowDecision;
     readonly acceptance?: WorkflowAcceptance;
+    readonly usedImplementationIterations: number;
   }[];
   readonly reason?: string;
 }
@@ -326,7 +358,7 @@ export const runWorkflow = async (
       ]),
     ),
   });
-  if (typeof release !== "function")
+  if (typeof release !== "function" && typeof release?.release !== "function")
     throw new Error("Project reservation did not return a release function");
   try {
     const current = await inspectWorkflow(options);
@@ -347,11 +379,13 @@ export const runWorkflow = async (
       candidate: WorkflowCandidate;
       check: WorkflowDecision;
       acceptance?: WorkflowAcceptance;
+      usedImplementationIterations: number;
     }[] = [];
     for (const task of current.tasks) {
       const startHead = git(worktree.worktreePath, "rev-parse", "HEAD");
       const commits: { sha: string }[] = [];
       const completedRoles: string[] = [];
+      let usedImplementationIterations = 0;
       const roles = ["implementation", ...task.requiredRoles];
       for (const role of roles) {
         const assignment = policy.roles[role];
@@ -374,6 +408,10 @@ export const runWorkflow = async (
           maxIterations: role === "implementation" ? policy.iterations : 1,
           signal,
         });
+        if (role === "implementation")
+          usedImplementationIterations = Array.isArray(result.iterations)
+            ? result.iterations.length
+            : policy.iterations;
         commits.push(...result.commits);
         completedRoles.push(role);
       }
@@ -423,7 +461,7 @@ export const runWorkflow = async (
       }
       const check = await project.check(candidate);
       if (!candidateCurrent(worktree.worktreePath, candidate.head)) {
-        completed.push({ candidate, check });
+        completed.push({ candidate, check, usedImplementationIterations });
         return {
           status: "blocked",
           completed,
@@ -431,7 +469,7 @@ export const runWorkflow = async (
         };
       }
       if (check.status !== "passed") {
-        completed.push({ candidate, check });
+        completed.push({ candidate, check, usedImplementationIterations });
         return {
           status: "blocked",
           completed,
@@ -439,7 +477,12 @@ export const runWorkflow = async (
         };
       }
       const acceptance = await project.accept(candidate, check);
-      completed.push({ candidate, check, acceptance });
+      completed.push({
+        candidate,
+        check,
+        acceptance,
+        usedImplementationIterations,
+      });
       if (!candidateCurrent(worktree.worktreePath, candidate.head)) {
         return {
           status: "blocked",
@@ -457,6 +500,7 @@ export const runWorkflow = async (
     }
     return { status: "accepted", completed };
   } finally {
-    await release();
+    if (typeof release === "function") await release();
+    else await release.release();
   }
 };
