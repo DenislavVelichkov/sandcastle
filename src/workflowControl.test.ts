@@ -388,6 +388,15 @@ it("retains rejection feedback and allowance, and rejects stale evidence after a
         })
       ).status,
     ).toBe("queued");
+    await expect(
+      respondWorkflow({
+        directory,
+        requestId,
+        responseId: "approve",
+        sourceEvent: {},
+        route: routed("Approve"),
+      }),
+    ).rejects.toThrow("Conflicting response identity");
     const rejected = await processWorkflowResponses(
       directory,
       project.validateHumanRequest,
@@ -421,6 +430,48 @@ it("retains rejection feedback and allowance, and rejects stale evidence after a
     expect(stale.requests[0]?.status).toBe("stale");
     expect(stale.tasks.a?.status).toBe("blocked");
     expect(calls).toBe(2);
+
+    await writeFile(evidence, "original\n");
+    const changedDirectory = join(root, "changed-control");
+    const changed = await runDurableWorkflow(
+      options(changedDirectory, "changed"),
+    );
+    await respondWorkflow({
+      directory: changedDirectory,
+      requestId: changed.requests[0]!.id,
+      responseId: "changed",
+      sourceEvent: {},
+      route: routed("Approve"),
+    });
+    await writeFile(join(worktree.worktreePath, "other.txt"), "new commit\n");
+    git(worktree.worktreePath, "add", "other.txt");
+    git(worktree.worktreePath, "commit", "-m", "change candidate");
+    const changedResult = await processWorkflowResponses(
+      changedDirectory,
+      project.validateHumanRequest,
+    );
+    expect(changedResult.responses[0]?.status).toBe("stale");
+    expect(changedResult.tasks.a?.status).toBe("blocked");
+
+    const cancelledDirectory = join(root, "cancelled-control");
+    const cancellable = await runDurableWorkflow(
+      options(cancelledDirectory, "cancelled"),
+    );
+    await respondWorkflow({
+      directory: cancelledDirectory,
+      requestId: cancellable.requests[0]!.id,
+      responseId: "cancelled",
+      sourceEvent: {},
+      route: routed("Approve"),
+    });
+    await cancelWorkflowTask(cancelledDirectory, "a");
+    const cancelled = await processWorkflowResponses(
+      cancelledDirectory,
+      project.validateHumanRequest,
+    );
+    expect(cancelled.responses[0]?.status).toBe("stale");
+    expect(cancelled.tasks.a?.status).toBe("cancelled");
+    expect(calls).toBe(4);
   } finally {
     await worktree.close();
     await rm(root, { recursive: true, force: true });

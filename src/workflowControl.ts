@@ -295,7 +295,8 @@ export const respondWorkflow = async (options: {
       throw new Error("Conflicting response identity");
     return { status: "applied", responseId, receipt: applied };
   }
-  const path = join(inboxPath(directory), `${responseId}.json`);
+  // One inbox slot per request lets the first durable answer win.
+  const path = join(inboxPath(directory), `${requestId}.json`);
   try {
     const queued = JSON.parse(await readFile(path, "utf8")) as WorkflowResponse;
     if (digest(queued) !== payloadHash)
@@ -404,7 +405,7 @@ const applyQueued = async (
       response.checkpoint === request.checkpoint &&
       response.questionId === request.display.questionId &&
       response.sourceRef === request.display.sourceRef &&
-      name === `${response.responseId}.json` &&
+      name === `${response.requestId}.json` &&
       typeof response.eventId === "string" &&
       response.eventId.length > 0 &&
       typeof response.originalText === "string" &&
