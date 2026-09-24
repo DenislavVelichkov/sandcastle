@@ -179,6 +179,9 @@ it("integrates a checked candidate once and blocks changed reviews and conflicts
   try {
     const start = await runDurableWorkflow(accepted.options);
     expect(start.tasks.a?.status).toBe("accepted");
+    expect(start.checksPassed?.a?.candidate).toBe(
+      git(accepted.worktree.worktreePath, "rev-parse", "HEAD"),
+    );
     expect(start.integrations?.a?.status).toBe("ready");
     expect(git(accepted.root, "rev-parse", "HEAD")).toBe(start.targetHead);
     const integrated = await integrateWorkflowTask(accepted.options, "a");
@@ -239,6 +242,7 @@ it("binds an owner answer to the accepted candidate and applies one effect", asy
   try {
     const waiting = await runDurableWorkflow(f.options);
     expect(waiting.tasks.a?.status).toBe("waiting");
+    expect(waiting.checksPassed?.a?.check.status).toBe("passed");
     expect(waiting.integrations?.a).toBeUndefined();
     expect(f.lockCalls()).toBe(0);
     const requestId = waiting.requests[0]!.id;

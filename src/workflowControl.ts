@@ -142,6 +142,12 @@ export interface WorkflowSnapshot {
   readonly startedTasks?: readonly string[];
   readonly requests: readonly WorkflowRequest[];
   readonly responses: readonly WorkflowResponseReceipt[];
+  readonly checksPassed?: Readonly<
+    Record<
+      string,
+      { readonly candidate: string; readonly check: WorkflowDecision }
+    >
+  >;
   readonly integrations?: Readonly<Record<string, WorkflowIntegrationIntent>>;
   readonly checkpoints: readonly string[];
   readonly checkpoint?: WorkflowCheckpoint;
@@ -1281,6 +1287,7 @@ const driveDurableWorkflow = async (
         startedTasks: [],
         requests: [],
         responses: [],
+        checksPassed: {},
         integrations: {},
         checkpoints: [],
         runtimeIdentity: options.runtimeIdentity,
@@ -1541,6 +1548,17 @@ const driveDurableWorkflow = async (
       result ??= await resultPromise;
       const last = result.completed.at(-1);
       state = await update(options.directory, state, {
+        ...(last?.acceptance
+          ? {
+              checksPassed: {
+                ...state.checksPassed,
+                [task.id]: {
+                  candidate: last.candidate.head,
+                  check: last.check,
+                },
+              },
+            }
+          : {}),
         evidence: {
           ...state.evidence,
           [task.id]: [
@@ -1755,6 +1773,12 @@ export const integrateWorkflowTask = async (
               JSON.stringify(selected)
           )
             throw new Error("Task contract changed after acceptance");
+          const passed = state.checksPassed?.[taskId];
+          if (
+            passed?.candidate !== intent.candidate.head ||
+            digest(passed.check) !== digest(intent.check)
+          )
+            throw new Error("Accepted check record changed");
           if (!(await acceptedCurrent(intent)))
             throw new Error("Accepted candidate or evidence changed");
           if (intent.requestId) {
@@ -1796,6 +1820,7 @@ export const integrateWorkflowTask = async (
             git(root, "status", "--porcelain", "--untracked-files=all")
           )
             throw new Error("Integration target changed or is not clean");
+          let alreadyIntegrated = true;
           try {
             git(
               root,
@@ -1804,14 +1829,12 @@ export const integrateWorkflowTask = async (
               intent.candidate.head,
               intent.targetHead,
             );
-            throw new Error("Candidate is already in the integration target");
           } catch (error) {
-            if (
-              error instanceof Error &&
-              error.message === "Candidate is already in the integration target"
-            )
-              throw error;
+            if ((error as { status?: number }).status !== 1) throw error;
+            alreadyIntegrated = false;
           }
+          if (alreadyIntegrated)
+            throw new Error("Candidate is already in the integration target");
           let tree: string;
           try {
             tree = git(
