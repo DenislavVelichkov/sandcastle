@@ -119,8 +119,35 @@ export interface TokenCounter {
   readonly counterId: string;
   /** Scope used to detect overlapping counters. */
   readonly coverageId: string;
+  /** Codex session that owns this counter. */
+  readonly sessionId?: string;
+  /** Parent session for a delegated descendant. */
+  readonly parentSessionId?: string;
+  /** Host-verifiable raw counter source, such as a captured rollout path. */
+  readonly rawSource?: string;
   /** Cumulative token values for this counter. */
   readonly usage: IterationUsage;
+}
+
+export interface TokenInvocation {
+  /** Selected task and role charged for this attempt. */
+  readonly taskId: string;
+  /** Required role charged for this attempt. */
+  readonly role: string;
+  /** Root Codex session, when captured. */
+  readonly sessionId?: string;
+  /** Provider dispatch time in Unix milliseconds. */
+  readonly startedAt: number;
+  /** Settlement time in Unix milliseconds. */
+  readonly settledAt: number;
+  /** Whether the provider returned or failed. */
+  readonly outcome: "completed" | "failed";
+  /** Session IDs the host proved belong to this invocation. */
+  readonly requiredSessionIds: readonly string[];
+  /** Raw counter identities observed during settlement. */
+  readonly counterIds: readonly string[];
+  /** False when a descendant, raw source or counter is missing or overlaps. */
+  readonly coverageComplete: boolean;
 }
 
 export interface TokenLedger {
@@ -132,6 +159,10 @@ export interface TokenLedger {
   readonly estimates: Readonly<Record<string, IterationUsage | null>>;
   /** Invocation or coverage identities whose attributable cost is incomplete. */
   readonly unknown: readonly string[];
+  /** Settled invocation lineage, including failures and resumed sessions. */
+  readonly invocations?: Readonly<Record<string, TokenInvocation>>;
+  /** Sum of disjoint verified counters; null while any attributable cost is unknown. */
+  readonly attributableTotal?: IterationUsage | null;
 }
 
 export interface WorkflowUsageOptions {
@@ -154,6 +185,8 @@ export interface WorkflowUsageOptions {
     sessionId?: string,
   ) => Promise<{
     readonly counters: readonly TokenCounter[];
+    /** Every session in the verified root/descendant lineage. */
+    readonly requiredSessionIds?: readonly string[];
     readonly complete: boolean;
   }>;
 }
@@ -318,7 +351,14 @@ export const initialWorkflowUsage = (
     taskMs: {},
     roleMs: {},
     invocations: 0,
-    tokens: { counters: {}, deltas: {}, estimates: {}, unknown: [] },
+    tokens: {
+      counters: {},
+      deltas: {},
+      estimates: {},
+      unknown: [],
+      invocations: {},
+      attributableTotal: null,
+    },
   };
 };
 
@@ -448,6 +488,36 @@ export const startWorkflowInvocation = (
   };
 };
 
+const coversInvocation = (
+  rootSessionId: string | undefined,
+  counters: readonly TokenCounter[],
+  requiredSessionIds: readonly string[],
+): boolean => {
+  if (
+    !rootSessionId ||
+    !requiredSessionIds.includes(rootSessionId) ||
+    new Set(requiredSessionIds).size !== requiredSessionIds.length ||
+    counters.length !== requiredSessionIds.length
+  )
+    return false;
+  const bySession = new Map(counters.map((item) => [item.sessionId, item]));
+  if (bySession.size !== requiredSessionIds.length) return false;
+  for (const id of requiredSessionIds) {
+    const sample = bySession.get(id);
+    if (!id || !sample?.rawSource?.trim()) return false;
+    const visited = new Set<string>();
+    let current = id;
+    while (current !== rootSessionId) {
+      if (visited.has(current)) return false;
+      visited.add(current);
+      const parent = bySession.get(current)?.parentSessionId;
+      if (!parent || !bySession.has(parent)) return false;
+      current = parent;
+    }
+  }
+  return !bySession.get(rootSessionId)?.parentSessionId;
+};
+
 export const finishWorkflowInvocation = (
   state: WorkflowUsageState,
   now: number,
@@ -455,6 +525,8 @@ export const finishWorkflowInvocation = (
   usage?: IterationUsage,
   verifiedCounters: readonly TokenCounter[] = [],
   coverageComplete = false,
+  requiredSessionIds: readonly string[] = [],
+  outcome: TokenInvocation["outcome"] = "completed",
 ): WorkflowUsageState => {
   if (!state.active) throw new Error("No active invocation to settle");
   const active = state.active;
@@ -462,15 +534,46 @@ export const finishWorkflowInvocation = (
   const { taskId, role, startedAt } = active;
   const elapsed = Math.max(0, now - startedAt);
   const estimateId = `${taskId}/${role}/${state.invocations}`;
+  const claimedComplete =
+    coverageComplete &&
+    coversInvocation(sessionId, verifiedCounters, requiredSessionIds);
   let tokens: TokenLedger = {
     ...state.tokens,
     estimates: { ...state.tokens.estimates, [estimateId]: usage ?? null },
-    ...(verifiedCounters.length && coverageComplete
+    ...(claimedComplete
       ? {}
       : { unknown: [...state.tokens.unknown, estimateId] }),
   };
   for (const counter of verifiedCounters)
     tokens = recordTokenCounter(tokens, counter);
+  const complete =
+    claimedComplete &&
+    tokens.unknown.length === state.tokens.unknown.length &&
+    verifiedCounters.every(
+      (counter) =>
+        !state.tokens.unknown.includes(counter.counterId) &&
+        !state.tokens.unknown.includes(counter.coverageId),
+    );
+  if (!complete && !tokens.unknown.includes(estimateId))
+    tokens = { ...tokens, unknown: [...tokens.unknown, estimateId] };
+  tokens = {
+    ...tokens,
+    invocations: {
+      ...tokens.invocations,
+      [estimateId]: {
+        taskId,
+        role,
+        ...(sessionId ? { sessionId } : {}),
+        startedAt,
+        settledAt: now,
+        outcome,
+        requiredSessionIds,
+        counterIds: verifiedCounters.map((counter) => counter.counterId),
+        coverageComplete: complete,
+      },
+    },
+  };
+  tokens = { ...tokens, attributableTotal: verifiedTokenTotal(tokens) };
   const next = {
     ...state,
     active: undefined,
@@ -585,6 +688,38 @@ const fields = [
   "outputTokens",
 ] as const;
 
+/** A partial or overlapping lineage has no defensible attributable token sum. */
+export const verifiedTokenTotal = (
+  ledger: TokenLedger,
+): IterationUsage | null => {
+  const invocations = Object.values(ledger.invocations ?? {});
+  if (
+    ledger.unknown.length ||
+    !invocations.length ||
+    invocations.some((item) => !item.coverageComplete)
+  )
+    return null;
+  const recorded = new Set(invocations.flatMap((item) => item.counterIds));
+  if (
+    !recorded.size ||
+    recorded.size !== Object.keys(ledger.deltas).length ||
+    [...recorded].some((id) => !ledger.deltas[id])
+  )
+    return null;
+  const total = Object.fromEntries(
+    fields.map((field) => [
+      field,
+      Object.values(ledger.deltas).reduce(
+        (sum, delta) => sum + delta[field],
+        0,
+      ),
+    ]),
+  ) as unknown as IterationUsage;
+  return fields.every((field) => Number.isSafeInteger(total[field]))
+    ? total
+    : null;
+};
+
 /** Cumulative resumed or forked counters count only their verified increment. */
 export const recordTokenCounter = (
   ledger: TokenLedger,
@@ -601,7 +736,9 @@ export const recordTokenCounter = (
     !sample.counterId ||
     !sample.coverageId ||
     !valid ||
-    (previous && previous.coverageId !== sample.coverageId)
+    (previous &&
+      (previous.coverageId !== sample.coverageId ||
+        (previous.sessionId && sample.sessionId !== previous.sessionId)))
   )
     return {
       ...ledger,
@@ -629,9 +766,8 @@ export const recordTokenCounter = (
     ]),
   ) as unknown as IterationUsage;
   return {
+    ...ledger,
     counters: { ...ledger.counters, [sample.counterId]: sample },
     deltas: { ...ledger.deltas, [sample.counterId]: delta },
-    estimates: ledger.estimates,
-    unknown: ledger.unknown,
   };
 };

@@ -66,6 +66,11 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
             {
               counterId: sessionId,
               coverageId: sessionId,
+              sessionId,
+              rawSource: join(
+                root,
+                `${sessionId === "failed-session" ? "failed-session" : "session"}.jsonl`,
+              ),
               usage: {
                 inputTokens: 10,
                 cacheCreationInputTokens: 0,
@@ -75,6 +80,7 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
             },
           ]
         : [],
+      requiredSessionIds: sessionId ? [sessionId] : [],
       complete: true,
     }),
     listModels: async (cursor?: string) => {
@@ -161,6 +167,7 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
     expect(completed.tasks.one?.status).toBe("accepted");
     expect(completed.usage?.remaining.one?.implementation).toBe(1);
     expect(completed.usage?.tokens.deltas["session-1"]?.inputTokens).toBe(10);
+    expect(completed.usage?.tokens.attributableTotal?.inputTokens).toBe(10);
     expect(
       completed.usage?.accountHistory.at(-1)?.reading.windows.short
         ?.usedPercent,
@@ -309,6 +316,10 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
     expect(
       recoveredFailure.usage?.tokens.deltas["failed-session"]?.inputTokens,
     ).toBe(10);
+    expect(
+      recoveredFailure.usage?.tokens.invocations?.["one/implementation/1"]
+        ?.outcome,
+    ).toBe("failed");
     expect(recoveredFailure.usage?.tokens.unknown).toEqual([]);
   } finally {
     await real.close();

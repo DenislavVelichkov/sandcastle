@@ -1748,6 +1748,7 @@ const driveDurableWorkflow = async (
                     result.usage,
                     counters?.counters,
                     counters?.complete,
+                    counters?.requiredSessionIds,
                   ),
                 );
                 if (usageState?.stopReason) await requestGuardStop();
@@ -1923,6 +1924,8 @@ const driveDurableWorkflow = async (
             undefined,
             counters?.counters,
             counters?.complete,
+            counters?.requiredSessionIds,
+            "failed",
           ),
         );
       }

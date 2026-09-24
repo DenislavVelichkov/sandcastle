@@ -270,6 +270,134 @@ it("deduplicates cumulative resumed counters and leaves overlap unknown", () => 
   ).toEqual(["session-1"]);
 });
 
+it("requires root and descendant raw counters before reporting a token total", () => {
+  const now = Date.now();
+  const reading: AccountObservation = {
+    accountId: "account-a",
+    observedAt: now,
+    denied: false,
+    windows: { primary: { usedPercent: 20, resetsAt: now + 60_000 } },
+  };
+  const options = {
+    policyId: "fixed",
+    activity: "library-proof" as const,
+    readAccount: async () => reading,
+    listModels: async () => ({ data: [] }),
+  };
+  const initial = startWorkflowInvocation(
+    startWorkflowTask(
+      initialWorkflowUsage(
+        options,
+        "worker",
+        reading,
+        [{ id: "task", requiredRoles: [] }],
+        2,
+        {},
+      ),
+      "task",
+      now,
+    ),
+    "task",
+    "implementation",
+    reading,
+    now,
+  );
+  const usage = (inputTokens: number) => ({
+    inputTokens,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    outputTokens: 1,
+  });
+  const root = {
+    counterId: "root",
+    coverageId: "root",
+    sessionId: "root",
+    rawSource: "/host/root.jsonl",
+    usage: usage(10),
+  };
+  const child = {
+    counterId: "child",
+    coverageId: "child",
+    sessionId: "child",
+    parentSessionId: "root",
+    rawSource: "/host/child.jsonl",
+    usage: usage(5),
+  };
+  const missing = finishWorkflowInvocation(
+    initial,
+    now + 1,
+    "root",
+    undefined,
+    [root],
+    true,
+    ["root", "child"],
+  );
+  expect(
+    missing.tokens.invocations?.["task/implementation/1"]?.coverageComplete,
+  ).toBe(false);
+  expect(missing.tokens.attributableTotal).toBeNull();
+  const overlapping = finishWorkflowInvocation(
+    initial,
+    now + 1,
+    "root",
+    undefined,
+    [root, { ...child, coverageId: "root" }],
+    true,
+    ["root", "child"],
+  );
+  expect(
+    overlapping.tokens.invocations?.["task/implementation/1"]?.coverageComplete,
+  ).toBe(false);
+  expect(overlapping.tokens.attributableTotal).toBeNull();
+  const noSource = finishWorkflowInvocation(
+    initial,
+    now + 1,
+    "root",
+    undefined,
+    [root, { ...child, rawSource: "" }],
+    true,
+    ["root", "child"],
+  );
+  expect(noSource.tokens.attributableTotal).toBeNull();
+  const complete = finishWorkflowInvocation(
+    initial,
+    now + 1,
+    "root",
+    undefined,
+    [root, child],
+    true,
+    ["root", "child"],
+  );
+  expect(complete.tokens.invocations?.["task/implementation/1"]).toMatchObject({
+    sessionId: "root",
+    outcome: "completed",
+    requiredSessionIds: ["root", "child"],
+    counterIds: ["root", "child"],
+    coverageComplete: true,
+  });
+  expect(complete.tokens.attributableTotal?.inputTokens).toBe(15);
+  const failed = finishWorkflowInvocation(
+    startWorkflowInvocation(
+      complete,
+      "task",
+      "implementation",
+      { ...reading, observedAt: now + 1 },
+      now + 1,
+    ),
+    now + 2,
+    undefined,
+    undefined,
+    [],
+    false,
+    [],
+    "failed",
+  );
+  expect(failed.tokens.invocations?.["task/implementation/2"]?.outcome).toBe(
+    "failed",
+  );
+  expect(failed.tokens.attributableTotal).toBeNull();
+});
+
 it("reserves each role, keeps the baseline, and charges late completion", () => {
   const now = Date.now();
   const account: AccountObservation = {
@@ -319,6 +447,8 @@ it("reserves each role, keeps the baseline, and charges late completion", () => 
       {
         counterId: "session-1",
         coverageId: "session-1",
+        sessionId: "session-1",
+        rawSource: "/host/session-1.jsonl",
         usage: {
           inputTokens: 10,
           cacheCreationInputTokens: 0,
@@ -344,6 +474,8 @@ it("reserves each role, keeps the baseline, and charges late completion", () => 
       {
         counterId: "session-1",
         coverageId: "session-1",
+        sessionId: "session-1",
+        rawSource: "/host/session-1.jsonl",
         usage: {
           inputTokens: 10,
           cacheCreationInputTokens: 0,
@@ -353,6 +485,7 @@ it("reserves each role, keeps the baseline, and charges late completion", () => 
       },
     ],
     true,
+    ["session-1"],
   );
   state = startWorkflowInvocation(
     state,
@@ -375,6 +508,8 @@ it("reserves each role, keeps the baseline, and charges late completion", () => 
       {
         counterId: "session-1",
         coverageId: "session-1",
+        sessionId: "session-1",
+        rawSource: "/host/session-1.jsonl",
         usage: {
           inputTokens: 15,
           cacheCreationInputTokens: 0,
@@ -384,6 +519,7 @@ it("reserves each role, keeps the baseline, and charges late completion", () => 
       },
     ],
     true,
+    ["session-1"],
   );
   expect(state.tokens.deltas["session-1"]?.inputTokens).toBe(15);
   expect(() =>
