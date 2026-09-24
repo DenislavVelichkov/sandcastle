@@ -1682,6 +1682,20 @@ const driveDurableWorkflow = async (
         },
       });
       const guardedUsage = options.usage;
+      let activeSessionId: string | undefined;
+      const readCounters = (
+        taskId: string,
+        role: string,
+        sessionId?: string,
+      ) => {
+        const read = guardedUsage?.readTokenCounters;
+        return read
+          ? readWithin(
+              () => read(taskId, role, sessionId),
+              "Token counter reading timed out",
+            ).catch(() => undefined)
+          : Promise.resolve(undefined);
+      };
       const resultPromise = runWorkflow({
         ...options,
         ...(guardedUsage
@@ -1701,6 +1715,7 @@ const driveDurableWorkflow = async (
                       Date.now(),
                     ),
                   );
+                  activeSessionId = undefined;
                 } catch (error) {
                   await mutateUsage((current) => ({
                     ...(reading
@@ -1720,17 +1735,11 @@ const driveDurableWorkflow = async (
                   usage?: import("./AgentProvider.js").IterationUsage;
                 },
               ) => {
-                const counters = guardedUsage.readTokenCounters
-                  ? await readWithin(
-                      () =>
-                        guardedUsage.readTokenCounters!(
-                          taskId,
-                          role,
-                          result.sessionId,
-                        ),
-                      "Token counter reading timed out",
-                    ).catch(() => undefined)
-                  : undefined;
+                const counters = await readCounters(
+                  taskId,
+                  role,
+                  result.sessionId,
+                );
                 await mutateUsage((current) =>
                   finishWorkflowInvocation(
                     current,
@@ -1767,6 +1776,11 @@ const driveDurableWorkflow = async (
             `${record.eventId}.json`,
           );
           await publish(path, record, true);
+          if (
+            usageState?.active?.taskId === taskId &&
+            usageState.active.role === role
+          )
+            activeSessionId = session.sessionId;
         },
         onRoleCompleted: async (taskId, role) => {
           const record = { taskId, role };
@@ -1896,10 +1910,22 @@ const driveDurableWorkflow = async (
         failure ??= new Error(usageState.stopReason);
       }
       const stopAfterResult = await stopRequested(options.directory);
-      if (options.usage && usageState?.active)
+      if (options.usage && usageState?.active) {
+        const { taskId, role } = usageState.active;
+        const counters = activeSessionId
+          ? await readCounters(taskId, role, activeSessionId)
+          : undefined;
         await mutateUsage((current) =>
-          finishWorkflowInvocation(current, Date.now()),
+          finishWorkflowInvocation(
+            current,
+            Date.now(),
+            activeSessionId,
+            undefined,
+            counters?.counters,
+            counters?.complete,
+          ),
         );
+      }
       if (stopAfterResult && failure) {
         if (usageState?.currentTask)
           await mutateUsage((current) =>

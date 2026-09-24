@@ -271,6 +271,33 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
     expect(failedUsage?.remaining.one?.implementation).toBe(1);
     expect(failedUsage?.tokens.unknown).toHaveLength(1);
     expect(Object.values(failedUsage?.tokens.estimates ?? {})).toEqual([null]);
+
+    const capturedFailure = {
+      ...failed,
+      directory: join(root, "captured-failure-state"),
+      invocationId: "captured-failure",
+      worktrees: {
+        one: {
+          ...real,
+          run: async (runOptions: Parameters<typeof real.run>[0]) => {
+            await runOptions.onIterationStart?.(1);
+            const sessionFilePath = join(root, "failed-session.jsonl");
+            await writeFile(sessionFilePath, "{}\n");
+            await runOptions.onSessionCaptured?.({
+              sessionId: "failed-session",
+              sessionFilePath,
+            });
+            throw new Error("Provider failed after session capture");
+          },
+        },
+      },
+    };
+    const recoveredFailure = await runDurableWorkflow(capturedFailure);
+    expect(recoveredFailure.tasks.one?.status).toBe("blocked");
+    expect(
+      recoveredFailure.usage?.tokens.deltas["failed-session"]?.inputTokens,
+    ).toBe(10);
+    expect(recoveredFailure.usage?.tokens.unknown).toEqual([]);
   } finally {
     await real.close();
     await rm(root, { recursive: true, force: true });
