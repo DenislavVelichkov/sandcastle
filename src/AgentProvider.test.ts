@@ -2382,6 +2382,7 @@ describe("sessionStorage", () => {
       const rootId = "11111111-2222-4444-8888-111111111111";
       const childId = "22222222-2222-4444-8888-222222222222";
       const day = join(sandboxDir, "2026", "05", "26");
+      const rootPath = join(day, `rollout-2026-05-26T08-00-00-${rootId}.jsonl`);
       await mkdir(day, { recursive: true });
       const rollout = (
         id: string,
@@ -2416,10 +2417,7 @@ describe("sessionStorage", () => {
         ]
           .map((item) => JSON.stringify(item))
           .join("\n") + "\n";
-      await writeFile(
-        join(day, `rollout-2026-05-26T08-00-00-${rootId}.jsonl`),
-        rollout(rootId, undefined, 10),
-      );
+      await writeFile(rootPath, rollout(rootId, undefined, 10));
       await writeFile(
         join(day, `rollout-2026-05-26T08-01-00-${childId}.jsonl`),
         rollout(childId, rootId, 5),
@@ -2487,10 +2485,43 @@ describe("sessionStorage", () => {
         (await resumedProvider.sessionStorage.readCumulativeCounters!(rootId))
           .complete,
       ).toBe(true);
+      await writeFile(rootPath, rollout(rootId, undefined, 10, 2));
+      await provider.sessionStorage.captureToHost({
+        hostCwd: "/host/repo",
+        sandboxCwd: "/sandbox/repo",
+        sessionId: rootId,
+        handle: fsBindMountHandle(),
+      });
+      expect(
+        (await provider.sessionStorage.readCumulativeCounters!(rootId))
+          .complete,
+      ).toBe(false);
       await writeFile(
-        join(day, `rollout-2026-05-26T08-00-00-${rootId}.jsonl`),
-        rollout(rootId, undefined, 10, 2),
+        rootPath,
+        rollout(rootId, undefined, 10).replace(
+          '"cwd":"/sandbox/repo"',
+          '"cwd":"/sandbox/repo","forked_from_id":"ancestor"',
+        ),
       );
+      await provider.sessionStorage.captureToHost({
+        hostCwd: "/host/repo",
+        sandboxCwd: "/sandbox/repo",
+        sessionId: rootId,
+        handle: fsBindMountHandle(),
+      });
+      const forked =
+        await provider.sessionStorage.readCumulativeCounters!(rootId);
+      expect(forked.complete).toBe(false);
+      expect(forked.counters.some((item) => item.sessionId === rootId)).toBe(
+        false,
+      );
+      const compacted = rollout(rootId, undefined, 10).trimEnd().split("\n");
+      compacted.splice(
+        -1,
+        0,
+        JSON.stringify({ type: "compacted", payload: {} }),
+      );
+      await writeFile(rootPath, compacted.join("\n") + "\n");
       await provider.sessionStorage.captureToHost({
         hostCwd: "/host/repo",
         sandboxCwd: "/sandbox/repo",

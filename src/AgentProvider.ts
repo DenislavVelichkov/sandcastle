@@ -476,6 +476,9 @@ const codexCounterSource = (
   let spawned = 0;
   let finished = false;
   let malformed = false;
+  let inheritedHistory = false;
+  let forked = false;
+  let compacted = false;
   for (const line of jsonl.split("\n")) {
     if (!line.trim()) continue;
     let item: any;
@@ -486,11 +489,16 @@ const codexCounterSource = (
       continue;
     }
     if (item.type === "session_meta") {
-      metadataId = item.payload?.id;
+      if (metadataId && item.payload?.id !== metadataId)
+        inheritedHistory = true;
+      else metadataId = item.payload?.id;
+      if (typeof item.payload?.forked_from_id === "string") forked = true;
       parentSessionId =
         typeof item.payload?.parent_thread_id === "string"
           ? item.payload.parent_thread_id
           : undefined;
+    } else if (item.type === "compacted") {
+      compacted = true;
     } else if (item.type === "event_msg") {
       if (item.payload?.type === "token_count") {
         const total = item.payload.info?.total_token_usage;
@@ -507,7 +515,7 @@ const codexCounterSource = (
       spawned++;
   }
   return {
-    ...(usage && metadataId === sessionId
+    ...(usage && metadataId === sessionId && !forked && !inheritedHistory
       ? {
           counter: {
             counterId: sessionId,
@@ -522,7 +530,13 @@ const codexCounterSource = (
     ...(parentSessionId ? { parentSessionId } : {}),
     spawned,
     complete:
-      metadataId === sessionId && Boolean(usage) && finished && !malformed,
+      metadataId === sessionId &&
+      Boolean(usage) &&
+      finished &&
+      !malformed &&
+      !inheritedHistory &&
+      !forked &&
+      !compacted,
   };
 };
 
