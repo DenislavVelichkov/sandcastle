@@ -1,5 +1,13 @@
-import { mkdir, readFile, rm, writeFile, access } from "node:fs/promises";
-import { dirname, join, posix } from "node:path";
+import {
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+  access,
+} from "node:fs/promises";
+import { dirname, join, posix, relative } from "node:path";
 import { tmpdir } from "node:os";
 import {
   claudeHostSessionPath,
@@ -518,6 +526,62 @@ const codexCounterSource = (
   };
 };
 
+const hostCodexDescendants = async (
+  root: string,
+  sessionId: string,
+): Promise<{ id: string; path: string; parent: string }[]> => {
+  const candidates: { id: string; path: string; parent: string }[] = [];
+  const visit = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+        continue;
+      }
+      if (!entry.isFile() || !/^rollout-.*\.jsonl$/.test(entry.name)) continue;
+      const file = await open(path, "r");
+      let header = "";
+      try {
+        // ponytail: oversized metadata stays unknown; stream the first line if Codex grows it past 16 KiB.
+        const buffer = Buffer.alloc(16_384);
+        const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+        header = buffer.subarray(0, bytesRead).toString().split("\n", 1)[0]!;
+      } finally {
+        await file.close();
+      }
+      try {
+        const item = JSON.parse(header);
+        if (
+          item.type === "session_meta" &&
+          typeof item.payload?.id === "string" &&
+          typeof item.payload?.parent_thread_id === "string"
+        )
+          candidates.push({
+            id: item.payload.id,
+            parent: item.payload.parent_thread_id,
+            path,
+          });
+      } catch {
+        // A partial metadata line cannot establish descendant identity.
+      }
+    }
+  };
+  await visit(root);
+  const lineage = new Set([sessionId]);
+  const descendants: typeof candidates = [];
+  let found = true;
+  while (found) {
+    found = false;
+    for (const child of candidates) {
+      if (lineage.has(child.id) || !lineage.has(child.parent)) continue;
+      descendants.push(child);
+      lineage.add(child.id);
+      found = true;
+    }
+  }
+  return descendants;
+};
+
 const makeCodexSessionStorage = (
   options?: CodexOptions,
 ): AgentSessionStorage => {
@@ -621,6 +685,25 @@ const makeCodexSessionStorage = (
       const rewritten = transferCodexSession(jsonl, hostCwd, sandboxCwd);
       const target = posix.join(sandboxSessionsDir, located.relativePath);
       await writeSandboxFile(handle, target, rewritten, "codex-res");
+      const root =
+        hostSessionsDir ?? join(process.env.HOME ?? "~", ".codex", "sessions");
+      for (const child of await hostCodexDescendants(root, sessionId)) {
+        const relativePath = relative(root, child.path).replace(/\\/g, "/");
+        if (relativePath.startsWith(".."))
+          throw new Error(
+            "Codex descendant path escaped the host session root",
+          );
+        await writeSandboxFile(
+          handle,
+          posix.join(sandboxSessionsDir, relativePath),
+          transferCodexSession(
+            await readFile(child.path, "utf8"),
+            hostCwd,
+            sandboxCwd,
+          ),
+          "codex-res",
+        );
+      }
     },
     findByIdOnHost: (id) => findCodexSessionOnHost(id, hostSessionsDir),
     readCumulativeCounters: async (id) => {

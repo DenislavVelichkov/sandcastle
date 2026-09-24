@@ -2375,6 +2375,9 @@ describe("sessionStorage", () => {
     const sandboxDir = await mkdtemp(
       join(tmpdir(), "sandcastle-codex-lineage-"),
     );
+    const resumedDir = await mkdtemp(
+      join(tmpdir(), "sandcastle-codex-resume-"),
+    );
     try {
       const rootId = "11111111-2222-4444-8888-111111111111";
       const childId = "22222222-2222-4444-8888-222222222222";
@@ -2450,6 +2453,40 @@ describe("sessionStorage", () => {
       expect(
         result.counters.every((item) => item.rawSource?.startsWith(hostDir)),
       ).toBe(true);
+      const resumedProvider = codex("gpt-6-sol", {
+        sessionStorage: {
+          hostSessionsDir: hostDir,
+          sandboxSessionsDir: resumedDir,
+        },
+      });
+      await resumedProvider.sessionStorage.resumeIntoSandbox({
+        hostCwd: "/host/repo",
+        sandboxCwd: "/sandbox/repo",
+        sessionId: rootId,
+        handle: fsBindMountHandle(),
+      });
+      expect(
+        await readFile(
+          join(
+            resumedDir,
+            "2026",
+            "05",
+            "26",
+            `rollout-2026-05-26T08-01-00-${childId}.jsonl`,
+          ),
+          "utf8",
+        ),
+      ).toContain(childId);
+      await resumedProvider.sessionStorage.captureToHost({
+        hostCwd: "/host/repo",
+        sandboxCwd: "/sandbox/repo",
+        sessionId: rootId,
+        handle: fsBindMountHandle(),
+      });
+      expect(
+        (await resumedProvider.sessionStorage.readCumulativeCounters!(rootId))
+          .complete,
+      ).toBe(true);
       await writeFile(
         join(day, `rollout-2026-05-26T08-00-00-${rootId}.jsonl`),
         rollout(rootId, undefined, 10, 2),
@@ -2467,6 +2504,7 @@ describe("sessionStorage", () => {
     } finally {
       await rm(hostDir, { recursive: true, force: true });
       await rm(sandboxDir, { recursive: true, force: true });
+      await rm(resumedDir, { recursive: true, force: true });
     }
   });
 
