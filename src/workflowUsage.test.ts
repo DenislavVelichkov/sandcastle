@@ -338,6 +338,15 @@ it("requires root and descendant raw counters before reporting a token total", (
     missing.tokens.invocations?.["task/implementation/1"]?.coverageComplete,
   ).toBe(false);
   expect(missing.tokens.attributableTotal).toBeNull();
+  expect(
+    startWorkflowInvocation(
+      missing,
+      "task",
+      "implementation",
+      { ...reading, observedAt: now + 1 },
+      now + 1,
+    ).active?.role,
+  ).toBe("implementation");
   const overlapping = finishWorkflowInvocation(
     initial,
     now + 1,
