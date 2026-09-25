@@ -1,39 +1,46 @@
 # Workflow user guide
 
-This guide covers the maintained `@ai-hero/sandcastle` workflow package and the first independent library fixture. The [API reference](workflow.md) describes the project callbacks and public functions in detail. The workflow is opt-in. Each project still owns its tasks, prompts, checks, reviews, human decisions, and Git target.
+This guide covers the maintained `@ai-hero/sandcastle` release and its independent library and web consumers. The [API reference](workflow.md) describes the project callbacks and public functions in detail. The workflow is opt-in. Each project still owns its tasks, prompts, checks, reviews, human decisions, and Git target.
 
 ## Contents
 
-1. [Prepare an exact package](#prepare-an-exact-package)
+1. [Install the published release](#install-the-published-release)
 2. [Run the first library task](#run-the-first-library-task)
-3. [Use the daily controls](#use-the-daily-controls)
-4. [Check evidence and limits](#check-evidence-and-limits)
-5. [Change an installation](#change-an-installation)
-6. [Troubleshoot](#troubleshoot)
+3. [Verify the web fixture](#verify-the-web-fixture)
+4. [Use the daily controls](#use-the-daily-controls)
+5. [Check evidence and limits](#check-evidence-and-limits)
+6. [Change an installation](#change-an-installation)
+7. [Troubleshoot](#troubleshoot)
 
-## Prepare an exact package
+## Install the published release
 
-You need Git, Node 24 or newer, pnpm 11.19.0, and Docker for the selected Linux/Docker/Codex proof. The actual worker needs the Codex binary, an authenticated ChatGPT account, the selected image, and the personal integration's isolated Codex Home. Keep the host workflow state and response route outside agent worktrees. `pnpm exec sandcastle --help` checks the installed CLI; it does not start a workflow.
+The maintained [immutable release `v0.12.0-dv8.16.0-r2`](https://github.com/DenislavVelichkov/sandcastle/releases/tag/v0.12.0-dv8.16.0-r2) contains the exact archive from the library recovery proof. Its tag points to source `0df2ba5c91afca41294ea026a95f9e21a7ba6d73`; the archive SHA-256 is `eca2e0116d09ac920b9ccf2e6e8d6896124c9533a83d9945066079ecead83164`. The release also carries `SHA256SUMS`. GitHub's release and asset attestations verify, and a downloaded asset matches the sealed archive byte for byte. Keep this URL, checksum, source commit and package-manager lockfile together.
 
-From a clean committed maintained Sandcastle source checkout, make a local archive and receipt:
-
-```sh
-pnpm run seal -- /absolute/output-directory
-pnpm run verify:seal -- /absolute/output-directory/ai-hero-sandcastle-0.12.0-dv8.16.0.tgz.receipt.json
-```
-
-`seal` refuses a dirty source tree. It builds JavaScript, public types and templates, records the source commit and workflow API/configuration/state versions, packs the license, and writes the archive SHA-256 receipt. `verify:seal` compares those bytes and metadata, installs into a fresh directory without a source checkout or plugin cache, checks actual package resolution and public exports, runs the CLI help command, and typechecks a public import. A checksum, source, version or contract mismatch stops preparation. Rebuild after any source change and keep the new receipt with the new archive. This local archive is prepublication evidence. It has no GitHub release identity or distribution attestation.
-
-The selected project pins that exact archive in its package manifest and pnpm lockfile. In the independent fixture, the owner keeps the archive outside the candidate repository and runs:
+The npm library and pnpm web repositories pin this exact release URL in their manifests and lockfiles. Check the published bytes directly:
 
 ```sh
-cd /absolute/limit-items-workflow-fixture
-pnpm add --save-dev file:/absolute/output-directory/ai-hero-sandcastle-0.12.0-dv8.16.0.tgz
-CI=true pnpm install --frozen-lockfile
-pnpm exec sandcastle --help
+curl --fail --location --output /tmp/ai-hero-sandcastle-0.12.0-dv8.16.0.tgz https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.16.0-r2/ai-hero-sandcastle-0.12.0-dv8.16.0.tgz
+sha256sum /tmp/ai-hero-sandcastle-0.12.0-dv8.16.0.tgz
+gh release verify v0.12.0-dv8.16.0-r2
+gh release verify-asset v0.12.0-dv8.16.0-r2 /tmp/ai-hero-sandcastle-0.12.0-dv8.16.0.tgz
 ```
 
-Record the archive and receipt paths, source commit, package resolution, lockfile integrity, worker image ID, Codex binary, isolated Codex Home and consumer commit before a proof run. Repeat package resolution and metadata checks inside the actual worker. A matching host package alone does not establish worker identity. If the package differs, stop before dispatch; do not fall back to the public npm package. The personal setup owns this installation and inspection step. It preserves unrelated dependencies, project prompts and hooks, host defaults and disabled skills.
+Use Linux, Docker, and Node 24. The library proof used npm 11.17.0 in a Node-only image. The web proof used pnpm 11.19.0 and Playwright 1.63.0. For live Codex recovery, the actual worker also needs Codex CLI 0.156.1, an authenticated account, the tested image and the personal integration's isolated Codex Home. Keep host workflow state and the response route outside agent worktrees. A CLI `--help` check does not start a workflow.
+
+From a clean checkout of the independent npm library consumer, run:
+
+```sh
+cd ../limit-items-release-consumer
+npm ci
+npm test
+npm run typecheck
+npm run verify:install
+docker build -t sandcastle:limit-items-release -f Dockerfile.library .
+npm run proof
+npm run verify:evidence
+```
+
+`npm ci` rejects a missing or inconsistent lockfile. `verify:install` checks the release URL, integrity, installed metadata, public exports and resolution. `proof` repeats those checks, tests, typecheck and CLI inside a Sandcastle-created Node-only Docker sandbox, removes it, then exports and reopens `evidence/issue-18-library-r2.json`. The historical library recovery proof still belongs to [issue #17](proofs/issue-17-live-attempt.md); this clean npm consumer proves distribution. The personal setup preserves unrelated project inputs and owns installation inspection. Managed update and rollout remain separate work.
 
 ## Run the first library task
 
@@ -47,6 +54,20 @@ The independent fixture's `TASK.md` asks for a zero-limit correction. Its starti
 The live recovery proof has a defined stop point. The owner barrier waits for recoverable source bytes and a genuine provider session before asking the controller to stop. Verify the saved-and-stopped receipt, remove the actual sandbox, restore a new sandbox and resume the recorded session within the second reserved implementation call. Finish the protected grader and both fresh reviews on the frozen candidate.
 
 The first September 25, 2026 live attempt proved recovery and owner response but failed at integration because the fixture wrote timing-dependent test output into frozen check evidence. Its blocked state remains intact. After the fixture check was made stable, a fresh authorized attempt used the same sealed `0.12.0-dv8.16.0` package and actual Docker/Codex worker. It verified interruption, sandbox removal, session continuation, the protected grader, both reviews, a new exact-candidate owner answer, and one merge into a disposable target within four calls. The controller returned the same Git effect on a second integration call. A separate deterministic fixture proved answer application while independent Task B was active. See the [issue #17 receipt report](proofs/issue-17-live-attempt.md) for identities, hashes, limits, and remaining support boundaries.
+
+## Verify the web fixture
+
+From a clean checkout of the independent pnpm web project, run:
+
+```sh
+cd ../counter-web-workflow-fixture
+pnpm install --frozen-lockfile
+docker build -t sandcastle:counter-web-proof -f Dockerfile.browser .
+pnpm run proof
+pnpm run verify:evidence -- --self-test
+```
+
+The app has no backend. Reset sets the displayed counter to zero and removes `counter-value-v1` from that browser context's local storage. The project-owned proof starts two actual Sandcastle Docker sandboxes together. Each installs the release from the lockfile, checks the public import and CLI, runs Playwright increment/reload/Reset/reload behavior, and saves screenshots. It records Playwright 1.63.0, Chromium 153.0.8010.12, locale, timezone, viewport, image ID, package identity and source hashes. It exports `evidence/issue-18-r3/`, removes both containers and worktrees, and reopens the exported files. The validator rejects controlled wrong-build, changed-fixture, missing-browser and stale-capture records. An existing evidence directory is not overwritten; use `verify:evidence` to reassess it.
 
 ## Use the daily controls
 
@@ -70,11 +91,13 @@ The host state distinguishes checks passed, waiting, accepted and integrated. Re
 
 Guarded Codex work records requested model and effort separately from observed effective settings. It reserves each call before dispatch and keeps spent calls and active time across resume and account resets. The library proof ceiling is four calls and 45 active minutes, with two implementation attempts. An unavailable model, stale account reading, denied usage, less than 20% remaining, a five percentage-point increase, or an exhausted deadline blocks a new call and asks for a checkpoint. Unknown token coverage stays unknown. The workflow does not buy credits, redeem resets or switch billing modes. See [Guarded Codex usage](workflow.md#guarded-codex-usage) for the exact callback contract.
 
-Browser and Android checks are project capabilities. Prepare isolated browser contexts and reserved backend fixtures only for a project that declares them. Native work uses that project's existing device and proof controller. Neither capability is established by the library fixture. The seven-configuration benchmark, browser report and adaptive policy are separate later activities; this local package check reports no savings or model ranking.
+Browser and Android checks are project capabilities. The web fixture establishes browser isolation for its no-backend counter and the tested Playwright image. Other web projects must declare their own browser versions, contexts, ports and backend reservations. Native work uses that project's existing device and proof controller; no native capability was exercised here. Browser comparison and fixture approval do not grant production acceptance or promote a baseline. The seven-configuration benchmark, browser report and adaptive policy are separate later activities; these distribution checks report no savings or model ranking.
+
+The [issue #18 release adoption report](proofs/issue-18-release-adoption.md) records the exact distribution, consumer, sandbox and browser evidence.
 
 ## Change an installation
 
-Keep the archive receipt, package pin, lockfile, installed resolution, image ID and runtime identity together. Do not replace a package while a checkpoint, pending answer or unfinished invocation depends on its old bytes. The planned managed update and rollback commands are **not available in this prepublication stage**. Later rollout must inspect each explicitly selected project, preserve its customized fields and runtime state, and report partial outcomes. A local sealed archive is not an immutable GitHub release receipt.
+Keep the release URL, checksum, lockfile, installed resolution, image ID and runtime identity together. Do not replace a package while a checkpoint, pending answer or unfinished invocation depends on its old bytes. Managed update, rollback and rollout commands are not available in this release. Later rollout must inspect each explicitly selected project, preserve its customized fields and runtime state, and report partial outcomes. Corrections to the published archive require a new tag and package version.
 
 ## Troubleshoot
 
