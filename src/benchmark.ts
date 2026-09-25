@@ -1,7 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, open, readFile, rename, rm } from "node:fs/promises";
+import { readFileSync, realpathSync } from "node:fs";
+import {
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import {
   basename,
   dirname,
@@ -171,6 +179,14 @@ export interface BenchmarkLedger {
   readonly windowDurationMs?: Readonly<Record<string, number>>;
   readonly fixtureConditions?: Readonly<Record<string, string>>;
   readonly evaluations: readonly BenchmarkEvaluation[];
+  readonly activities?: readonly {
+    readonly label: string;
+    readonly startedAt: number;
+    readonly reservedMs: number;
+    readonly actualMs?: number;
+    readonly outcome: "reserved" | "complete" | "failed";
+    readonly reason?: string;
+  }[];
   readonly pair?: BenchmarkPair;
   readonly promotion?: "admitted" | "fixed-policy";
 }
@@ -319,14 +335,15 @@ export const exportFixtureTree = async (
 
 const save = async (
   directory: string,
-  ledger: BenchmarkLedger,
+  value: unknown,
+  name = "benchmark.json",
 ): Promise<void> => {
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  const path = ledgerPath(directory);
+  const path = join(directory, name);
   const temp = `${path}.${process.pid}.tmp`;
   const file = await open(temp, "wx", 0o600);
   try {
-    await file.writeFile(JSON.stringify(ledger));
+    await file.writeFile(JSON.stringify(value));
     await file.sync();
   } finally {
     await file.close();
@@ -374,6 +391,108 @@ export const readBenchmark = async (
     throw new Error("Benchmark protocol or policy identity changed");
   return ledger;
 };
+
+/** Charge host preparation, grading, supervision or reporting against the same pilot clock. */
+export const withBenchmarkActivity = async <T>(
+  directory: string,
+  policyId: string,
+  label: string,
+  maxActiveMs: number,
+  action: (signal: AbortSignal) => Promise<T>,
+): Promise<T> =>
+  withBenchmarkLock(directory, async () => {
+    if (
+      typeof label !== "string" ||
+      !label ||
+      !Number.isSafeInteger(maxActiveMs) ||
+      maxActiveMs <= 0
+    )
+      throw new Error(
+        "Benchmark activity needs a label and finite reservation",
+      );
+    const pilotLock = join(directory, "execution.lock");
+    await mkdir(pilotLock);
+    try {
+      const stat = readFileSync(`/proc/${process.pid}/stat`, "utf8");
+      await writeFile(
+        join(pilotLock, "owner.json"),
+        JSON.stringify({
+          pid: process.pid,
+          start: stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19] ?? "",
+        }),
+        { flag: "wx", mode: 0o600 },
+      );
+      const budget = JSON.parse(
+        await readFile(join(directory, "budget.json"), "utf8"),
+      ) as PilotBudgetState;
+      if (
+        budget.version !== 2 ||
+        budget.policyId !== policyId ||
+        !Number.isSafeInteger(budget.activeMs) ||
+        budget.activeMs < 0 ||
+        budget.activeInvocationId ||
+        !Object.values(budget.episodes).some(
+          (episode) => episode.activity === "measurement" && episode.complete,
+        ) ||
+        budget.activeMs + maxActiveMs > 4 * 60 * 60_000
+      )
+        throw new Error(
+          "Pilot activity cannot fit the shared active-time budget",
+        );
+      const ledger = await readBenchmark(directory, policyId);
+      const startedAt = Date.now();
+      const activity = { label, startedAt, reservedMs: maxActiveMs };
+      await save(
+        directory,
+        { ...budget, activeMs: budget.activeMs + maxActiveMs },
+        "budget.json",
+      );
+      await save(directory, {
+        ...ledger,
+        activities: [
+          ...(ledger.activities ?? []),
+          { ...activity, outcome: "reserved" },
+        ],
+      });
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(new Error("Benchmark activity timed out")),
+        maxActiveMs,
+      );
+      let value: T | undefined;
+      let failure: unknown;
+      try {
+        value = await action(controller.signal);
+        if (controller.signal.aborted) throw controller.signal.reason;
+      } catch (error) {
+        failure = error;
+      } finally {
+        clearTimeout(timeout);
+        const actualMs = Math.max(0, Date.now() - startedAt);
+        await save(
+          directory,
+          { ...budget, activeMs: budget.activeMs + actualMs },
+          "budget.json",
+        );
+        await save(directory, {
+          ...ledger,
+          activities: [
+            ...(ledger.activities ?? []),
+            {
+              ...activity,
+              actualMs,
+              outcome: failure ? "failed" : "complete",
+              ...(failure ? { reason: String(failure) } : {}),
+            },
+          ],
+        });
+      }
+      if (failure) throw failure;
+      return value as T;
+    } finally {
+      await rm(pilotLock, { recursive: true, force: true });
+    }
+  });
 
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync("git", args, { cwd, encoding: "utf8" }).trim();

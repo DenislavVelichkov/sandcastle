@@ -9,6 +9,7 @@ export {
   freezeBenchmarkPair,
   assessBenchmarkPromotion,
   admitBenchmarkPolicy,
+  withBenchmarkActivity,
 } from "./benchmark.js";
 export type {
   BenchmarkSlot,

@@ -14,6 +14,7 @@ import {
   freezeBenchmarkPair,
   readBenchmark,
   runBenchmarkEvaluation,
+  withBenchmarkActivity,
   type BenchmarkEvaluation,
 } from "./benchmark.js";
 import { beginPilotInvocation, settlePilotInvocation } from "./pilotBudget.js";
@@ -446,6 +447,61 @@ it("runs the first synthetic slot through the installed controller and project g
   };
   try {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    const beforeActivity = JSON.parse(
+      await readFile(join(pilot, "budget.json"), "utf8"),
+    ) as { activeMs: number };
+    expect(
+      await withBenchmarkActivity(
+        pilot,
+        "bench",
+        "fixture-preflight",
+        10_000,
+        async (signal) => {
+          expect(signal.aborted).toBe(false);
+          await vi.advanceTimersByTimeAsync(2_000);
+          return "preflight complete";
+        },
+      ),
+    ).toBe("preflight complete");
+    const afterActivity = JSON.parse(
+      await readFile(join(pilot, "budget.json"), "utf8"),
+    ) as { activeMs: number };
+    expect(
+      afterActivity.activeMs - beforeActivity.activeMs,
+    ).toBeGreaterThanOrEqual(2_000);
+    expect((await readBenchmark(pilot, "bench")).activities?.[0]).toMatchObject(
+      { label: "fixture-preflight", outcome: "complete" },
+    );
+    await expect(
+      withBenchmarkActivity(
+        pilot,
+        "bench",
+        "failed-check",
+        10_000,
+        async () => {
+          await vi.advanceTimersByTimeAsync(1_000);
+          throw new Error("protected check failed");
+        },
+      ),
+    ).rejects.toThrow(/protected check failed/);
+    expect((await readBenchmark(pilot, "bench")).activities?.[1]).toMatchObject(
+      {
+        label: "failed-check",
+        outcome: "failed",
+        reason: "Error: protected check failed",
+      },
+    );
+    await expect(
+      withBenchmarkActivity(
+        pilot,
+        "bench",
+        "over-budget",
+        4 * 60 * 60_000,
+        async () => {
+          throw new Error("should not run");
+        },
+      ),
+    ).rejects.toThrow(/cannot fit/);
     await expect(
       runBenchmarkEvaluation({
         directory: pilot,
