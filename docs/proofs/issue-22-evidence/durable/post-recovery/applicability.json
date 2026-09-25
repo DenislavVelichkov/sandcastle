@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "operationId": "395d8d10-3bd5-4bf0-b286-7a8df874d068",
+  "candidateHead": "119010f2bc598a547b96c7a76c38b74fdb458f4b",
+  "receiptSha256": "a2c2f4e42e8afef757f0f493582b5e0e2b18e2885897db008af51977529b11f2",
+  "observedAt": "2026-09-25T20:39:55.334Z",
+  "observations": {
+    "P1": {
+      "hierarchySha256": "b9f8e2724d7176aa13ca5259e47ea0761fa9ca2b8b8e5bdba93f8d576fb83dfd",
+      "device": {
+        "apk": {
+          "certificateSha256": "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c",
+          "package": [
+            "io.renovio.mobile",
+            "1",
+            "1.0"
+          ],
+          "sha256": "477bee04ca63f6fa7cc67ea432f6656eb27d1a5b5de4887d3894ee0ffb8dd642"
+        },
+        "profile": {
+          "api": 36,
+          "avdName": "renovio_pilot_api36",
+          "densityDpi": 420,
+          "display": {
+            "height": 2400,
+            "width": 1080
+          },
+          "fontScale": 1,
+          "locale": "Locales for io.renovio.mobile for user 0 are []",
+          "model": "sdk_gphone64_x86_64",
+          "systemLocale": "en-US",
+          "nightMode": "Night mode: no",
+          "userRotation": 0,
+          "windowAnimation": 1,
+          "transitionAnimation": 1,
+          "animatorDuration": 1
+        },
+        "systemImage": "google/sdk_gphone64_x86_64/emu64xa:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys"
+      }
+    },
+    "P2": {
+      "hierarchySha256": "c78934160ed1f0c9bc332224f59c1fc95aa44c8711eebc2a7dfc3eb882c8d39f",
+      "device": {
+        "apk": {
+          "certificateSha256": "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c",
+          "package": [
+            "io.renovio.mobile",
+            "1",
+            "1.0"
+          ],
+          "sha256": "477bee04ca63f6fa7cc67ea432f6656eb27d1a5b5de4887d3894ee0ffb8dd642"
+        },
+        "profile": {
+          "api": 26,
+          "avdName": "renovio_pilot_api26",
+          "densityDpi": 320,
+          "display": {
+            "height": 1680,
+            "width": 720
+          },
+          "fontScale": 2,
+          "locale": "config: mcc310-mnc260-bg-rBG,en-rUS-ldltr-sw360dp-w360dp-h768dp-normal-long-notround-lowdr-nowidecg-port-night-xhdpi-finger-keysexposed-nokeys-navhidden-nonav-v26\nabi: x86_64,x86",
+          "model": "Android SDK built for x86_64",
+          "systemLocale": "en-US",
+          "nightMode": "Night mode: yes",
+          "userRotation": 0,
+          "windowAnimation": 0,
+          "transitionAnimation": 0,
+          "animatorDuration": 0
+        },
+        "systemImage": "Android/sdk_gphone_x86_64/generic_x86_64:8.0.0/OSR1.180418.026/6741039:userdebug/dev-keys"
+      }
+    },
+    "P3": {
+      "hierarchySha256": "48c073aaf9c738304fb78fdd8d71a2b14a2532deb145c6941857f91ea4bf3604",
+      "device": {
+        "apk": {
+          "certificateSha256": "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c",
+          "package": [
+            "io.renovio.mobile",
+            "1",
+            "1.0"
+          ],
+          "sha256": "477bee04ca63f6fa7cc67ea432f6656eb27d1a5b5de4887d3894ee0ffb8dd642"
+        },
+        "profile": {
+          "api": 36,
+          "avdName": "renovio_pilot_tablet_api36",
+          "densityDpi": 320,
+          "display": {
+            "height": 2688,
+            "width": 1600
+          },
+          "fontScale": 1,
+          "locale": "Locales for io.renovio.mobile for user 0 are [bg]",
+          "model": "sdk_gphone64_x86_64",
+          "systemLocale": "en-US",
+          "nightMode": "Night mode: no",
+          "userRotation": 0,
+          "windowAnimation": 1,
+          "transitionAnimation": 1,
+          "animatorDuration": 1
+        },
+        "systemImage": "google/sdk_gphone64_x86_64/emu64xa:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys"
+      }
+    }
+  },
+  "productAcceptance": false
+}

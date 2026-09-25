@@ -5,6 +5,8 @@ The role of this file is to describe common mistakes, critical rules (the correc
 Use `pnpm run typecheck` for type checking.
 Use `pnpm` for installs, scripts, and package executables in this repository; keep its pnpm lockfiles and generated worker commands aligned.
 
+- **CRITICAL**: Native proof receipts and applicability records are bound by byte hashes. Preserve exported evidence JSON exactly; formatting changes invalidate their recorded hashes.
+
 Check [./CONTEXT.md](./CONTEXT.md) for terminology questions.
 
 For user-facing changes, add a changeset to `.changeset`. Check all changesets there first to see if there are duplicates. We use `@changesets/cli`, but you can create/edit the file manually. Make all bugfixes `patch`, all new features or breaking changes `minor` (since we're pre-1.0). Use `package.json#name` for the name.
