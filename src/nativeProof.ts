@@ -212,6 +212,10 @@ export const runNativeProof = async (
       throw new Error(
         `Native proof ${request.operationId} resources remain active; reservation retained`,
       );
+    if (active && signal.aborted) {
+      validated = false;
+      signal.throwIfAborted();
+    }
     if (!active || validated) {
       if ((await readOwner(lock)).token !== token)
         throw new Error(

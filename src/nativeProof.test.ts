@@ -176,3 +176,31 @@ test("failed capture retains the host reservation despite a stopped process", as
   ).toContain("lock");
   await recoverNativeProofReservation(base.stateRoot, async () => true);
 });
+
+test("deadline during cleanup cannot turn a capture into a pass", async () => {
+  const base = await fixture();
+  await expect(
+    runNativeProof({
+      ...base,
+      operationId: "cleanup-timeout",
+      timeoutMs: 500,
+      run: async ({ evidenceDirectory }) => {
+        const receipt = join(evidenceDirectory, "receipt.json");
+        await writeFile(receipt, "{}");
+        return receipt;
+      },
+      validate: async (_context, receipt) => ({
+        status: "passed",
+        evidence: [receipt],
+      }),
+      stopped: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        return true;
+      },
+    }),
+  ).rejects.toThrow();
+  expect(
+    await readdir(join(base.stateRoot, "sandcastle", "native-proof")),
+  ).toContain("lock");
+  await recoverNativeProofReservation(base.stateRoot, async () => true);
+});
