@@ -40,7 +40,7 @@ npm run proof
 npm run verify:evidence
 ```
 
-`npm ci` rejects a missing or inconsistent lockfile. `verify:install` checks the release URL, integrity, installed metadata, public exports and resolution. `proof` repeats those checks, tests, typecheck and CLI inside a Sandcastle-created Node-only Docker sandbox, removes it, then exports and reopens `evidence/issue-18-library-r2.json`. The historical library recovery proof still belongs to [issue #17](proofs/issue-17-live-attempt.md); this clean npm consumer proves distribution. The personal setup preserves unrelated project inputs and owns installation inspection. Managed update and rollout remain separate work.
+`npm ci` rejects a missing or inconsistent lockfile. `verify:install` checks the release URL, integrity, installed metadata, public exports and resolution. `proof` repeats those checks, tests, typecheck and CLI inside a Sandcastle-created Node-only Docker sandbox, removes it, then exports and reopens `evidence/issue-18-library-r2.json`. The historical library recovery proof still belongs to [issue #17](proofs/issue-17-live-attempt.md); this clean npm consumer proves distribution. The personal setup preserves unrelated project inputs and owns installation inspection.
 
 ## Run the first library task
 
@@ -97,7 +97,25 @@ The [issue #18 release adoption report](proofs/issue-18-release-adoption.md) rec
 
 ## Change an installation
 
-Keep the release URL, checksum, lockfile, installed resolution, image ID and runtime identity together. Do not replace a package while a checkpoint, pending answer or unfinished invocation depends on its old bytes. The immutable `v0.12.0-dv8.16.0-r2` release has no managed update admission. The next release must carry the installation inspection exports before the personal updater can register it as managed. Its `inspect`, `plan`, `apply`, `verify` and `rollback` operations then act on one selected root. The host record and rollback archive stay outside product inputs. A failed update blocks new tasks until rollback or verification establishes a complete installation. Browser, native and human-response readiness remain separate results. Rollout across projects is later work and must name each selected root. Corrections to a published archive require a new tag and package version.
+Keep the release URL, checksum, lockfile, installed resolution, image ID and runtime identity together. Do not replace a package while a checkpoint, pending answer or unfinished invocation depends on its old bytes. The immutable `v0.12.0-dv8.16.0-r2` release has no managed update admission. A later release must carry the installation inspection exports before the personal updater can register it as managed. Corrections to a published archive require a new tag and package version.
+
+The personal integration keeps one inventory and lock under `XDG_STATE_HOME/sandcastle/installations` or `~/.local/state/sandcastle/installations`, outside Codex configuration. Selected-project setup registers a root only after it verifies the installed package, worker image and model choices. To add an older managed root, inspect that exact root first, then import it. A missing inventory is an unknown registration state. It is no reason to scan saved Codex projects or assume an installation is absent.
+
+Set `PLUGIN_ROOT` to the maintained personal plugin directory, `PROJECT` to one selected package workspace, and `RELEASE` to an exact published compatible release tag. The project-owned `.sandcastle/update-owner.mjs` supplies the actual worker observations. These are the implemented entry commands:
+
+```sh
+SCRIPT="$PLUGIN_ROOT/skills/quality/sandcastle-personal-setup/scripts/update.mjs"
+node "$SCRIPT" list
+node "$SCRIPT" inspect --root "$PROJECT" --offline
+node "$SCRIPT" import --root "$PROJECT"
+node "$SCRIPT" rollout --root "$PROJECT" --tag "$RELEASE"
+node "$SCRIPT" rollout --root "$PROJECT" --root "$OTHER_PROJECT" --tag "$RELEASE"
+node "$SCRIPT" rollout --all-registered --tag "$RELEASE"
+```
+
+Use `import` only for a root that `inspect` reports as current. `rollout` freezes one verified release and accepts only registered canonical roots. It checks each root's installation, project, worktree and package workspace identity, then uses the same selected-project admission and update transaction. Results say `updated`, `current`, `deferred` or `failed` per root, with last verified readiness and its time, rollback availability and the selected project's recovery ownership. A busy or unfinished root defers. A missing, moved or conflicting root fails without changing other roots. A successful update remains installed when another root defers or fails; the result never claims that every selected project updated.
+
+The per-project installation record, prior release archive and update journal remain on the host after rollout. If a root fails during apply, inspect its journal and use `node "$SCRIPT" rollback --root "$PROJECT"` only when the selected-project owner confirms the retained bytes. A concurrent edit blocks rollback. `verify --root "$PROJECT" --adapter "$PROJECT/.sandcastle/update-owner.mjs"` checks the actual host and worker package again. Installation verification does not establish controller, browser, native or human-response readiness. The current `r2` release cannot be registered through this path, and real two-release distribution proof remains separate from the disposable fixture checks.
 
 ## Troubleshoot
 
