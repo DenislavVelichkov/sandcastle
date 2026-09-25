@@ -9,8 +9,9 @@ This guide covers the maintained `@ai-hero/sandcastle` release and its independe
 3. [Verify the web fixture](#verify-the-web-fixture)
 4. [Use the daily controls](#use-the-daily-controls)
 5. [Check evidence and limits](#check-evidence-and-limits)
-6. [Change an installation](#change-an-installation)
-7. [Troubleshoot](#troubleshoot)
+6. [Prepare the native diagnostic](#prepare-the-native-diagnostic)
+7. [Change an installation](#change-an-installation)
+8. [Troubleshoot](#troubleshoot)
 
 ## Install the published release
 
@@ -94,6 +95,20 @@ Guarded Codex work records requested model and effort separately from observed e
 Browser and Android checks are project capabilities. The web fixture establishes browser isolation for its no-backend counter and the tested Playwright image. Other web projects must declare their own browser versions, contexts, ports and backend reservations. Native work uses that project's existing device and proof controller; no native capability was exercised here. Browser comparison and fixture approval do not grant production acceptance or promote a baseline. The seven-configuration benchmark, browser report and adaptive policy are separate later activities; these distribution checks report no savings or model ranking.
 
 The [issue #18 release adoption report](proofs/issue-18-release-adoption.md) records the exact distribution, consumer, sandbox and browser evidence.
+
+## Prepare the native diagnostic
+
+The issue #21 source adds `runNativeProof()` and a Renovio project check at `scripts/sandcastle-native-proof-check.mjs`. The published `v0.12.0-dv8.16.0-r2` archive predates that API. Pin and verify a later immutable maintained release containing it before using this installed path. The diagnostic runs only on the host; the worker receives no ADB or Docker socket.
+
+In a clean Renovio candidate checkout with that release installed, prepare the project's canonical P1, P2 and P3 devices, matching installed APK, Metro on port 18081, and the existing Maestro runner. Inspect device, port, fixture and output ownership before starting. The check obtains Sandcastle's host reservation before Renovio's project proof lease, then invokes the fixed owner entry with a 20 minute deadline:
+
+```sh
+node scripts/sandcastle-native-proof-check.mjs --serials=P1=<P1-serial>,P2=<P2-serial>,P3=<P3-serial> --timeout-ms=1200000
+```
+
+For a workflow task, the Renovio host binding calls `checkNativeLanding(candidate, { worktree, serials, timeoutMs, signal })` from its `project.check`. The helper creates `tmp/pilot-dev-proof/exercises/<operation-id>/`. Renovio's owner checks the signed-out Landing behavior on all three profiles with at most two profiles active, retains screenshots and behavior logs, records a matching P1 control and a mismatching P2 control, then writes `receipt.json`. Its validator freshly checks source, APK, Metro, device and profile identity, artifact hashes and current Landing hierarchy and writes a separate applicability record. Both controls are diagnostic fixture data with `productAcceptance: false`.
+
+If readiness, comparison or current observation fails, treat the result as blocked. Failed capture keeps the host reservation and evidence. Inspect the retained owner and native processes before explicit host recovery; start a new operation and revalidate rather than treating the old capture as current. A human wait releases live resources only after the owner confirms they stopped. This desktop implementation has not launched emulators or established a live P1/P2/P3 capture, product visual approval or baseline promotion. The earlier public P1/P2 exercise proves only its two-profile run.
 
 ## Change an installation
 

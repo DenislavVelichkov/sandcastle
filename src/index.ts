@@ -1,6 +1,11 @@
 export { run } from "./run.js";
 export { inspectWorkflow, runWorkflow } from "./workflow.js";
 export {
+  runNativeProof,
+  recoverNativeProofReservation,
+} from "./nativeProof.js";
+export type { NativeProofContext, NativeProofRequest } from "./nativeProof.js";
+export {
   inspectWorkflowInstallation,
   withWorkflowInstallationLock,
   workflowInstallationDirectory,
