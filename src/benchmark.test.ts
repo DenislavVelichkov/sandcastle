@@ -512,6 +512,37 @@ it("runs the first synthetic slot through the installed controller and project g
     expect(accepted).toBe(1);
     expect(models).toEqual(["gpt-6-luna", "gpt-6-sol"]);
     expect((await readBenchmark(pilot, "bench")).evaluations).toHaveLength(1);
+    expect((await readBenchmark(pilot, "bench")).hostConditionsHash).toBe(
+      "synthetic-matched-conditions",
+    );
+    await expect(
+      runBenchmarkEvaluation({
+        directory: pilot,
+        slotId: benchmarkSlots[0]!.id,
+        options,
+        protectedGrader: grader,
+        fixture: receipt("stream-log", worktree.worktreePath),
+        conditionsHash: "changed-environment",
+        accountResolution: { short: 0.1, weekly: 0.1 },
+        windowDurationMs: {
+          short: 5 * 60 * 60_000,
+          weekly: 7 * 24 * 60 * 60_000,
+        },
+        settled: true,
+        reviewPassed: true,
+        effective: {
+          model: "gpt-6-luna",
+          effort: "max",
+          serviceTier: "default",
+          source: "worker CLI config",
+        },
+        probe: async () => ({
+          status: "passed",
+          reason: "passed",
+          evidence: [grader],
+        }),
+      }),
+    ).rejects.toThrow(/Host benchmark conditions changed/);
     expect(
       JSON.parse(await readFile(join(pilot, "budget.json"), "utf8"))
         .evaluations,

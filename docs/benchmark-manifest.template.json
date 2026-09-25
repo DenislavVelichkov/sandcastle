@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "protocolHash": null,
+  "installedPackage": null,
+  "sourceCommit": null,
+  "workerCliVersion": null,
+  "workerImageDigest": null,
+  "runtimeIdentity": null,
+  "accountId": null,
+  "quietAccountWindow": null,
+  "fixturePromptHashes": {
+    "stream-log": null,
+    "output-retry": null,
+    "merge-to-head": null,
+    "sandbox-handle": null
+  },
+  "toolVersions": {},
+  "cachePolicy": null,
+  "nonImplementationRoleConfigurations": {},
+  "projectGateHashes": {},
+  "protectedGraderHashes": {},
+  "accountReadingResolution": {},
+  "accountWindowDurationMs": {}
+}

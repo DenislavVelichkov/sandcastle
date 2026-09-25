@@ -166,6 +166,7 @@ export interface BenchmarkLedger {
   readonly version: 1;
   readonly protocolHash: string;
   readonly policyId: string;
+  readonly hostConditionsHash?: string;
   readonly accountResolution?: Readonly<Record<string, number>>;
   readonly windowDurationMs?: Readonly<Record<string, number>>;
   readonly fixtureConditions?: Readonly<Record<string, string>>;
@@ -464,6 +465,11 @@ export const runBenchmarkEvaluation = async (input: {
       hash(ledger.windowDurationMs) !== hash(input.windowDurationMs)
     )
       throw new Error("Account window durations changed during benchmark");
+    if (
+      ledger.hostConditionsHash &&
+      ledger.hostConditionsHash !== input.conditionsHash
+    )
+      throw new Error("Host benchmark conditions changed during benchmark");
     const prior = ledger.evaluations.find((item) => item.slotId === slot.id);
     if (input.resume ? prior?.status !== "incomplete" : Boolean(prior))
       throw new Error(
@@ -782,6 +788,7 @@ export const runBenchmarkEvaluation = async (input: {
     };
     const frozenLedger: BenchmarkLedger = {
       ...ledger,
+      hostConditionsHash: ledger.hostConditionsHash ?? input.conditionsHash,
       accountResolution: ledger.accountResolution ?? input.accountResolution,
       windowDurationMs: ledger.windowDurationMs ?? input.windowDurationMs,
       fixtureConditions: {
