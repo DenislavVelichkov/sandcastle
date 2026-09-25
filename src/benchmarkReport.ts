@@ -44,8 +44,11 @@ const formatMs = (value: number | null | undefined) =>
   value === null || value === undefined || !Number.isFinite(value)
     ? "Unknown"
     : `${(value / 60_000).toFixed(1)} min`;
-const csv = (value: unknown) =>
-  `"${String(value ?? "").replaceAll('"', '""')}"`;
+const csv = (value: unknown) => {
+  const raw = String(value ?? "");
+  const safe = /^[\s]*[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replaceAll('"', '""')}"`;
+};
 
 export interface BenchmarkReportRow {
   readonly slotId: string;
@@ -169,10 +172,14 @@ const htmlFor = (
           attempted,
           (item) => item.technicalPassed === true,
         );
+        const technicalUnknown = count(
+          attempted,
+          (item) => item.technicalPassed == null,
+        );
         const width = selected.length
           ? Math.round((accepted / selected.length) * 100)
           : 0;
-        return `<td><span class="metric">${accepted}/${selected.length}</span><span class="sub">${attempted.length} attempted · ${technical} technical · ${first} first pass</span><span class="track"><span style="width:${width}%"></span></span></td>`;
+        return `<td><span class="metric">${accepted}/${selected.length}</span><span class="sub">${attempted.length} attempted · ${technical} technical passed${technicalUnknown ? ` · ${technicalUnknown} technical unknown` : ""} · ${first} first pass</span><span class="track"><span style="width:${width}%"></span></span></td>`;
       };
       return `<tr><th scope="row">${escapeHtml(name)}${index === reference ? ` ${badge("Reference")}` : ""}${index === 7 ? ` ${badge("Frozen route")}` : ""}<span class="sub">${index === 7 ? "Selected start → fallback" : `${pilotConfigurations[index]!.model} / ${pilotConfigurations[index]!.effort}`}</span></th>${cells(dev)}${cells(held)}</tr>`;
     })
@@ -214,7 +221,7 @@ const htmlFor = (
       ? null
       : reportReservation?.outcome === "reserved" &&
           reportReservation.label === "benchmark-report"
-        ? budget.activeMs - reportReservation.reservedMs
+        ? Math.max(0, budget.activeMs - reportReservation.reservedMs)
         : budget.activeMs;
   const recommendation =
     ledger.promotion === "admitted" && pair

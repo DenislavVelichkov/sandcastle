@@ -142,7 +142,36 @@ it("renders complete and partial ledgers with exports matching the displayed evi
           firstIterationSuccess: false,
           cost: null,
           usage: null,
-          reason: 'blocked <script>alert("x")</script>, reset',
+          reason: '=HYPERLINK("x"), <script>alert("x")</script>',
+        },
+        {
+          ...evaluation(benchmarkSlots[1]!),
+          status: "incomplete",
+          firstIterationSuccess: false,
+          cost: {
+            short: {
+              lower: 0,
+              upper: 1,
+              durationMs: 5 * 60 * 60_000,
+              before: observation,
+              after: observation,
+            },
+          },
+          reason: "coarse account window",
+        },
+        {
+          ...evaluation(benchmarkSlots[2]!),
+          status: "incomplete",
+          firstIterationSuccess: false,
+          cost: null,
+          reason: "confounded account window",
+        },
+        {
+          ...evaluation(benchmarkSlots[3]!),
+          status: "incomplete",
+          firstIterationSuccess: false,
+          cost: null,
+          reason: "capped by time limit",
         },
       ],
       pair: undefined,
@@ -161,15 +190,34 @@ it("renders complete and partial ledgers with exports matching the displayed evi
     ) as { rows: { lower: number | null; costStatus: string }[] };
     const partialCsv = await readFile(partialFiles.csv, "utf8");
     expect(partialHtml).toContain("Fixed policy retained");
-    expect(partialHtml).toContain("1/64");
+    expect(partialHtml).toContain("4/64");
     expect(partialHtml).toContain("Unknown or incomparable");
+    expect(partialHtml).toContain("zero/coarse lower bound");
+    expect(partialHtml).toContain("confounded account window");
+    expect(partialHtml).toContain("capped by time limit");
     expect(partialHtml).toContain("&lt;script&gt;");
     expect(partialHtml).not.toContain("<script>alert");
     expect(partialJson.rows[0]!.lower).toBeNull();
     expect(partialCsv).toContain(
-      '"blocked <script>alert(""x"")</script>, reset"',
+      '"\'=HYPERLINK(""x""), <script>alert(""x"")</script>"',
     );
     expect(partialCsv).toContain('"Unknown or incomparable"');
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({ ...partial, evaluations: [] }),
+    );
+    const emptyFiles = await writeBenchmarkReport({
+      directory,
+      policyId: base.policyId,
+      outputDirectory,
+      manifestPath,
+    });
+    expect(await readFile(emptyFiles.html, "utf8")).toContain(
+      "No evaluations recorded yet.",
+    );
+    expect(
+      (await readFile(emptyFiles.csv, "utf8")).trim().split("\n"),
+    ).toHaveLength(1);
     await writeFile(manifestPath, manifest + "\n");
     await expect(
       writeBenchmarkReport({

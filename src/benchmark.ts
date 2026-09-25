@@ -1006,11 +1006,11 @@ export const runBenchmarkEvaluation = async (input: {
       requested: `${configured.model}/${configured.effort}/default`,
       effective: `${input.effective.model}/${input.effective.effort}/${input.effective.serviceTier} (${input.effective.source})${slot.arm === "adaptive" ? `; fallback ${input.fallbackEffective!.model}/${input.fallbackEffective!.effort}/${input.fallbackEffective!.serviceTier} (${input.fallbackEffective!.source})` : ""}`,
       status: accepted && isolatedSessions ? "accepted" : "incomplete",
-      technicalPassed: snapshot
-        ? Boolean(snapshot.checksPassed?.[options.selected[0]!.id])
+      technicalPassed: snapshot?.checksPassed?.[options.selected[0]!.id]
+        ? true
         : null,
-      projectAccepted: snapshot
-        ? snapshot.tasks[options.selected[0]!.id]?.status === "accepted"
+      projectAccepted: snapshot?.tasks[options.selected[0]!.id]
+        ? snapshot.tasks[options.selected[0]!.id]!.status === "accepted"
         : null,
       taskStatus: snapshot?.tasks[options.selected[0]!.id]?.status ?? null,
       firstIterationSuccess:
