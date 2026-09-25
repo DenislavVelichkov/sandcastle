@@ -1,6 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -81,6 +89,28 @@ export const inspectWorkflowInstallation = async (
   }
 };
 
+const writeInventory = async (root: string, runs: readonly string[]) => {
+  const path = join(directoryFor(root), "runs.json");
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const staged = `${path}.${randomUUID()}`;
+  const file = await open(staged, "wx", 0o600);
+  try {
+    await file.writeFile(
+      JSON.stringify({ version: 1, root: realpathSync(root), runs }),
+    );
+    await file.sync();
+  } finally {
+    await file.close();
+  }
+  await rename(staged, path);
+  const directory = await open(dirname(path), "r");
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
+};
+
 /** Register before admission; a missing state then blocks updates after a crash. */
 export const registerWorkflowRun = async (
   root: string,
@@ -98,19 +128,7 @@ export const registerWorkflowRun = async (
   }
   const inventory = await inspectWorkflowInstallation(root);
   if (inventory.runs.includes(run)) return false;
-  const path = join(directoryFor(root), "runs.json");
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const staged = `${path}.${randomUUID()}`;
-  await writeFile(
-    staged,
-    JSON.stringify({
-      version: 1,
-      root: inventory.root,
-      runs: [...inventory.runs, run],
-    }),
-    { mode: 0o600 },
-  );
-  await rename(staged, path);
+  await writeInventory(root, [...inventory.runs, run]);
   return true;
 };
 
@@ -119,16 +137,8 @@ export const unregisterWorkflowRun = async (
   run: string,
 ): Promise<void> => {
   const inventory = await inspectWorkflowInstallation(root);
-  const path = join(directoryFor(root), "runs.json");
-  const staged = `${path}.${randomUUID()}`;
-  await writeFile(
-    staged,
-    JSON.stringify({
-      version: 1,
-      root: inventory.root,
-      runs: inventory.runs.filter((item) => item !== run),
-    }),
-    { mode: 0o600 },
+  await writeInventory(
+    root,
+    inventory.runs.filter((item) => item !== run),
   );
-  await rename(staged, path);
 };
