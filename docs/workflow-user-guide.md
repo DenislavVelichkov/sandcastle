@@ -9,9 +9,10 @@ This guide covers the maintained `@ai-hero/sandcastle` release and its independe
 3. [Verify the web fixture](#verify-the-web-fixture)
 4. [Use the daily controls](#use-the-daily-controls)
 5. [Check evidence and limits](#check-evidence-and-limits)
-6. [Prepare the native diagnostic](#prepare-the-native-diagnostic)
-7. [Change an installation](#change-an-installation)
-8. [Troubleshoot](#troubleshoot)
+6. [Run the bounded benchmark](#run-the-bounded-benchmark)
+7. [Prepare the native diagnostic](#prepare-the-native-diagnostic)
+8. [Change an installation](#change-an-installation)
+9. [Troubleshoot](#troubleshoot)
 
 ## Install the published release
 
@@ -97,6 +98,14 @@ Guarded Codex work records requested model and effort separately from observed e
 Browser and Android checks are project capabilities. The web fixture establishes browser isolation for its no-backend counter and the tested Playwright image. Other web projects must declare their own browser versions, contexts, ports and backend reservations. Native work uses that project's existing device and proof controller; no native capability was exercised here. Browser comparison and fixture approval do not grant production acceptance or promote a baseline. The seven-configuration benchmark, browser report and adaptive policy are separate later activities; these distribution checks report no savings or model ranking.
 
 The [issue #18 release adoption report](proofs/issue-18-release-adoption.md) records the exact distribution, consumer, sandbox and browser evidence.
+
+## Run the bounded benchmark
+
+The public benchmark functions are project calls, not `sandcastle` CLI commands. An owner-approved host entry supplies the project's existing task, grader, required reviews, acceptance functions, actual worker model catalog, account readings and installed package identity. Use the [bounded benchmark API](workflow.md#bounded-benchmark) to bind those functions. The four historical base and reference commits are in `benchmarkFixtures`; do not replace them after seeing outcomes. A protected grader and the reference patch stay outside each agent worktree. Exporting and preflighting these real fixtures starts the later pilot's four-hour clock, so the deterministic tests in this repository do not do that work.
+
+Before inference, freeze the exact installed release, worker CLI and image, account, prompts, tools, cache and role configurations. Run the six-call measurement exercise within 15 active minutes, under the same pilot budget and account baseline. `benchmarkSlots` gives the declared order. For each slot, start a fresh answer-free worktree and session, then call `runBenchmarkEvaluation()` once with its slot ID. The operation uses the installed durable controller and writes the attempt to the host-only `benchmark.json`. A stopped or incomplete attempt remains counted; inspect its checkpoint and budget before an explicit recovery. Do not substitute an unrun slot or reset its allowance.
+
+After 28 fixed development evaluations, call `freezeBenchmarkPair()`. A returned `null` keeps Sol High fixed. A returned pair fixes the start, fallback and independent-failure rule before any held-out result is exposed. Run the remaining declared slots sequentially on an otherwise quiet account. The protected first-iteration check may authorize one second implementation call only for an actionable implementation defect; the other failure classes stop without escalation. Call `assessBenchmarkPromotion()` after all 64 slots. `admitted` is evidence for the separate owner policy decision; `fixed-policy` leaves Sol High in place. `readBenchmark()` gives the JSON ledger for the later browser report. Do not treat an unchanged coarse account percentage as zero cost, or a synthetic pass as measured model savings.
 
 ## Prepare the native diagnostic
 

@@ -210,7 +210,7 @@ export const validateActivityConfiguration = (
   if (activity === "library-proof" && !fixed)
     throw new Error("Library recovery proof requires Sol High for every role");
   if (
-    role === "implementation" &&
+    role.startsWith("implementation") &&
     activity !== "library-proof" &&
     !pilotConfigurations.some(
       (item) =>

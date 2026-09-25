@@ -1,4 +1,23 @@
 export { run } from "./run.js";
+export {
+  benchmarkFixtures,
+  benchmarkSlots,
+  benchmarkProtocolHash,
+  exportBenchmarkFixture,
+  readBenchmark,
+  runBenchmarkEvaluation,
+  freezeBenchmarkPair,
+  assessBenchmarkPromotion,
+} from "./benchmark.js";
+export type {
+  BenchmarkSlot,
+  BenchmarkArm,
+  BenchmarkEvaluation,
+  BenchmarkLedger,
+  BenchmarkPair,
+  BenchmarkCost,
+  BenchmarkFixtureReceipt,
+} from "./benchmark.js";
 export { inspectWorkflow, runWorkflow } from "./workflow.js";
 export {
   runNativeProof,

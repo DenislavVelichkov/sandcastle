@@ -104,6 +104,11 @@ export interface WorkflowReservation {
 export interface WorkflowPolicy {
   /** A fixed, finite number of implementation invocations per task. */
   readonly iterations: number;
+  /** Frozen second configuration for a protected benchmark retry. */
+  readonly implementationFallback?: {
+    readonly agent: AgentProvider;
+    readonly sandbox: SandboxProvider;
+  };
   readonly roles: Readonly<
     Record<
       string,

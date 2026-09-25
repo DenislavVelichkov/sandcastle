@@ -1247,8 +1247,17 @@ const driveDurableWorkflow = async (
       ]),
     );
     const requested = Object.fromEntries(
-      [...roles].map((role) => {
-        const config = options.policy.roles[role]?.agent.codexConfiguration;
+      [
+        ...roles,
+        ...(options.policy.implementationFallback
+          ? ["implementation-fallback"]
+          : []),
+      ].map((role) => {
+        const config = (
+          role === "implementation-fallback"
+            ? options.policy.implementationFallback
+            : options.policy.roles[role]
+        )?.agent.codexConfiguration;
         if (
           !config?.model ||
           !config.effort ||
@@ -1727,11 +1736,18 @@ const driveDurableWorkflow = async (
                 try {
                   const frozen = usageState?.requested[role];
                   const actual = agent.codexConfiguration;
+                  const fallback =
+                    role === "implementation"
+                      ? usageState?.requested["implementation-fallback"]
+                      : undefined;
                   if (
-                    !frozen ||
-                    actual?.model !== frozen.model ||
-                    actual.effort !== frozen.effort ||
-                    actual.serviceTier !== frozen.serviceTier
+                    ![frozen, fallback].some(
+                      (allowed) =>
+                        allowed &&
+                        actual?.model === allowed.model &&
+                        actual.effort === allowed.effort &&
+                        actual.serviceTier === allowed.serviceTier,
+                    )
                   )
                     throw new Error(
                       `Guarded role configuration changed: ${role}`,
@@ -2504,7 +2520,11 @@ export const recoverDurableWorkflow = async (
       );
     if (state.usage)
       for (const [role, requested] of Object.entries(state.usage.requested)) {
-        const current = options.policy.roles[role]?.agent.codexConfiguration;
+        const current = (
+          role === "implementation-fallback"
+            ? options.policy.implementationFallback
+            : options.policy.roles[role]
+        )?.agent.codexConfiguration;
         if (
           current?.model !== requested.model ||
           current.effort !== requested.effort ||
