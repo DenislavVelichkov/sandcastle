@@ -1,5 +1,5 @@
 **How to use this file**:
-The role of this file is to describe common mistakes, critical rules (marked as `- **CRITICAL**:`) and confusion points that you might encounter as you work in this project. If you ever encounter something in the project that surprises you, please alert the user and keep track of it in this file to help prevent repetative behaviours and achieve better results.
+The role of this file is to describe common mistakes, critical rules (the correct syntax is `- **CRITICAL**:`<the_rule>) and confusion points that you might encounter as you work in this project. If you ever encounter something in the project that surprises you, please alert the user and keep track of it in this file to help prevent repetative behaviours and achieve better results.
 ---
 
 Use `pnpm run typecheck` for type checking.
