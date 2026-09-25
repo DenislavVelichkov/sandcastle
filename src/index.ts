@@ -8,6 +8,7 @@ export {
   runBenchmarkEvaluation,
   freezeBenchmarkPair,
   assessBenchmarkPromotion,
+  admitBenchmarkPolicy,
 } from "./benchmark.js";
 export type {
   BenchmarkSlot,
@@ -17,6 +18,10 @@ export type {
   BenchmarkPair,
   BenchmarkCost,
   BenchmarkFixtureReceipt,
+  BenchmarkPreflight,
+  BenchmarkProbe,
+  BenchmarkTaskClass,
+  BenchmarkPolicyAdmission,
 } from "./benchmark.js";
 export { inspectWorkflow, runWorkflow } from "./workflow.js";
 export {

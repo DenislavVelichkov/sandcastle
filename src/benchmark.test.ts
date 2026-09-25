@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 import { codex, createWorktree } from "./index.js";
 import {
+  admitBenchmarkPolicy,
   assessBenchmarkPromotion,
   benchmarkFixtures,
   benchmarkProtocolHash,
@@ -20,6 +21,13 @@ import type { AccountObservation } from "./workflowUsage.js";
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+const advanceUntil = async (done: () => boolean): Promise<void> => {
+  for (let i = 0; i < 600 && !done(); i++) {
+    await vi.advanceTimersByTimeAsync(1_000);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  expect(done()).toBe(true);
+};
 const now = Date.now();
 const reading: AccountObservation = {
   accountId: "synthetic-account",
@@ -61,6 +69,18 @@ const result = (
       .reference,
     exportHead: "synthetic",
     tree: "synthetic",
+    preflight: {
+      base: {
+        focusPassed: false,
+        otherGatesPassed: true,
+        evidence: ["base defect reproduced"],
+      },
+      correction: {
+        focusPassed: true,
+        otherGatesPassed: true,
+        evidence: ["known correction and other gates passed"],
+      },
+    },
   },
   requested: String(slot.arm),
   effective: String(slot.arm),
@@ -105,18 +125,40 @@ it("exports a synthetic base without correction history and preflights both stat
         directory: exported,
         grade: async (path) => {
           checks++;
-          return (
-            (await readFile(join(path, "result.txt"), "utf8")) === "fixed\n"
-          );
+          const focusPassed =
+            (await readFile(join(path, "result.txt"), "utf8")) === "fixed\n";
+          return {
+            focusPassed,
+            otherGatesPassed: true,
+            evidence: [
+              focusPassed ? "correction passed" : "base defect reproduced",
+            ],
+          };
         },
       },
       { fixtureId: "stream-log", base, reference },
     );
     expect(checks).toBe(2);
+    expect(receipt.preflight.base.focusPassed).toBe(false);
+    expect(receipt.preflight.correction.focusPassed).toBe(true);
     expect(receipt.tree).toBe(git(source, "rev-parse", `${base}^{tree}`));
     expect(git(exported, "rev-list", "--count", "HEAD")).toBe("1");
     expect(await readFile(join(exported, "result.txt"), "utf8")).toBe("bug\n");
     expect(git(exported, "status", "--porcelain")).toBe("");
+    await expect(
+      exportFixtureTree(
+        {
+          source,
+          directory: join(root, "failed-other-gate"),
+          grade: async () => ({
+            focusPassed: false,
+            otherGatesPassed: false,
+            evidence: ["typecheck failed"],
+          }),
+        },
+        { fixtureId: "stream-log", base, reference },
+      ),
+    ).rejects.toThrow(/base failed protected preflight/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -193,6 +235,16 @@ it("freezes the 28-case development decision before held-out evidence and reject
       JSON.stringify({ ...base, pair, evaluations: all }),
     );
     expect(await assessBenchmarkPromotion(directory, "bench")).toBe("admitted");
+    expect(
+      await admitBenchmarkPolicy(
+        directory,
+        "bench",
+        "independently-gradable-regression",
+      ),
+    ).toMatchObject({ version: 1, policyId: "bench", pair });
+    await expect(
+      admitBenchmarkPolicy(directory, "bench", "weakly-gradable" as never),
+    ).rejects.toThrow(/does not admit/);
     const failed = all.map((item) =>
       item.slotId === "merge-to-head-2-adaptive"
         ? { ...item, cost: null }
@@ -205,6 +257,13 @@ it("freezes the 28-case development decision before held-out evidence and reject
     expect(await assessBenchmarkPromotion(directory, "bench")).toBe(
       "fixed-policy",
     );
+    await expect(
+      admitBenchmarkPolicy(
+        directory,
+        "bench",
+        "independently-gradable-regression",
+      ),
+    ).rejects.toThrow(/does not admit/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -213,20 +272,26 @@ it("freezes the 28-case development decision before held-out evidence and reject
 it("runs the first synthetic slot through the installed controller and project gates", async () => {
   const root = await mkdtemp(join(tmpdir(), "benchmark-entry-"));
   const pilot = join(root, "pilot");
-  const fixture = join(root, "fixture");
   const grader = join(root, "protected-grader");
-  await mkdir(fixture);
   await mkdir(grader);
-  git(fixture, "init", "-b", "main");
-  git(fixture, "config", "user.name", "Test");
-  git(fixture, "config", "user.email", "test@example.com");
-  await writeFile(join(fixture, "README.md"), "base\n");
-  git(fixture, "add", ".");
-  git(fixture, "commit", "-m", "answer-free base");
-  const worktree = await createWorktree({
-    cwd: fixture,
-    branchStrategy: { type: "branch", branch: "evaluation" },
-  });
+  const makeFixture = async (name: string) => {
+    const fixture = join(root, name);
+    await mkdir(fixture);
+    git(fixture, "init", "-b", "main");
+    git(fixture, "config", "user.name", "Test");
+    git(fixture, "config", "user.email", "test@example.com");
+    await writeFile(join(fixture, "README.md"), "base\n");
+    git(fixture, "add", ".");
+    git(fixture, "commit", "-m", "answer-free base");
+    return {
+      fixture,
+      worktree: await createWorktree({
+        cwd: fixture,
+        branchStrategy: { type: "branch", branch: name },
+      }),
+    };
+  };
+  const { fixture, worktree } = await makeFixture("fixture");
   const common = {
     policyId: "bench",
     pilot: { id: "pilot-one", directory: pilot },
@@ -298,6 +363,7 @@ it("runs the first synthetic slot through the installed controller and project g
       .reference,
     exportHead: git(path, "rev-parse", "HEAD"),
     tree: git(path, "rev-parse", "HEAD^{tree}"),
+    preflight: result(benchmarkSlots[0]!, 1).fixture.preflight,
   });
   const options = {
     directory: join(root, "state"),
@@ -438,11 +504,7 @@ it("runs the first synthetic slot through the installed controller and project g
     }).finally(() => {
       finished = true;
     });
-    for (let i = 0; i < 20 && !finished; i++) {
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      await vi.advanceTimersByTimeAsync(30_000);
-    }
-    expect(finished).toBe(true);
+    await advanceUntil(() => finished);
     const evaluation = await promise;
     expect(evaluation.status).toBe("accepted");
     expect(evaluation.firstIterationSuccess).toBe(true);
@@ -479,10 +541,8 @@ it("runs the first synthetic slot through the installed controller and project g
           .map((slot) => result(slot, slot.arm === 5 ? 10 : 7)),
       }),
     );
-    const adaptive = await createWorktree({
-      cwd: fixture,
-      branchStrategy: { type: "branch", branch: "adaptive" },
-    });
+    const { fixture: adaptiveFixture, worktree: adaptive } =
+      await makeFixture("adaptive-fixture");
     let calls = 0;
     const adaptiveModels: string[] = [];
     try {
@@ -490,6 +550,7 @@ it("runs the first synthetic slot through the installed controller and project g
         ...options,
         directory: join(root, "adaptive-state"),
         invocationId: adaptiveSlot.id,
+        project: { ...options.project, root: adaptiveFixture },
         worktrees: {
           task: {
             ...adaptive,
@@ -590,11 +651,7 @@ it("runs the first synthetic slot through the installed controller and project g
       }).finally(() => {
         adaptiveFinished = true;
       });
-      for (let i = 0; i < 20 && !adaptiveFinished; i++) {
-        await new Promise<void>((resolve) => setImmediate(resolve));
-        await vi.advanceTimersByTimeAsync(30_000);
-      }
-      expect(adaptiveFinished).toBe(true);
+      await advanceUntil(() => adaptiveFinished);
       const adaptiveResult = await adaptivePromise;
       expect(adaptiveResult.status).toBe("accepted");
       expect(adaptiveResult.firstIterationSuccess).toBe(false);
@@ -607,15 +664,14 @@ it("runs the first synthetic slot through the installed controller and project g
       await adaptive.close();
     }
     const incompleteSlot = benchmarkSlots[57]!;
-    const incompleteWorktree = await createWorktree({
-      cwd: fixture,
-      branchStrategy: { type: "branch", branch: "incomplete" },
-    });
+    const { fixture: incompleteFixture, worktree: incompleteWorktree } =
+      await makeFixture("incomplete-fixture");
     try {
       const incompleteOptions = {
         ...options,
         directory: join(root, "incomplete-state"),
         invocationId: incompleteSlot.id,
+        project: { ...options.project, root: incompleteFixture },
         worktrees: {
           task: {
             ...incompleteWorktree,
@@ -697,11 +753,7 @@ it("runs the first synthetic slot through the installed controller and project g
       }).finally(() => {
         incompleteFinished = true;
       });
-      for (let i = 0; i < 20 && !incompleteFinished; i++) {
-        await new Promise<void>((resolve) => setImmediate(resolve));
-        await vi.advanceTimersByTimeAsync(30_000);
-      }
-      expect(incompleteFinished).toBe(true);
+      await advanceUntil(() => incompleteFinished);
       const incomplete = await incompletePromise;
       expect(incomplete.status).toBe("incomplete");
       expect(incomplete.reason).toMatch(/grader unavailable/);

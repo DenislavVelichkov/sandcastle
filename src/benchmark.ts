@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readFile, rename, rm } from "node:fs/promises";
 import {
   basename,
   dirname,
@@ -131,6 +131,15 @@ export interface BenchmarkFixtureReceipt {
   readonly reference: string;
   readonly exportHead: string;
   readonly tree: string;
+  readonly preflight: {
+    readonly base: BenchmarkPreflight;
+    readonly correction: BenchmarkPreflight;
+  };
+}
+export interface BenchmarkPreflight {
+  readonly focusPassed: boolean;
+  readonly otherGatesPassed: boolean;
+  readonly evidence: readonly string[];
 }
 export interface BenchmarkProbe {
   readonly status: "passed" | "implementation-failure" | "environment-failure";
@@ -141,6 +150,17 @@ export interface BenchmarkPair {
   readonly start: number;
   readonly fallback: number;
   readonly rule: "independent-implementation-failure";
+}
+export type BenchmarkTaskClass =
+  | "independently-gradable-regression"
+  | "independently-gradable-bounded-feature";
+export interface BenchmarkPolicyAdmission {
+  readonly version: 1;
+  readonly policyId: string;
+  readonly protocolHash: string;
+  readonly evidenceHash: string;
+  readonly taskClass: BenchmarkTaskClass;
+  readonly pair: BenchmarkPair;
 }
 export interface BenchmarkLedger {
   readonly version: 1;
@@ -181,7 +201,7 @@ export const exportBenchmarkFixture = async (input: {
   source: string;
   fixtureId: Fixture["id"];
   directory: string;
-  grade: (worktree: string) => Promise<boolean>;
+  grade: (worktree: string) => Promise<BenchmarkPreflight>;
 }): Promise<BenchmarkFixtureReceipt> => {
   const fixture = benchmarkFixtures.find((item) => item.id === input.fixtureId);
   if (!fixture) throw new Error("Unknown historical fixture");
@@ -197,7 +217,7 @@ export const exportFixtureTree = async (
   input: {
     source: string;
     directory: string;
-    grade: (worktree: string) => Promise<boolean>;
+    grade: (worktree: string) => Promise<BenchmarkPreflight>;
   },
   fixture: Pick<BenchmarkFixtureReceipt, "fixtureId" | "base" | "reference">,
 ): Promise<BenchmarkFixtureReceipt> => {
@@ -216,18 +236,26 @@ export const exportFixtureTree = async (
     ["archive", "--format=tar", fixture.base],
     { cwd: input.source, maxBuffer: 64 * 1024 * 1024 },
   );
-  execFileSync("tar", ["-x", "-C", input.directory], { input: archive });
-  git(input.directory, "init", "-b", "main");
-  git(input.directory, "config", "user.name", "Sandcastle fixture");
-  git(input.directory, "config", "user.email", "fixture@example.invalid");
-  git(input.directory, "add", ".");
-  git(input.directory, "commit", "-m", "Answer-free benchmark base");
+  const makeBase = (path: string): void => {
+    execFileSync("tar", ["-x", "-C", path], { input: archive });
+    git(path, "init", "-b", "main");
+    git(path, "config", "user.name", "Sandcastle fixture");
+    git(path, "config", "user.email", "fixture@example.invalid");
+    git(path, "add", ".");
+    git(path, "commit", "-m", "Answer-free benchmark base");
+  };
+  makeBase(input.directory);
   const exportHead = git(input.directory, "rev-parse", "HEAD");
   const tree = git(input.source, "rev-parse", `${fixture.base}^{tree}`);
   if (git(input.directory, "rev-parse", "HEAD^{tree}") !== tree)
     throw new Error("Exported fixture differs from the historical base tree");
-  if (await input.grade(input.directory))
-    throw new Error("Historical base unexpectedly passed protected grading");
+  const baseGrade = await input.grade(input.directory);
+  if (
+    baseGrade.focusPassed ||
+    !baseGrade.otherGatesPassed ||
+    !baseGrade.evidence.length
+  )
+    throw new Error("Historical base failed protected preflight");
   if (
     git(input.directory, "status", "--porcelain") ||
     git(input.directory, "rev-parse", "HEAD") !== exportHead
@@ -238,28 +266,54 @@ export const exportFixtureTree = async (
     ["diff", "--binary", fixture.base, fixture.reference],
     { cwd: input.source, maxBuffer: 64 * 1024 * 1024 },
   );
-  execFileSync("git", ["apply", "--binary", "-"], {
-    cwd: input.directory,
-    input: correction,
-  });
-  const corrected = await input.grade(input.directory);
-  git(input.directory, "reset", "--hard", exportHead);
-  git(input.directory, "clean", "-fdx");
-  if (
-    !corrected ||
-    git(input.directory, "status", "--porcelain") ||
-    git(input.directory, "rev-list", "--count", "HEAD") !== "1"
-  )
-    throw new Error(
-      "Historical correction failed preflight or the export is dirty",
-    );
-  return {
-    fixtureId: fixture.fixtureId,
-    base: fixture.base,
-    reference: fixture.reference,
-    exportHead,
-    tree,
-  };
+  const correctionDir = await mkdtemp(
+    join(dirname(input.directory), "benchmark-correction-"),
+  );
+  try {
+    makeBase(correctionDir);
+    const correctionHead = git(correctionDir, "rev-parse", "HEAD");
+    execFileSync("git", ["apply", "--binary", "-"], {
+      cwd: correctionDir,
+      input: correction,
+    });
+    git(correctionDir, "add", "-A");
+    const correctionTree = git(correctionDir, "write-tree");
+    if (
+      correctionTree !==
+      git(input.source, "rev-parse", `${fixture.reference}^{tree}`)
+    )
+      throw new Error(
+        "Known correction differs from its frozen reference tree",
+      );
+    const correctionGrade = await input.grade(correctionDir);
+    if (
+      !correctionGrade.focusPassed ||
+      !correctionGrade.otherGatesPassed ||
+      !correctionGrade.evidence.length ||
+      git(correctionDir, "rev-parse", "HEAD") !== correctionHead ||
+      git(correctionDir, "write-tree") !== correctionTree ||
+      git(correctionDir, "diff", "--name-only") ||
+      git(correctionDir, "ls-files", "--others", "--exclude-standard")
+    )
+      throw new Error("Historical correction failed protected preflight");
+    if (
+      git(input.directory, "status", "--porcelain") ||
+      git(input.directory, "rev-list", "--count", "--all") !== "1"
+    )
+      throw new Error(
+        "Exported fixture contains work or answer-bearing history",
+      );
+    return {
+      fixtureId: fixture.fixtureId,
+      base: fixture.base,
+      reference: fixture.reference,
+      exportHead,
+      tree,
+      preflight: { base: baseGrade, correction: correctionGrade },
+    };
+  } finally {
+    await rm(correctionDir, { recursive: true, force: true });
+  }
 };
 
 const save = async (
@@ -410,11 +464,6 @@ export const runBenchmarkEvaluation = async (input: {
       hash(ledger.windowDurationMs) !== hash(input.windowDurationMs)
     )
       throw new Error("Account window durations changed during benchmark");
-    if (
-      ledger.fixtureConditions?.[slot.fixture] &&
-      ledger.fixtureConditions[slot.fixture] !== input.conditionsHash
-    )
-      throw new Error("Matched fixture conditions changed during benchmark");
     const prior = ledger.evaluations.find((item) => item.slotId === slot.id);
     if (input.resume ? prior?.status !== "incomplete" : Boolean(prior))
       throw new Error(
@@ -461,6 +510,44 @@ export const runBenchmarkEvaluation = async (input: {
       throw new Error(
         "Each evaluation needs one task and two reserved implementation iterations",
       );
+    const task = await options.project.getTask(options.selected[0]!.id);
+    if (!task || task.reference !== options.selected[0]!.reference)
+      throw new Error("Selected benchmark task changed");
+    const prompts = await Promise.all(
+      ["implementation", ...task.requiredRoles].map(async (role) => {
+        const value = options.project.prompt(task, role);
+        if (typeof value === "string") return [role, value];
+        return [
+          role,
+          value.promptFile
+            ? await readFile(
+                resolve(options.project.root, value.promptFile),
+                "utf8",
+              )
+            : value.prompt,
+        ];
+      }),
+    );
+    const actualConditions = hash({
+      task: {
+        reference: task.reference,
+        scope: task.scope,
+        requiredRoles: task.requiredRoles,
+        requiredCapabilities: task.requiredCapabilities,
+      },
+      prompts,
+      roles: task.requiredRoles.map((role) => ({
+        role,
+        configuration: options.policy.roles[role]?.agent.codexConfiguration,
+        sandbox: options.policy.roles[role]?.sandbox.tag,
+      })),
+      hostConditions: input.conditionsHash,
+    });
+    if (
+      ledger.fixtureConditions?.[slot.fixture] &&
+      ledger.fixtureConditions[slot.fixture] !== actualConditions
+    )
+      throw new Error("Matched fixture conditions changed during benchmark");
     const worktree = options.worktrees[options.selected[0]!.id];
     if (
       !input.resume &&
@@ -478,6 +565,13 @@ export const runBenchmarkEvaluation = async (input: {
       input.fixture.fixtureId !== historical.id ||
       input.fixture.base !== historical.base ||
       input.fixture.reference !== historical.reference ||
+      !input.fixture.preflight ||
+      input.fixture.preflight.base.focusPassed ||
+      !input.fixture.preflight.base.otherGatesPassed ||
+      !input.fixture.preflight.base.evidence.length ||
+      !input.fixture.preflight.correction.focusPassed ||
+      !input.fixture.preflight.correction.otherGatesPassed ||
+      !input.fixture.preflight.correction.evidence.length ||
       (!input.resume &&
         input.fixture.exportHead !==
           git(worktree.worktreePath, "rev-parse", "HEAD")) ||
@@ -497,6 +591,9 @@ export const runBenchmarkEvaluation = async (input: {
       !outside(worktree.worktreePath, input.directory) ||
       (!input.resume &&
         git(worktree.worktreePath, "rev-list", "--count", "HEAD") !== "1") ||
+      (!input.resume &&
+        git(worktree.worktreePath, "rev-list", "--count", "--all") !== "1") ||
+      (!input.resume && git(worktree.worktreePath, "remote")) ||
       (!input.resume && git(worktree.worktreePath, "status", "--porcelain"))
     )
       throw new Error(
@@ -542,7 +639,13 @@ export const runBenchmarkEvaluation = async (input: {
       !fallbackAssignment ||
       fallbackConfig?.model !== fallback.model ||
       fallbackConfig.effort !== fallback.effort ||
-      fallbackConfig.serviceTier !== "default"
+      fallbackConfig.serviceTier !== "default" ||
+      fallbackAssignment.sandbox !==
+        options.policy.roles.implementation?.sandbox ||
+      fallbackAssignment.agent.name !==
+        options.policy.roles.implementation?.agent.name ||
+      hash(fallbackAssignment.agent.env ?? {}) !==
+        hash(options.policy.roles.implementation?.agent.env ?? {})
     )
       throw new Error("Second iteration differs from the frozen configuration");
     if (
@@ -683,7 +786,7 @@ export const runBenchmarkEvaluation = async (input: {
       windowDurationMs: ledger.windowDurationMs ?? input.windowDurationMs,
       fixtureConditions: {
         ...ledger.fixtureConditions,
-        [slot.fixture]: input.conditionsHash,
+        [slot.fixture]: actualConditions,
       },
     };
     await save(input.directory, frozenLedger);
@@ -1020,3 +1123,29 @@ export const assessBenchmarkPromotion = async (
     await save(directory, { ...ledger, promotion });
     return promotion;
   });
+
+/** A versioned policy input for a separate owner-approved project update. */
+export const admitBenchmarkPolicy = async (
+  directory: string,
+  policyId: string,
+  taskClass: BenchmarkTaskClass,
+): Promise<BenchmarkPolicyAdmission> => {
+  const ledger = await readBenchmark(directory, policyId);
+  if (
+    ledger.promotion !== "admitted" ||
+    !ledger.pair ||
+    ![
+      "independently-gradable-regression",
+      "independently-gradable-bounded-feature",
+    ].includes(taskClass)
+  )
+    throw new Error("Benchmark evidence does not admit this task class");
+  return {
+    version: 1,
+    policyId,
+    protocolHash: ledger.protocolHash,
+    evidenceHash: hash(ledger.evaluations),
+    taskClass,
+    pair: ledger.pair,
+  };
+};

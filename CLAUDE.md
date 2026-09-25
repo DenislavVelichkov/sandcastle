@@ -4,6 +4,7 @@ The role of this file is to describe common mistakes, critical rules (the correc
 
 Use `pnpm run typecheck` for type checking.
 Use `pnpm` for installs, scripts, and package executables in this repository; keep its pnpm lockfiles and generated worker commands aligned.
+Run the build before the full test suite, sequentially: the build clears `dist/`, which CLI tests execute.
 
 - **CRITICAL**: Native proof receipts and applicability records are bound by byte hashes. Preserve exported evidence JSON exactly; formatting changes invalidate their recorded hashes.
 
