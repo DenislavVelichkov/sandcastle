@@ -2,4 +2,4 @@
 "@ai-hero/sandcastle": minor
 ---
 
-Add a host reservation for project-owned native diagnostic proof with exact candidate and evidence binding.
+Let projects run native diagnostic checks without competing for shared devices, with results tied to the exact code and captures checked.

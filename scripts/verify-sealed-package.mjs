@@ -70,7 +70,7 @@ const entry = fileURLToPath(import.meta.resolve('@ai-hero/sandcastle'));
 const installed = dirname(dirname(entry));
 const metadata = JSON.parse(readFileSync(join(installed, 'dist/workflow-release.json')));
 if (!entry.startsWith(process.cwd() + '/node_modules/') || metadata.sourceCommit !== ${JSON.stringify(receipt.sourceCommit)} || metadata.version !== ${JSON.stringify(receipt.version)}) throw Error('Resolved stale or foreign package');
-for (const name of ['inspectWorkflow', 'runDurableWorkflow', 'resumeDurableWorkflow', 'workflowStatus', 'respondWorkflow', 'checkpointStopWorkflow', 'integrateWorkflowTask']) if (typeof pkg[name] !== 'function') throw Error('Missing public export ' + name);
+for (const name of ['inspectWorkflow', 'runDurableWorkflow', 'resumeDurableWorkflow', 'workflowStatus', 'respondWorkflow', 'checkpointStopWorkflow', 'integrateWorkflowTask', 'runNativeProof', 'recoverNativeProofReservation']) if (typeof pkg[name] !== 'function') throw Error('Missing public export ' + name);
 if (typeof docker !== 'function') throw Error('Missing sandbox export');
 console.log(JSON.stringify({entry, metadata}));`;
   await writeFile(join(consumer, "probe.mjs"), probe);
@@ -78,7 +78,7 @@ console.log(JSON.stringify({entry, metadata}));`;
   run("pnpm", ["exec", "sandcastle", "--help"]);
   await writeFile(
     join(consumer, "probe.ts"),
-    `import { inspectWorkflow, type DurableWorkflowOptions, type WorkflowProject } from '@ai-hero/sandcastle';\nconst project: WorkflowProject | undefined = undefined;\nconst options: DurableWorkflowOptions | undefined = undefined;\nvoid [inspectWorkflow, project, options];\n`,
+    `import { inspectWorkflow, runNativeProof, type DurableWorkflowOptions, type NativeProofRequest, type WorkflowProject } from '@ai-hero/sandcastle';\nconst project: WorkflowProject | undefined = undefined;\nconst options: DurableWorkflowOptions | undefined = undefined;\nconst native: NativeProofRequest | undefined = undefined;\nvoid [inspectWorkflow, runNativeProof, project, options, native];\n`,
   );
   await writeFile(
     join(consumer, "tsconfig.json"),
