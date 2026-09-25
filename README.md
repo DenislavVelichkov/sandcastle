@@ -20,6 +20,7 @@ For an existing project with its own task tracker and acceptance rules, use the 
 The workflow also supports [durable owner answers, checkpoint recovery, and accepted-candidate integration](docs/workflow.md) through host-only control operations. A verified stopped receipt is the safe-to-quit signal.
 Guarded durable runs can also [check worker model availability, account windows, and finite invocation allowances](docs/workflow.md#guarded-codex-usage) before and during dispatch.
 For release installation and daily operation, see the [workflow user guide](docs/workflow-user-guide.md).
+Managed installations share a host installation lock with new-run admission, so a personal updater can defer changes while saved work remains unfinished.
 
 ## Prerequisites
 

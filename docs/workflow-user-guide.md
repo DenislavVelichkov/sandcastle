@@ -97,7 +97,7 @@ The [issue #18 release adoption report](proofs/issue-18-release-adoption.md) rec
 
 ## Change an installation
 
-Keep the release URL, checksum, lockfile, installed resolution, image ID and runtime identity together. Do not replace a package while a checkpoint, pending answer or unfinished invocation depends on its old bytes. Managed update, rollback and rollout commands are not available in this release. Later rollout must inspect each explicitly selected project, preserve its customized fields and runtime state, and report partial outcomes. Corrections to the published archive require a new tag and package version.
+Keep the release URL, checksum, lockfile, installed resolution, image ID and runtime identity together. Do not replace a package while a checkpoint, pending answer or unfinished invocation depends on its old bytes. The immutable `v0.12.0-dv8.16.0-r2` release has no managed update admission. The next release must carry the installation inspection exports before the personal updater can register it as managed. Its `inspect`, `plan`, `apply`, `verify` and `rollback` operations then act on one selected root. The host record and rollback archive stay outside product inputs. A failed update blocks new tasks until rollback or verification establishes a complete installation. Browser, native and human-response readiness remain separate results. Rollout across projects is later work and must name each selected root. Corrections to a published archive require a new tag and package version.
 
 ## Troubleshoot
 

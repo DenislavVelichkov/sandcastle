@@ -22,6 +22,7 @@ writeFileSync(
   "[user]\n\temail = test@test.com\n\tname = Test\n",
 );
 process.env.GIT_CONFIG_GLOBAL = globalConfigPath;
+process.env.XDG_STATE_HOME = join(tmpDir, "state");
 
 process.on("exit", () => {
   try {

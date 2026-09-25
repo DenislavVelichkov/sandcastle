@@ -1,6 +1,11 @@
 export { run } from "./run.js";
 export { inspectWorkflow, runWorkflow } from "./workflow.js";
 export {
+  inspectWorkflowInstallation,
+  withWorkflowInstallationLock,
+  workflowInstallationDirectory,
+} from "./workflowInstallation.js";
+export {
   runDurableWorkflow,
   integrateWorkflowTask,
   checkpointStopWorkflow,

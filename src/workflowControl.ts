@@ -51,6 +51,11 @@ import {
   type WorkflowProject,
   type WorkflowTask,
 } from "./workflow.js";
+import {
+  registerWorkflowRun,
+  unregisterWorkflowRun,
+  withWorkflowInstallationLock,
+} from "./workflowInstallation.js";
 
 type Decision = "Approve" | "Reject";
 type TaskState =
@@ -2446,9 +2451,29 @@ const driveWithPilotBudget = async (
 };
 
 /** Start selected tasks with a retained reservation and optional guarded usage. */
-export const runDurableWorkflow = (
+export const runDurableWorkflow = async (
   options: DurableWorkflowOptions,
-): Promise<WorkflowSnapshot> => driveWithPilotBudget(options);
+): Promise<WorkflowSnapshot> => {
+  const registered = await withWorkflowInstallationLock(
+    options.project.root,
+    () => registerWorkflowRun(options.project.root, options.directory),
+  );
+  try {
+    return await driveWithPilotBudget(options);
+  } catch (error) {
+    if (registered) {
+      try {
+        await stat(options.directory);
+      } catch (stateError) {
+        if ((stateError as NodeJS.ErrnoException).code === "ENOENT")
+          await withWorkflowInstallationLock(options.project.root, () =>
+            unregisterWorkflowRun(options.project.root, options.directory),
+          );
+      }
+    }
+    throw error;
+  }
+};
 
 /** Verify an interrupted invocation and restore only into a matching worktree. */
 export const recoverDurableWorkflow = async (
