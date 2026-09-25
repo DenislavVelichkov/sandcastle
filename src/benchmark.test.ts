@@ -211,6 +211,19 @@ it("freezes the 28-case development decision before held-out evidence and reject
       rule: "independent-implementation-failure",
     });
     expect(await freezeBenchmarkPair(directory, "bench")).toEqual(pair);
+    const tiedFallback = evaluations.map((item) => {
+      const arm = benchmarkSlots.find((slot) => slot.id === item.slotId)?.arm;
+      return {
+        ...item,
+        firstIterationSuccess: true,
+        cost: cost(arm === 0 ? 7 : 10, arm === 0 ? 7 : 10),
+      };
+    });
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({ ...base, evaluations: tiedFallback }),
+    );
+    expect(await freezeBenchmarkPair(directory, "bench")).toEqual(pair);
     const zeroReference = evaluations.map((item) =>
       benchmarkSlots.find((slot) => slot.id === item.slotId)?.arm === 5
         ? { ...item, cost: cost(0, 0) }
@@ -219,6 +232,16 @@ it("freezes the 28-case development decision before held-out evidence and reject
     await writeFile(
       join(directory, "benchmark.json"),
       JSON.stringify({ ...base, evaluations: zeroReference }),
+    );
+    expect(await freezeBenchmarkPair(directory, "bench")).toBeNull();
+    const unknownReference = evaluations.map((item) =>
+      benchmarkSlots.find((slot) => slot.id === item.slotId)?.arm === 5
+        ? { ...item, usage: null }
+        : item,
+    );
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({ ...base, evaluations: unknownReference }),
     );
     expect(await freezeBenchmarkPair(directory, "bench")).toBeNull();
     await writeFile(
@@ -254,6 +277,18 @@ it("freezes the 28-case development decision before held-out evidence and reject
     await writeFile(
       join(directory, "benchmark.json"),
       JSON.stringify({ ...base, pair, evaluations: failed }),
+    );
+    expect(await assessBenchmarkPromotion(directory, "bench")).toBe(
+      "fixed-policy",
+    );
+    const capped = all.map((item) =>
+      item.slotId === "merge-to-head-2-adaptive"
+        ? { ...item, status: "incomplete", reason: "30-minute cap" }
+        : item,
+    );
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({ ...base, pair, evaluations: capped }),
     );
     expect(await assessBenchmarkPromotion(directory, "bench")).toBe(
       "fixed-policy",
