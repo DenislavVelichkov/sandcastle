@@ -1,0 +1,50 @@
+Anonymous analytics enabled. To opt out, set MAESTRO_CLI_NO_ANALYTICS environment variable to any value before running Maestro.
+
+Running on renovio_pilot_tablet_api36
+ > Flow Pilot landing behavior
+Launch app "io.renovio.mobile"... COMPLETED
+Assert that id: landing-screen is visible... COMPLETED
+Assert that id: landing-localized-content is visible... COMPLETED
+Scrolling DOWN until id: landing-owner-action is visible with speed 40, visibility percentage 100%, timeout 20000 ms, with centering disabled... COMPLETED
+Assert that id: landing-owner-action is visible... COMPLETED
+Tap on id: landing-owner-action... COMPLETED
+Assert that id: login-screen is visible... COMPLETED
+Scrolling DOWN until id: login-email is visible with speed 40, visibility percentage 100%, timeout 20000 ms, with centering disabled... COMPLETED
+Assert that id: login-email is visible... COMPLETED
+Press Back key... COMPLETED
+Assert that id: landing-screen is visible... COMPLETED
+Scrolling DOWN until id: landing-contractor-action is visible with speed 40, visibility percentage 100%, timeout 20000 ms, with centering disabled... COMPLETED
+Tap on id: landing-contractor-action... COMPLETED
+Assert that id: login-screen is visible... COMPLETED
+Scrolling DOWN until id: login-email is visible with speed 40, visibility percentage 100%, timeout 20000 ms, with centering disabled... COMPLETED
+Assert that id: login-email is visible... COMPLETED
+Press Back key... COMPLETED
+Assert that id: landing-screen is visible... COMPLETED
+Scrolling DOWN until id: landing-apartments-action is visible with speed 40, visibility percentage 100%, timeout 20000 ms, with centering disabled... COMPLETED
+Assert that id: landing-apartments-action is visible... COMPLETED
+Scrolling DOWN until id: landing-login-action is visible with speed 40, visibility percentage 100%, timeout 20000 ms, with centering disabled... COMPLETED
+Assert that id: landing-login-action is visible... COMPLETED
+Scrolling DOWN until id: landing-register-action is visible with speed 40, visibility percentage 100%, timeout 20000 ms, with centering disabled... COMPLETED
+Assert that id: landing-register-action is visible... COMPLETED
+Stop io.renovio.mobile... COMPLETED
+Launch app "io.renovio.mobile"... COMPLETED
+Assert that id: landing-screen is visible... COMPLETED
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                                         │
+│   Try out our new Analyze with Ai feature.                                                                                              │
+│                                                                                                                                         │
+│   See what's new:                                                                                                                       │
+│   > https://maestro.mobile.dev/cli/test-suites-and-reports#analyze                                                                      │
+│   Analyze command:                                                                                                                      │
+│   $ maestro test flow-file.yaml --analyze | bash                                                                                        │
+│                                                                                                                                         │
+│   To disable this notification, set MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED environment variable to "true" before running Maestro.   │
+│                                                                                                                                         │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+Picked up JAVA_TOOL_OPTIONS:  -Duser.home=/home/dv8/Projects/renovio.io/.sandcastle/worktrees/codex-issue-22-native-lifecycle-9d10153b/tmp/pilot-dev-proof/exercises/395d8d10-3bd5-4bf0-b286-7a8df874d068/concurrent/P3/runner
+Picked up JAVA_TOOL_OPTIONS:  -Duser.home=/home/dv8/Projects/renovio.io/.sandcastle/worktrees/codex-issue-22-native-lifecycle-9d10153b/tmp/pilot-dev-proof/exercises/395d8d10-3bd5-4bf0-b286-7a8df874d068/concurrent/P3/runner
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::arrayBaseOffset has been called by com.google.protobuf.UnsafeUtil$MemoryAccessor (file:/home/dv8/.maestro/lib/protobuf-java-3.21.9.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.protobuf.UnsafeUtil$MemoryAccessor
+WARNING: sun.misc.Unsafe::arrayBaseOffset will be removed in a future release

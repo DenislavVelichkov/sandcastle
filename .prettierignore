@@ -2,3 +2,4 @@ dist
 node_modules
 .changeset
 docs/proofs/issue-22-evidence/*.json
+docs/proofs/issue-22-evidence/durable/**/*.json
