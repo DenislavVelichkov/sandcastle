@@ -10,9 +10,10 @@ This guide covers the maintained `@ai-hero/sandcastle` release and its independe
 4. [Use the daily controls](#use-the-daily-controls)
 5. [Check evidence and limits](#check-evidence-and-limits)
 6. [Run the bounded benchmark](#run-the-bounded-benchmark)
-7. [Prepare the native diagnostic](#prepare-the-native-diagnostic)
-8. [Change an installation](#change-an-installation)
-9. [Troubleshoot](#troubleshoot)
+7. [Open and interpret the benchmark report](#open-and-interpret-the-benchmark-report)
+8. [Prepare the native diagnostic](#prepare-the-native-diagnostic)
+9. [Change an installation](#change-an-installation)
+10. [Troubleshoot](#troubleshoot)
 
 ## Install the published release
 
@@ -107,6 +108,21 @@ Before inference, complete [the benchmark manifest template](benchmark-manifest.
 
 After 28 fixed development evaluations, call `freezeBenchmarkPair()`. A returned `null` keeps Sol High fixed. A returned pair fixes the start, fallback and independent-failure rule before any held-out result is exposed. Run the remaining declared slots sequentially on an otherwise quiet account. The protected first-iteration check may authorize one second implementation call only for an actionable implementation defect; the other failure classes stop without escalation. Call `assessBenchmarkPromotion()` after all 64 slots. `admitted` supports `admitBenchmarkPolicy()` for the tested independently gradable task classes and the separate owner policy decision; `fixed-policy` leaves Sol High in place. `readBenchmark()` gives the JSON ledger for the later browser report. Do not treat an unchanged coarse account percentage as zero cost, or a synthetic pass as measured model savings.
 
+## Open and interpret the benchmark report
+
+After the pilot's measurement step has created its shared budget, set `PILOT` to its protected absolute host directory, `POLICY_ID` to the frozen policy identity, and `MANIFEST` to the completed manifest whose exact bytes supplied `conditionsHash`. Keep the output outside candidate worktrees. Generate the report with the installed package's command:
+
+```sh
+sandcastle benchmark-report --directory "$PILOT" --policy-id "$POLICY_ID" --manifest "$MANIFEST" --output "$PILOT/report"
+xdg-open "$PILOT/report/report.html"
+```
+
+The command reads `benchmark.json`, the shared `budget.json` and the manifest. It rejects a changed manifest hash or policy identity. Its five-minute active-time reservation uses the same four-hour pilot budget; the controller records actual report time after generation. If less than five minutes remain, report generation blocks until the owner resolves the budget. It makes no model call. The HTML opens as a local file without a web server, including after the pilot stops early. The report shows the ledger's frozen pair and recorded promotion result; when there is no assessment or the result is inconclusive, keep fixed Sol High. This display does not activate a policy or approve a project candidate.
+
+Start with the development and held-out comparison table. Its denominator is every scheduled slot, so an unrun evaluation does not look successful. Each bar counts accepted outcomes; the text separates technical checks and first-iteration success. The usage table gives lower and upper percentage-point intervals for each account window and labels partial coverage. An unchanged coarse reading, a missing interval, an overlapping token counter or a reset remains uncertain. Open an evaluation row for its fixture commits, requested and effective configuration, session lineage, protected preflight, account readings, token sources, review and failure reason. Human waiting is shown as not measured because the benchmark ledger has no wait-duration field; do not subtract it from active time or infer savings from it.
+
+Keep `report.html`, `report.json` and `evaluations.csv` together. The HTML links to both exports. JSON retains the source ledger, pilot budget, manifest, ledger hash and the exact rows used by the CSV. CSV has one row per recorded evaluation and declared account window, including incomplete evaluations and unknown values. Inspect `report.json` if a source field is missing from a table; an empty CSV value means unknown, not zero. A report generated before all 64 slots remains a partial report. Re-run the command after the source changes to capture a new snapshot; use the ledger hash to identify which source bytes produced a copy.
+
 ## Prepare the native diagnostic
 
 The `v0.12.0-dv8.21.0` release includes `runNativeProof()` and Renovio's native proof branch pins it for the project check at `scripts/sandcastle-native-proof-check.mjs`. The diagnostic runs only on the host; the worker receives no ADB or Docker socket.
@@ -155,5 +171,8 @@ The per-project installation record, prior release archive and update journal re
 | No saved-and-stopped receipt                | Keep the worktree, sandbox and host state. Repair checkpoint or cleanup failure before quitting.                                                                          |
 | Stale answer or changed candidate           | Recheck the current evidence and present a new exact request. Do not reuse the old approval.                                                                              |
 | Account or model guard blocks               | Refresh observations in the same worker. Preserve spent allowances; use the documented reset-continuation decision only for a verified reset.                             |
+| Benchmark report says manifest changed      | Use the exact completed manifest whose bytes supplied `conditionsHash`; do not reformat or reconstruct it.                                                                |
+| Benchmark report shows unknown usage        | Open the affected evaluation and inspect account readings, reset continuity, token coverage and source paths. Do not replace unknown with zero.                           |
+| Benchmark report command exceeds budget     | Keep the partial ledger. The owner must resolve the remaining pilot allowance before another metered report run.                                                          |
 | Integration says recovery required          | Inspect the target's actual Git effect under its lock. Do not repeat the merge on an uncertain result.                                                                    |
 | Integration check cannot reproduce evidence | Keep the frozen evidence and blocked intent. Make the project check output stable before a new authorized run; do not edit the recorded answer or state to force a merge. |

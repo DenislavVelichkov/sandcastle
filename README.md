@@ -19,7 +19,7 @@ Sandcastle is provider-agnostic — it ships with built-in providers for Docker,
 For an existing project with its own task tracker and acceptance rules, use the opt-in [selected-task workflow](docs/workflow.md). It validates exact task references, dependencies, scopes, roles, and capabilities before running a fixed policy on a named-branch worktree.
 The workflow also supports [durable owner answers, checkpoint recovery, and accepted-candidate integration](docs/workflow.md) through host-only control operations. A verified stopped receipt is the safe-to-quit signal.
 Guarded durable runs can also [check worker model availability, account windows, and finite invocation allowances](docs/workflow.md#guarded-codex-usage) before and during dispatch.
-The [bounded benchmark operation](docs/workflow.md#bounded-benchmark) schedules seven fixed configurations and a frozen adaptive policy through the same durable controller. Its synthetic checks do not start the live pilot.
+The [bounded benchmark operation](docs/workflow.md#bounded-benchmark) schedules seven fixed configurations and a frozen adaptive policy through the same durable controller. The [standalone benchmark report](docs/workflow-user-guide.md#open-and-interpret-the-benchmark-report) presents retained evidence as local HTML, JSON and CSV. Synthetic checks do not start the live pilot.
 For release installation and daily operation, see the [workflow user guide](docs/workflow-user-guide.md).
 Managed installations share a host installation lock with new-run admission, so a personal updater can defer changes while saved work remains unfinished.
 

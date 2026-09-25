@@ -24,6 +24,8 @@ export type {
   BenchmarkTaskClass,
   BenchmarkPolicyAdmission,
 } from "./benchmark.js";
+export { writeBenchmarkReport } from "./benchmarkReport.js";
+export type { BenchmarkReportRow } from "./benchmarkReport.js";
 export { inspectWorkflow, runWorkflow } from "./workflow.js";
 export {
   runNativeProof,

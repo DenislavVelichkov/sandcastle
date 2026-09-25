@@ -28,6 +28,8 @@ import {
   getTemplateDependencies,
 } from "./InitService.js";
 import { defaultImageName } from "./sandboxes/docker.js";
+import { withBenchmarkActivity } from "./benchmark.js";
+import { writeBenchmarkReport } from "./benchmarkReport.js";
 import type {
   AgentEntry,
   IssueTrackerEntry,
@@ -681,6 +683,50 @@ const podmanCommand = Command.make("podman", {}, () =>
 
 // --- Root command ---
 
+const benchmarkReportCommand = Command.make(
+  "benchmark-report",
+  {
+    directory: Options.text("directory").pipe(
+      Options.withDescription("Absolute host benchmark directory"),
+    ),
+    policyId: Options.text("policy-id").pipe(
+      Options.withDescription("Frozen benchmark policy identity"),
+    ),
+    output: Options.text("output").pipe(
+      Options.withDescription("Local output directory for HTML, JSON and CSV"),
+    ),
+    manifest: Options.text("manifest").pipe(
+      Options.withDescription("Frozen host manifest JSON"),
+      Options.optional,
+    ),
+  },
+  ({ directory, policyId, output, manifest }) =>
+    Effect.gen(function* () {
+      const d = yield* Display;
+      const files = yield* Effect.tryPromise({
+        try: () =>
+          withBenchmarkActivity(
+            directory,
+            policyId,
+            "benchmark-report",
+            5 * 60_000,
+            () =>
+              writeBenchmarkReport({
+                directory,
+                policyId,
+                outputDirectory: output,
+                ...(manifest._tag === "Some"
+                  ? { manifestPath: manifest.value }
+                  : {}),
+              }),
+          ),
+        catch: (error) => new InitError({ message: String(error) }),
+      });
+      yield* d.status(`Report: ${files.html}`, "success");
+      yield* d.status(`Evidence: ${files.json}, ${files.csv}`, "info");
+    }),
+);
+
 const rootCommand = Command.make("sandcastle", {}, () =>
   Effect.gen(function* () {
     const d = yield* Display;
@@ -690,7 +736,12 @@ const rootCommand = Command.make("sandcastle", {}, () =>
 );
 
 export const sandcastle = rootCommand.pipe(
-  Command.withSubcommands([initCommand, dockerCommand, podmanCommand]),
+  Command.withSubcommands([
+    initCommand,
+    dockerCommand,
+    podmanCommand,
+    benchmarkReportCommand,
+  ]),
 );
 
 export const cli = Command.run(sandcastle, {

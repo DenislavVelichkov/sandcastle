@@ -125,6 +125,9 @@ export interface BenchmarkEvaluation {
   readonly requested: string;
   readonly effective: string | null;
   readonly status: "accepted" | "incomplete";
+  readonly technicalPassed?: boolean | null;
+  readonly projectAccepted?: boolean | null;
+  readonly taskStatus?: string | null;
   readonly firstIterationSuccess: boolean;
   readonly reviewPassed: boolean;
   readonly falseAcceptance: boolean;
@@ -1003,6 +1006,13 @@ export const runBenchmarkEvaluation = async (input: {
       requested: `${configured.model}/${configured.effort}/default`,
       effective: `${input.effective.model}/${input.effective.effort}/${input.effective.serviceTier} (${input.effective.source})${slot.arm === "adaptive" ? `; fallback ${input.fallbackEffective!.model}/${input.fallbackEffective!.effort}/${input.fallbackEffective!.serviceTier} (${input.fallbackEffective!.source})` : ""}`,
       status: accepted && isolatedSessions ? "accepted" : "incomplete",
+      technicalPassed: snapshot
+        ? Boolean(snapshot.checksPassed?.[options.selected[0]!.id])
+        : null,
+      projectAccepted: snapshot
+        ? snapshot.tasks[options.selected[0]!.id]?.status === "accepted"
+        : null,
+      taskStatus: snapshot?.tasks[options.selected[0]!.id]?.status ?? null,
       firstIterationSuccess:
         accepted &&
         isolatedSessions &&
