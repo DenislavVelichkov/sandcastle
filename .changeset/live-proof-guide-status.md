@@ -2,4 +2,4 @@
 "@ai-hero/sandcastle": patch
 ---
 
-Correct the workflow guide with the observed live recovery result and its blocked integration limit.
+Document the bounded live recovery proof, its first blocked attempt, and the verified single integration on the corrected fixture.
