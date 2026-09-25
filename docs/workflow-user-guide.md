@@ -15,7 +15,9 @@ This guide covers the maintained `@ai-hero/sandcastle` release and its independe
 
 ## Install the published release
 
-The maintained [immutable release `v0.12.0-dv8.16.0-r2`](https://github.com/DenislavVelichkov/sandcastle/releases/tag/v0.12.0-dv8.16.0-r2) contains the exact archive from the library recovery proof. Its tag points to source `0df2ba5c91afca41294ea026a95f9e21a7ba6d73`; the archive SHA-256 is `eca2e0116d09ac920b9ccf2e6e8d6896124c9533a83d9945066079ecead83164`. The release also carries `SHA256SUMS`. GitHub's release and asset attestations verify, and a downloaded asset matches the sealed archive byte for byte. Keep this URL, checksum, source commit and package-manager lockfile together.
+The current native-capable maintained release is [immutable `v0.12.0-dv8.21.0`](https://github.com/DenislavVelichkov/sandcastle/releases/tag/v0.12.0-dv8.21.0). Its source commit is `46aae5d7278be702f395c3f2c0f2631dfda19c13`, and the archive SHA-256 is `f3e3801822a171a15ebed9be4b972cfa2c3545cbe87bd12261ad613b711f8cb2`. GitHub's release and asset attestations verify, and the downloaded archive matches the sealed file byte for byte. Renovio's native proof branch pins that exact release URL and integrity in its manifest and lockfile.
+
+The earlier [immutable release `v0.12.0-dv8.16.0-r2`](https://github.com/DenislavVelichkov/sandcastle/releases/tag/v0.12.0-dv8.16.0-r2) contains the exact archive from the library recovery proof. Its tag points to source `0df2ba5c91afca41294ea026a95f9e21a7ba6d73`; the archive SHA-256 is `eca2e0116d09ac920b9ccf2e6e8d6896124c9533a83d9945066079ecead83164`. The release also carries `SHA256SUMS`. GitHub's release and asset attestations verify, and a downloaded asset matches the sealed archive byte for byte. Keep each release URL, checksum, source commit and package-manager lockfile together.
 
 The npm library and pnpm web repositories pin this exact release URL in their manifests and lockfiles. Check the published bytes directly:
 
@@ -98,7 +100,7 @@ The [issue #18 release adoption report](proofs/issue-18-release-adoption.md) rec
 
 ## Prepare the native diagnostic
 
-The issue #21 source adds `runNativeProof()` and a Renovio project check at `scripts/sandcastle-native-proof-check.mjs`. The published `v0.12.0-dv8.16.0-r2` archive predates that API. Pin and verify a later immutable maintained release containing it before using this installed path. The diagnostic runs only on the host; the worker receives no ADB or Docker socket.
+The `v0.12.0-dv8.21.0` release includes `runNativeProof()` and Renovio's native proof branch pins it for the project check at `scripts/sandcastle-native-proof-check.mjs`. The diagnostic runs only on the host; the worker receives no ADB or Docker socket.
 
 In a clean Renovio candidate checkout with that release installed, prepare the project's canonical P1, P2 and P3 devices, matching installed APK, Metro on port 18081, and the existing Maestro runner. Inspect device, port, fixture and output ownership before starting. The check obtains Sandcastle's host reservation before Renovio's project proof lease, then invokes the fixed owner entry with a 20 minute deadline:
 
@@ -112,7 +114,7 @@ If readiness, comparison or current observation fails, treat the result as block
 
 ## Change an installation
 
-Keep the release URL, checksum, lockfile, installed resolution, image ID and runtime identity together. Do not replace a package while a checkpoint, pending answer or unfinished invocation depends on its old bytes. The immutable `v0.12.0-dv8.16.0-r2` release has no managed update admission. A later release must carry the installation inspection exports before the personal updater can register it as managed. Corrections to a published archive require a new tag and package version.
+Keep the release URL, checksum, lockfile, installed resolution, image ID and runtime identity together. Do not replace a package while a checkpoint, pending answer or unfinished invocation depends on its old bytes. The immutable `v0.12.0-dv8.16.0-r2` release has no managed update admission. The native-capable release carries the installation inspection exports; the personal updater still must inspect a selected root before registration. Corrections to a published archive require a new tag and package version.
 
 The personal integration keeps one inventory and lock under `XDG_STATE_HOME/sandcastle/installations` or `~/.local/state/sandcastle/installations`, outside Codex configuration. Selected-project setup registers a root only after it verifies the installed package, worker image and model choices. To add an older managed root, inspect that exact root first, then import it. A missing inventory is an unknown registration state. It is no reason to scan saved Codex projects or assume an installation is absent.
 
