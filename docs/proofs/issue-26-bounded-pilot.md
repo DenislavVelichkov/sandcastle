@@ -1,4 +1,4 @@
-# Issue #26 bounded pilot: incomplete calibration
+# Issue #26 bounded pilot: incomplete comparison
 
 **Disposition: retain fixed Sol High.** The seven-configuration comparison was not run, so there is no model ranking, savings estimate, adaptive pair, or policy qualification. No policy was activated.
 
@@ -31,3 +31,9 @@ Published copies preserve the frozen bytes: [manifest](issue-26-v2-report/manife
 The maintained [release `v0.12.0-dv8.23.0`](https://github.com/DenislavVelichkov/sandcastle/releases/tag/v0.12.0-dv8.23.0) contains the tracked ignored-file exporter repair. The third pilot froze that release, all seven worker settings, historical cases, reviews and budget in a new [manifest](issue-26-v3-report/manifest.json) with SHA-256 `69da9bf54e347d83a5c4bf050cbd90462710fd93f6b6254ff5bdb22a8a502ab0`. Calibration passed in four calls. Historical preflight reached the protected base grader but stopped because the host lacked the grader's install executable. No comparison evaluation ran.
 
 The [third-attempt findings](issue-26-v3-report/findings.md) explain the gate and link the [HTML report](issue-26-v3-report/report.html), [JSON evidence](issue-26-v3-report/report.json), [CSV rows](issue-26-v3-report/evaluations.csv), budget and ledger. The report is partial and its manifest status is unverified. **Disposition remains fixed Sol High; no policy activation.** The stopped attempt retains its exact evidence. A separate, unexecuted pnpm-only host path is prepared for a later explicitly authorized pilot.
+
+## Authorized follow-up: fourth pilot stopped at historical preflight
+
+The fourth pilot froze the pnpm-only host entry, sealed release, seven worker settings, historical cases and review policy in a new [manifest](issue-26-v4-report/manifest.json), SHA-256 `6407207922bae2602d83afa29585dd19eba9529d896a58fd2089a9a56c133f84`. Calibration passed in four calls. Preflight reached the `output-retry` known correction and stopped because the frozen protected grader's isolated shadow lacked Git history needed by its focused worktree tests. No comparison evaluation ran.
+
+The [fourth-attempt findings](issue-26-v4-report/findings.md) link the exact [HTML report](issue-26-v4-report/report.html), [JSON evidence](issue-26-v4-report/report.json), [CSV rows](issue-26-v4-report/evaluations.csv), budget, ledger and host clock. The report is partial and its manifest status is unverified. The grader was repaired and its known correction passed in a disposable diagnostic, but that repair does not change the stopped fourth attempt. **Disposition remains fixed Sol High; no policy activation.** A fifth entry is prepared but unexecuted; it requires a separate explicit request and fresh frozen conditions.

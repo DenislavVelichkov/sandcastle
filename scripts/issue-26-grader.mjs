@@ -135,6 +135,18 @@ export async function gradeHistoricalCase(source, fixtureId, candidate) {
         input: pending,
       });
     await writeFile(join(shadow, selected.test), reference);
+    // Protected focus tests also exercise worktree APIs, so their shadow needs HEAD.
+    execFileSync("git", ["init", "-b", "main"], { cwd: shadow });
+    execFileSync("git", ["config", "user.name", "Sandcastle grader"], {
+      cwd: shadow,
+    });
+    execFileSync("git", ["config", "user.email", "grader@example.invalid"], {
+      cwd: shadow,
+    });
+    execFileSync("git", ["add", "-f", "-A"], { cwd: shadow });
+    execFileSync("git", ["commit", "-m", "Protected grading candidate"], {
+      cwd: shadow,
+    });
     const install = await prepareHistoricalDependencies(candidate);
     if (!install.passed)
       return {
