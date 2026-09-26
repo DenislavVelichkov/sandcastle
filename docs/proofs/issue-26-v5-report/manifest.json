@@ -1,0 +1,597 @@
+{
+  "schemaVersion": 1,
+  "protocolHash": "3110986805262f2cedf1f66990421d6a2adb2e7ad2b6493718f9f260e1887239",
+  "installedPackage": {
+    "name": "@ai-hero/sandcastle",
+    "version": "0.12.0-dv8.23.0",
+    "sourceCommit": "c784396c038ed9a41f4634df4e926e21e71ac5da"
+  },
+  "sourceCommit": "c784396c038ed9a41f4634df4e926e21e71ac5da",
+  "historicalCases": [
+    {
+      "id": "stream-log",
+      "split": "development",
+      "kind": "regression",
+      "base": "c505d4964ce6806211259e8bff9ad1d8c319a9ef",
+      "reference": "badf657b5dc81a71c141d8cd736a67804c6a86ff"
+    },
+    {
+      "id": "output-retry",
+      "split": "development",
+      "kind": "feature",
+      "base": "2867118a575faa697b000be87d429900804786cf",
+      "reference": "9f3f6d5c5f2527d5e1d8349f80eec2d36e797540"
+    },
+    {
+      "id": "merge-to-head",
+      "split": "held-out",
+      "kind": "regression",
+      "base": "2867118a575faa697b000be87d429900804786cf",
+      "reference": "f7879c5ca6853c6afa79cb836d918de8de64db03"
+    },
+    {
+      "id": "sandbox-handle",
+      "split": "held-out",
+      "kind": "feature",
+      "base": "f1aa0809d097db0d5c674e13c9ac3374ba2a629b",
+      "reference": "0f577a42fdbfe49111b8e00694399ee0c9ddd559"
+    }
+  ],
+  "configurations": [
+    {
+      "model": "gpt-6-luna",
+      "effort": "max",
+      "serviceTier": "default"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "serviceTier": "default"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "serviceTier": "default"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "max",
+      "serviceTier": "default"
+    },
+    {
+      "model": "gpt-6-sol",
+      "effort": "medium",
+      "serviceTier": "default"
+    },
+    {
+      "model": "gpt-6-sol",
+      "effort": "high",
+      "serviceTier": "default"
+    },
+    {
+      "model": "gpt-6-sol",
+      "effort": "xhigh",
+      "serviceTier": "default"
+    }
+  ],
+  "slotOrder": [
+    {
+      "id": "stream-log-1-0",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 0
+    },
+    {
+      "id": "stream-log-1-1",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 1
+    },
+    {
+      "id": "stream-log-1-2",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 2
+    },
+    {
+      "id": "stream-log-1-3",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 3
+    },
+    {
+      "id": "stream-log-1-4",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 4
+    },
+    {
+      "id": "stream-log-1-5",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 5
+    },
+    {
+      "id": "stream-log-1-6",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 6
+    },
+    {
+      "id": "stream-log-2-0",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 6
+    },
+    {
+      "id": "stream-log-2-1",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 5
+    },
+    {
+      "id": "stream-log-2-2",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 4
+    },
+    {
+      "id": "stream-log-2-3",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 3
+    },
+    {
+      "id": "stream-log-2-4",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 2
+    },
+    {
+      "id": "stream-log-2-5",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 1
+    },
+    {
+      "id": "stream-log-2-6",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 0
+    },
+    {
+      "id": "output-retry-1-0",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 0
+    },
+    {
+      "id": "output-retry-1-1",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 1
+    },
+    {
+      "id": "output-retry-1-2",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 2
+    },
+    {
+      "id": "output-retry-1-3",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 3
+    },
+    {
+      "id": "output-retry-1-4",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 4
+    },
+    {
+      "id": "output-retry-1-5",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 5
+    },
+    {
+      "id": "output-retry-1-6",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 6
+    },
+    {
+      "id": "output-retry-2-0",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 6
+    },
+    {
+      "id": "output-retry-2-1",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 5
+    },
+    {
+      "id": "output-retry-2-2",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 4
+    },
+    {
+      "id": "output-retry-2-3",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 3
+    },
+    {
+      "id": "output-retry-2-4",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 2
+    },
+    {
+      "id": "output-retry-2-5",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 1
+    },
+    {
+      "id": "output-retry-2-6",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 0
+    },
+    {
+      "id": "merge-to-head-1-0",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 0
+    },
+    {
+      "id": "merge-to-head-1-1",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 1
+    },
+    {
+      "id": "merge-to-head-1-2",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 2
+    },
+    {
+      "id": "merge-to-head-1-3",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 3
+    },
+    {
+      "id": "merge-to-head-1-4",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 4
+    },
+    {
+      "id": "merge-to-head-1-5",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 5
+    },
+    {
+      "id": "merge-to-head-1-6",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 6
+    },
+    {
+      "id": "merge-to-head-2-0",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 6
+    },
+    {
+      "id": "merge-to-head-2-1",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 5
+    },
+    {
+      "id": "merge-to-head-2-2",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 4
+    },
+    {
+      "id": "merge-to-head-2-3",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 3
+    },
+    {
+      "id": "merge-to-head-2-4",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 2
+    },
+    {
+      "id": "merge-to-head-2-5",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 1
+    },
+    {
+      "id": "merge-to-head-2-6",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 0
+    },
+    {
+      "id": "sandbox-handle-1-0",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 0
+    },
+    {
+      "id": "sandbox-handle-1-1",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 1
+    },
+    {
+      "id": "sandbox-handle-1-2",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 2
+    },
+    {
+      "id": "sandbox-handle-1-3",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 3
+    },
+    {
+      "id": "sandbox-handle-1-4",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 4
+    },
+    {
+      "id": "sandbox-handle-1-5",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 5
+    },
+    {
+      "id": "sandbox-handle-1-6",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 6
+    },
+    {
+      "id": "sandbox-handle-2-0",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 6
+    },
+    {
+      "id": "sandbox-handle-2-1",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 5
+    },
+    {
+      "id": "sandbox-handle-2-2",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 4
+    },
+    {
+      "id": "sandbox-handle-2-3",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 3
+    },
+    {
+      "id": "sandbox-handle-2-4",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 2
+    },
+    {
+      "id": "sandbox-handle-2-5",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 1
+    },
+    {
+      "id": "sandbox-handle-2-6",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 0
+    },
+    {
+      "id": "stream-log-1-adaptive",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": "adaptive"
+    },
+    {
+      "id": "stream-log-2-adaptive",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": "adaptive"
+    },
+    {
+      "id": "output-retry-1-adaptive",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": "adaptive"
+    },
+    {
+      "id": "output-retry-2-adaptive",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": "adaptive"
+    },
+    {
+      "id": "merge-to-head-1-adaptive",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": "adaptive"
+    },
+    {
+      "id": "merge-to-head-2-adaptive",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": "adaptive"
+    },
+    {
+      "id": "sandbox-handle-1-adaptive",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": "adaptive"
+    },
+    {
+      "id": "sandbox-handle-2-adaptive",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": "adaptive"
+    }
+  ],
+  "workerCliVersion": "codex-cli 0.156.1",
+  "workerImageDigest": "sha256:fd16475df746edadc2ed06e5ae06b338f7169fb9be79f3ce0b9defcc91b93c4e",
+  "workerConfigHash": "080717470aa17319c143ee791709bb5f293b2e7e6c88c4dcaaa58b9a7ed89607",
+  "workerAgentsHash": "b7ebb432d78e079609384ef1dbc1b47b1731b9d9da58e1dc21800dca09c038a7",
+  "observerHash": "68788003ec61400960e25ac047de5d89bbf6d7546738636828c5df8871ef0de6",
+  "workerDockerfileHash": "1ab6a75f0f9e22455e63007285c429310da6ab9c3ab1016de26b3af0ace8d2a8",
+  "runtimeIdentity": "009be0ebd674f525dabc700d106ee0211c12172519665a95c41cfe066f5359c6",
+  "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+  "quietAccountWindow": "One sequential worker evaluation at a time; other account activity cannot be excluded by this host",
+  "fixturePromptHashes": {
+    "stream-log": "fe25dce3d70e5cf3b2385010066725678f78ca4d7e341694d5663695243d8aa0",
+    "output-retry": "d258d0ceb9d89000ab432b06b0a4451798bf292e106491b4fc3615000337401c",
+    "merge-to-head": "68c7590e69ca9c73a0ce904aeb219dc6dc3f389e2f9d209490137068a95ce9e9",
+    "sandbox-handle": "513b9f519723dde1efbf13d9c8a731051c4eb23c4483c02bfd6a4d65f48b7613"
+  },
+  "toolVersions": {
+    "hostNode": "v24.19.0",
+    "workerNode": "v24.19.0",
+    "hostPnpm": "11.19.0",
+    "workerPnpm": "11.19.0",
+    "hostGit": "git version 2.55.0"
+  },
+  "cachePolicy": "Shared host pnpm download cache; fresh worktree, dependencies and Codex session per evaluation",
+  "dependencyPolicy": "Import each frozen historical package lock with pnpm, install from the derived lock with hoisting and scripts disabled, then remove derived metadata from the answer-free tree",
+  "nonImplementationRoleConfigurations": {
+    "standards-review": {
+      "model": "gpt-6-sol",
+      "effort": "high",
+      "serviceTier": "default",
+      "calls": 1
+    },
+    "specification-review": {
+      "model": "gpt-6-sol",
+      "effort": "high",
+      "serviceTier": "default",
+      "calls": 1
+    }
+  },
+  "projectGateHashes": {
+    "stream-log": "e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1",
+    "output-retry": "e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1",
+    "merge-to-head": "e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1",
+    "sandbox-handle": "e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1"
+  },
+  "protectedGraderHashes": {
+    "runner": "e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1",
+    "stream-log": "b63cc021e62f21007ade72a42267ef74c9b998eb26bf1e43c555a0de6fad33b7",
+    "output-retry": "ab1f475ba3890b803825d3c7d13fbd95b79ae3e93bfb7ac05789bd97be16d333",
+    "merge-to-head": "0f1326e93504a642681e919db710e0d6cbf21b6cb25000ea8fab37a4f0ec9be4",
+    "sandbox-handle": "bbb5c9ea19696541f4f9f65db5afa16dac2e5f6a79228f6e9cff04d7afab768f"
+  },
+  "hostEntrySha256": "38daf664a9645543ac8121210d98e5efc8ba85d0a6c6c1e5473301dec5a010cc",
+  "accountReadingResolution": {
+    "primary": 1
+  },
+  "accountWindowDurationMs": {
+    "primary": 604800000
+  },
+  "reservations": {
+    "activeMs": 14400000,
+    "measurementMs": 900000,
+    "measurementCalls": 6,
+    "evaluationMs": 1800000,
+    "invocationMs": 900000,
+    "evaluations": 64,
+    "roles": [
+      "standards-review",
+      "specification-review"
+    ]
+  }
+}
