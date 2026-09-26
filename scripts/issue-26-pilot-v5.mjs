@@ -754,6 +754,7 @@ async function runNext() {
     conditionsHash,
     accountResolution: manifest.accountReadingResolution,
     windowDurationMs: manifest.accountWindowDurationMs,
+    // Delayed readings are recorded, but shared-account activity cannot establish comparable cost.
     settled: false,
     get reviewPassed() {
       return reviewPassed;
