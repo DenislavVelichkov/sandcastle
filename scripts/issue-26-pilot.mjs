@@ -450,6 +450,13 @@ function makeProject(root, directory, task, grade) {
   };
 }
 
+async function recoverReservation(directory, taskId, id) {
+  const retained = await json(join(directory, "reservation.json"));
+  assert.equal(id, `reservation-${taskId}`);
+  assert.equal(retained.id, id);
+  assert.equal(retained.retained, true);
+}
+
 async function calibration() {
   const root = join(owner, "calibration");
   const directory = join(owner, "calibration-state");
@@ -489,6 +496,7 @@ async function calibration() {
     invocationId: "issue26-calibration",
     runtimeIdentity,
     project,
+    recoverReservation: (id) => recoverReservation(directory, task.id, id),
     selected: [{ id: task.id, reference: task.reference }],
     worktrees: { [task.id]: worktree },
     requiredIgnoredArtifacts: { [task.id]: [] },
@@ -676,6 +684,7 @@ async function runNext() {
     invocationId: slot.id,
     runtimeIdentity,
     project,
+    recoverReservation: (id) => recoverReservation(state, task.id, id),
     selected: [{ id: task.id, reference: task.reference }],
     worktrees: { [task.id]: worktree },
     requiredIgnoredArtifacts: { [task.id]: [] },
@@ -764,6 +773,13 @@ try {
         2,
       ),
     );
+  } else if (mode === "self-check") {
+    await recoverReservation(
+      join(owner, "calibration-state"),
+      "calibration",
+      "reservation-calibration",
+    );
+    console.log("Retained calibration reservation verified");
   } else if (mode === "calibrate") {
     await frozenManifest();
     await put(join(owner, "accounting.json"), {
@@ -817,7 +833,7 @@ try {
     );
   } else
     throw new Error(
-      "Use status, freeze-manifest, calibrate, preflight, run-one or report",
+      "Use status, self-check, freeze-manifest, calibrate, preflight, run-one or report",
     );
 } finally {
   if (observerStarted) {
