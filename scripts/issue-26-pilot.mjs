@@ -564,10 +564,11 @@ async function calibration() {
     usage.tokens.unknown.length === 1 &&
     usage.tokens.unknown[0] === "calibration/implementation/1" &&
     usage.tokens.invocations[usage.tokens.unknown[0]]?.outcome === "failed" &&
-    Object.entries(usage.tokens.invocations).filter(
+    Object.keys(usage.tokens.invocations).length >= 3 &&
+    Object.entries(usage.tokens.invocations).every(
       ([id, invocation]) =>
-        id !== usage.tokens.unknown[0] && invocation.coverageComplete,
-    ).length >= 2 &&
+        id === usage.tokens.unknown[0] || invocation.coverageComplete,
+    ) &&
     Object.keys(usage.tokens.deltas).length > 0 &&
     usage.tokens.attributableTotal === null &&
     reviewRoles.every((role) =>
