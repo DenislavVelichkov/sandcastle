@@ -14,7 +14,7 @@ import { pathToFileURL } from "node:url";
 import { gradeHistoricalCase } from "./issue-26-grader.mjs";
 
 const source = resolve(import.meta.dirname, "..");
-const owner = resolve(source, "../sandcastle-issue26-run");
+const owner = resolve(source, "../sandcastle-issue26-run-v2");
 const consumer = resolve(source, "../sandcastle-issue25-run-L5HVOE/eligible");
 const installed = join(consumer, "node_modules/@ai-hero/sandcastle");
 const pkg = await import(pathToFileURL(join(installed, "dist/index.js")));
@@ -24,7 +24,7 @@ const { docker: dockerSandbox } = await import(
 const image = "sandcastle:limit-items-proof";
 const observerScript =
   "/home/dv8/Projects/codex-plugins/dv8-codex/custom/skills/quality/sandcastle-personal-setup/scripts";
-const policyId = "issue26-seven-arm-v1";
+const policyId = "issue26-seven-arm-v2";
 const pilot = join(owner, "pilot");
 const [mode] = process.argv.slice(2);
 const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -511,7 +511,7 @@ async function calibration() {
     usage: {
       policyId,
       activity: "measurement",
-      pilot: { id: "issue26", directory: pilot },
+      pilot: { id: "issue26-v2", directory: pilot },
       readAccount,
       listModels,
     },
@@ -561,8 +561,15 @@ async function calibration() {
     usage.requested.implementation.effort === "high" &&
     usage.invocations <= 6 &&
     usage.activeMs < 15 * 60_000 &&
-    usage.tokens.unknown.length === 0 &&
-    Boolean(usage.tokens.attributableTotal) &&
+    usage.tokens.unknown.length === 1 &&
+    usage.tokens.unknown[0] === "calibration/implementation/1" &&
+    usage.tokens.invocations[usage.tokens.unknown[0]]?.outcome === "failed" &&
+    Object.entries(usage.tokens.invocations).filter(
+      ([id, invocation]) =>
+        id !== usage.tokens.unknown[0] && invocation.coverageComplete,
+    ).length >= 2 &&
+    Object.keys(usage.tokens.deltas).length > 0 &&
+    usage.tokens.attributableTotal === null &&
     reviewRoles.every((role) =>
       resumed.sessions?.[task.id]?.some((session) => session.role === role),
     );
@@ -700,7 +707,7 @@ async function runNext() {
     usage: {
       policyId,
       activity: "pilot",
-      pilot: { id: "issue26", directory: pilot },
+      pilot: { id: "issue26-v2", directory: pilot },
       readAccount,
       listModels,
     },
@@ -795,7 +802,18 @@ try {
         models.some((model) => model.model === item),
         `Worker lacks ${item}`,
       );
-    const result = await calibration();
+    let result;
+    try {
+      result = await calibration();
+    } catch (error) {
+      result = {
+        status: "failed",
+        reason: String(error),
+        state: await pkg
+          .workflowStatus(join(owner, "calibration-state"))
+          .catch(() => null),
+      };
+    }
     await put(join(owner, "calibration-result.json"), result);
     console.log(
       JSON.stringify({ status: result.status, reason: result.reason }),
