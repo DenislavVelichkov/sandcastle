@@ -702,9 +702,9 @@ const benchmarkCommand = Command.make(
             arm.map((value) => {
               const parts = value.split(":");
               if (parts.length !== 2 || !parts[0] || !parts[1])
-                throw new Error(
-                  `Invalid benchmark arm: ${value}; expected model:effort`,
-                );
+                throw new InitError({
+                  message: `Invalid benchmark arm: ${value}; expected model:effort`,
+                });
               return { model: parts[0], effort: parts[1] };
             }),
           );
