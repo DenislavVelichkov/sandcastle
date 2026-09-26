@@ -60,6 +60,7 @@ export async function gradeHistoricalCase(source, fixtureId, candidate) {
       return {
         focusPassed: false,
         otherGatesPassed: false,
+        environmentFailure: false,
         evidence: [`Candidate changed the ${name} check`],
       };
   const original = await readFile(join(candidate, selected.test));
@@ -93,6 +94,7 @@ export async function gradeHistoricalCase(source, fixtureId, candidate) {
       return {
         focusPassed: false,
         otherGatesPassed: false,
+        environmentFailure: true,
         evidence: [install.output],
       };
     await symlink(
@@ -129,6 +131,7 @@ export async function gradeHistoricalCase(source, fixtureId, candidate) {
     return {
       focusPassed: focus.passed,
       otherGatesPassed: ordinary.passed && typecheck.passed,
+      environmentFailure: false,
       evidence: [JSON.stringify(evidence)],
     };
   } finally {

@@ -61,6 +61,13 @@ const release = await json(join(installed, "dist/workflow-release.json"));
 assert.equal(release.sourceCommit, "b56bd6c26039e99946f0bafaaee1b334b4c11f5d");
 assert.equal(release.version, "0.12.0-dv8.22.0");
 const imageId = docker("image", "inspect", image, "--format", "{{.Id}}");
+const workerConfigHash = hash(await readFile("/home/dv8/.codex/config.toml"));
+const workerAgentsHash = hash(
+  execFileSync("tar", ["-cf", "-", "."], { cwd: agentCopy }),
+);
+const observerHash = hash(
+  await readFile(join(observerScript, "worker-observations.mjs")),
+);
 const mounts = [
   {
     hostPath: "/home/dv8/.codex/auth.json",
@@ -134,6 +141,9 @@ const runtimeIdentity = hash(
     release,
     imageId,
     codex: "0.156.1",
+    workerConfigHash,
+    workerAgentsHash,
+    observerHash,
     mounts: mounts.map((item) => item.sandboxPath),
   }),
 );
@@ -252,10 +262,13 @@ async function freezeManifest() {
       "--version",
     ),
     workerImageDigest: imageId,
+    workerConfigHash,
+    workerAgentsHash,
+    observerHash,
     runtimeIdentity,
     accountId: account.accountId,
     quietAccountWindow:
-      "One sequential worker evaluation at a time; no unrelated account work is admitted by this host entry",
+      "One sequential worker evaluation at a time; other account activity cannot be excluded by this host",
     fixturePromptHashes: prompts,
     toolVersions: {
       hostNode: command("node", ["--version"]),
@@ -328,6 +341,9 @@ async function frozenManifest() {
   assert.equal(manifest.protocolHash, pkg.benchmarkProtocolHash);
   assert.equal(manifest.runtimeIdentity, runtimeIdentity);
   assert.equal(manifest.workerImageDigest, imageId);
+  assert.equal(manifest.workerConfigHash, workerConfigHash);
+  assert.equal(manifest.workerAgentsHash, workerAgentsHash);
+  assert.equal(manifest.observerHash, observerHash);
   assert.equal(manifest.installedPackage.version, release.version);
   assert.equal(
     manifest.hostEntrySha256,
@@ -582,11 +598,16 @@ async function preflight() {
 
 async function runNext() {
   await frozenManifest();
+  const accounting = await json(join(owner, "accounting.json"));
+  if (Date.now() - accounting.startedAt >= accounting.limitMs)
+    throw new Error("The conservative four-hour host clock has expired");
   const manifestPath = join(owner, "manifest.json");
   const manifest = await json(manifestPath);
   const conditionsHash = hash(await readFile(manifestPath));
   const receipts = await json(join(owner, "fixtures.json"));
   const ledger = await pkg.readBenchmark(pilot, policyId);
+  if (ledger.evaluations.some((item) => item.status === "incomplete"))
+    throw new Error("An incomplete evaluation retains recovery ownership");
   const slot = pkg.benchmarkSlots[ledger.evaluations.length];
   if (!slot) throw new Error("No remaining benchmark slot");
   if (ledger.evaluations.length === 28 && !ledger.pair && !ledger.promotion)
@@ -707,14 +728,15 @@ async function runNext() {
     probe: async ({ worktree: path }) => {
       const checked = await gradeHistoricalCase(source, slot.fixture, path);
       return {
-        status: !checked.otherGatesPassed
+        status: checked.environmentFailure
           ? "environment-failure"
-          : checked.focusPassed
+          : checked.focusPassed && checked.otherGatesPassed
             ? "passed"
             : "implementation-failure",
-        reason: checked.focusPassed
-          ? "Protected case passed"
-          : "Protected case did not pass",
+        reason:
+          checked.focusPassed && checked.otherGatesPassed
+            ? "Protected case passed"
+            : "Protected case did not pass",
         evidence: checked.evidence,
       };
     },
