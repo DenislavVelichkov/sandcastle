@@ -67,6 +67,7 @@ type TaskState =
   | "rejected"
   | "rework-requested"
   | "blocked"
+  | "failed"
   | "paused"
   | "cancelled";
 
@@ -2120,7 +2121,14 @@ const driveDurableWorkflow = async (
           tasks: {
             ...state.tasks,
             [task.id]: {
-              status: result.status === "accepted" ? "accepted" : "blocked",
+              status:
+                result.status === "accepted"
+                  ? "accepted"
+                  : options.usage?.activity === "pilot" &&
+                      result.terminalFailure &&
+                      !usageState?.stopReason
+                    ? "failed"
+                    : "blocked",
               remaining,
               ...(result.reason ? { reason: result.reason } : {}),
             },
@@ -2181,7 +2189,7 @@ const driveDurableWorkflow = async (
         !waiting &&
           !usageState.stopReason &&
           Object.values(state.tasks).every((task) =>
-            ["accepted", "integrated"].includes(task.status),
+            ["accepted", "integrated", "failed"].includes(task.status),
           ),
       );
       await publish(pilotContext.path, pilotContext.budget);

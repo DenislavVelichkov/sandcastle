@@ -378,6 +378,8 @@ export const inspectWorkflow = async (
 
 export interface WorkflowResult {
   readonly status: "accepted" | "blocked";
+  /** A completed project check rejected the candidate; recovery cannot change that result. */
+  readonly terminalFailure?: true;
   readonly completed: readonly {
     readonly candidate: WorkflowCandidate;
     readonly check: WorkflowDecision;
@@ -622,6 +624,7 @@ export const runWorkflow = async (
         });
         return {
           status: "blocked",
+          terminalFailure: true,
           completed,
           reason: check.reason ?? `Project check failed for ${task.id}`,
         };

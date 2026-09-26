@@ -2,8 +2,8 @@ import { Command, Options } from "@effect/cli";
 import { FileSystem } from "@effect/platform";
 import { Effect, Option } from "effect";
 import * as clack from "@clack/prompts";
-import { execSync } from "node:child_process";
-import { join } from "node:path";
+import { execFileSync, execSync } from "node:child_process";
+import { join, resolve } from "node:path";
 import { styleText } from "node:util";
 
 import { Display } from "./Display.js";
@@ -28,7 +28,7 @@ import {
   getTemplateDependencies,
 } from "./InitService.js";
 import { defaultImageName } from "./sandboxes/docker.js";
-import { withBenchmarkActivity } from "./benchmark.js";
+import { makeFixedBenchmarkPlan, withBenchmarkActivity } from "./benchmark.js";
 import { writeBenchmarkReport } from "./benchmarkReport.js";
 import type {
   AgentEntry,
@@ -683,6 +683,45 @@ const podmanCommand = Command.make("podman", {}, () =>
 
 // --- Root command ---
 
+const benchmarkCommand = Command.make(
+  "benchmark",
+  {
+    arm: Options.text("arm").pipe(
+      Options.withDescription(
+        "Explicit model:effort arm; repeat for every arm including gpt-6-sol:high",
+      ),
+      Options.repeated,
+    ),
+  },
+  ({ arm }) =>
+    Effect.gen(function* () {
+      const entry = resolve(process.cwd(), "scripts/issue-31-pilot.mjs");
+      yield* Effect.try({
+        try: () => {
+          makeFixedBenchmarkPlan(
+            arm.map((value) => {
+              const parts = value.split(":");
+              if (parts.length !== 2 || !parts[0] || !parts[1])
+                throw new Error(
+                  `Invalid benchmark arm: ${value}; expected model:effort`,
+                );
+              return { model: parts[0], effort: parts[1] };
+            }),
+          );
+          execFileSync(
+            process.execPath,
+            [entry, ...arm.flatMap((value) => ["--arm", value])],
+            {
+              cwd: process.cwd(),
+              stdio: "inherit",
+            },
+          );
+        },
+        catch: (error) => new InitError({ message: String(error) }),
+      });
+    }),
+);
+
 const benchmarkReportCommand = Command.make(
   "benchmark-report",
   {
@@ -740,6 +779,7 @@ export const sandcastle = rootCommand.pipe(
     initCommand,
     dockerCommand,
     podmanCommand,
+    benchmarkCommand,
     benchmarkReportCommand,
   ]),
 );

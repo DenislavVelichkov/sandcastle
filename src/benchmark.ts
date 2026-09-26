@@ -83,6 +83,27 @@ export interface BenchmarkSlot {
   readonly arm: BenchmarkArm;
 }
 
+export interface FixedBenchmarkPlan {
+  readonly kind: "fixed";
+  readonly arms: readonly { readonly model: string; readonly effort: string }[];
+  readonly reference: number;
+  readonly slots: readonly BenchmarkSlot[];
+  readonly overallLimitMs: number;
+  readonly accountRiseLimitPercentPoints: number;
+  /** Standard Codex credits per million tokens, frozen with this protocol. */
+  readonly rates: Readonly<
+    Record<
+      string,
+      {
+        readonly input: number;
+        readonly cachedInput: number;
+        readonly output: number;
+      }
+    >
+  >;
+  readonly rateSource: string;
+}
+
 /** Replication two reverses the fixed arm order within each case. */
 const fixedSlots = benchmarkFixtures.flatMap((fixture) =>
   ([1, 2] as const).flatMap((repetition) =>
@@ -124,7 +145,7 @@ export interface BenchmarkEvaluation {
   readonly sessionIds: readonly string[];
   readonly requested: string;
   readonly effective: string | null;
-  readonly status: "accepted" | "incomplete";
+  readonly status: "accepted" | "failed" | "incomplete";
   readonly technicalPassed?: boolean | null;
   readonly projectAccepted?: boolean | null;
   readonly taskStatus?: string | null;
@@ -177,6 +198,12 @@ export interface BenchmarkLedger {
   readonly version: 1;
   readonly protocolHash: string;
   readonly policyId: string;
+  readonly plan?: FixedBenchmarkPlan;
+  readonly fixedSelection?: {
+    readonly arm: number | null;
+    readonly reason: string;
+  };
+  readonly fixedDisposition?: "qualified" | "retain-fixed";
   readonly hostConditionsHash?: string;
   readonly accountResolution?: Readonly<Record<string, number>>;
   readonly windowDurationMs?: Readonly<Record<string, number>>;
@@ -196,11 +223,101 @@ export interface BenchmarkLedger {
 
 const hash = (value: unknown): string =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
+export const standardCreditRates = {
+  "gpt-6-astra": { input: 250, cachedInput: 25, output: 1250 },
+  "gpt-6-sol": { input: 50, cachedInput: 5, output: 250 },
+  "gpt-6-luna": { input: 2.5, cachedInput: 0.25, output: 12.5 },
+} as const;
+export const makeFixedBenchmarkPlan = (
+  arms: readonly { readonly model: string; readonly effort: string }[],
+): FixedBenchmarkPlan => {
+  if (
+    arms.length < 2 ||
+    arms.length > 7 ||
+    new Set(arms.map((arm) => `${arm.model}:${arm.effort}`)).size !==
+      arms.length ||
+    arms.some(
+      (arm) =>
+        !pilotConfigurations.some(
+          (allowed) =>
+            allowed.model === arm.model && allowed.effort === arm.effort,
+        ),
+    )
+  )
+    throw new Error(
+      "Benchmark arms must be distinct supported model:effort pairs",
+    );
+  const reference = arms.findIndex(
+    (arm) => arm.model === "gpt-6-sol" && arm.effort === "high",
+  );
+  if (reference < 0)
+    throw new Error(
+      "Fixed benchmark needs an explicit gpt-6-sol:high reference",
+    );
+  const slots = benchmarkFixtures.flatMap((fixture) =>
+    ([1, 2] as const).flatMap((repetition) =>
+      arms.map((_, index) => ({
+        id: `${fixture.id}-${repetition}-${index}`,
+        fixture: fixture.id,
+        split: fixture.split,
+        repetition,
+        arm: repetition === 1 ? index : arms.length - 1 - index,
+      })),
+    ),
+  );
+  return {
+    kind: "fixed",
+    arms: arms.map((arm) => ({ model: arm.model, effort: arm.effort })),
+    reference,
+    slots: [
+      ...slots.filter((slot) => slot.split === "development"),
+      ...slots.filter((slot) => slot.split === "held-out"),
+    ],
+    overallLimitMs: 12 * 60 * 60_000,
+    accountRiseLimitPercentPoints: 20,
+    rates: standardCreditRates,
+    rateSource: "https://learn.chatgpt.com/docs/pricing",
+  };
+};
+export const fixedBenchmarkProtocolHash = (plan: FixedBenchmarkPlan): string =>
+  hash({ benchmarkFixtures, plan });
 export const benchmarkProtocolHash = hash({
   benchmarkFixtures,
   benchmarkSlots,
   pilotConfigurations,
 });
+export const initializeFixedBenchmark = async (
+  directory: string,
+  policyId: string,
+  arms: readonly { readonly model: string; readonly effort: string }[],
+): Promise<BenchmarkLedger> =>
+  withBenchmarkLock(directory, async () => {
+    const plan = makeFixedBenchmarkPlan(arms);
+    const protocolHash = fixedBenchmarkProtocolHash(plan);
+    try {
+      const prior = JSON.parse(
+        await readFile(ledgerPath(directory), "utf8"),
+      ) as BenchmarkLedger;
+      if (
+        prior.policyId !== policyId ||
+        prior.protocolHash !== protocolHash ||
+        hash(prior.plan) !== hash(plan)
+      )
+        throw new Error("Frozen fixed benchmark differs from requested arms");
+      return prior;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const ledger: BenchmarkLedger = {
+      version: 1,
+      protocolHash,
+      policyId,
+      plan,
+      evaluations: [],
+    };
+    await save(directory, ledger);
+    return ledger;
+  });
 const ledgerPath = (directory: string) => join(directory, "benchmark.json");
 const withBenchmarkLock = async <T>(
   directory: string,
@@ -386,9 +503,36 @@ export const readBenchmark = async (
       evaluations: [],
     };
   }
+  if (ledger.plan) {
+    const expected = makeFixedBenchmarkPlan(ledger.plan.arms);
+    if (
+      ledger.plan.kind !== "fixed" ||
+      ledger.plan.reference !== expected.reference ||
+      hash(ledger.plan.slots) !== hash(expected.slots) ||
+      ledger.plan.overallLimitMs !== expected.overallLimitMs ||
+      ledger.plan.accountRiseLimitPercentPoints !==
+        expected.accountRiseLimitPercentPoints ||
+      !ledger.plan.rates ||
+      ledger.plan.rateSource !== expected.rateSource ||
+      hash(ledger.plan.rates) !== hash(expected.rates) ||
+      Object.values(ledger.plan.rates).some(
+        (rate) =>
+          !Number.isFinite(rate.input) ||
+          !Number.isFinite(rate.cachedInput) ||
+          !Number.isFinite(rate.output) ||
+          rate.input <= 0 ||
+          rate.cachedInput <= 0 ||
+          rate.output <= 0,
+      )
+    )
+      throw new Error("Fixed benchmark plan is invalid");
+  }
   if (
     ledger.version !== 1 ||
-    ledger.protocolHash !== benchmarkProtocolHash ||
+    ledger.protocolHash !==
+      (ledger.plan
+        ? fixedBenchmarkProtocolHash(ledger.plan)
+        : benchmarkProtocolHash) ||
     ledger.policyId !== policyId
   )
     throw new Error("Benchmark protocol or policy identity changed");
@@ -437,7 +581,8 @@ export const withBenchmarkActivity = async <T>(
         !Object.values(budget.episodes).some(
           (episode) => episode.activity === "measurement" && episode.complete,
         ) ||
-        budget.activeMs + maxActiveMs > 4 * 60 * 60_000
+        budget.activeMs + maxActiveMs >
+          (budget.limits?.overallMs ?? 4 * 60 * 60_000)
       )
         throw new Error(
           "Pilot activity cannot fit the shared active-time budget",
@@ -559,9 +704,19 @@ export const runBenchmarkEvaluation = async (input: {
       throw new Error(
         "Benchmark evaluation needs the installed pilot controller and shared budget",
       );
-    const slot = benchmarkSlots.find((item) => item.id === input.slotId);
-    if (!slot) throw new Error("Unknown benchmark slot");
     const ledger = await readBenchmark(input.directory, usage.policyId);
+    const slots = ledger.plan?.slots ?? benchmarkSlots;
+    const arms = ledger.plan?.arms ?? pilotConfigurations;
+    const slot = slots.find((item) => item.id === input.slotId);
+    if (!slot) throw new Error("Unknown benchmark slot");
+    if (
+      ledger.plan &&
+      (usage.pilot.overallLimitMs !== ledger.plan.overallLimitMs ||
+        usage.pilot.evaluationLimit !== slots.length ||
+        usage.pilot.accountRiseLimitPercentPoints !==
+          ledger.plan.accountRiseLimitPercentPoints)
+    )
+      throw new Error("Pilot limits differ from the frozen benchmark plan");
     if (
       !Object.keys(input.accountResolution).length ||
       Object.values(input.accountResolution).some(
@@ -604,12 +759,12 @@ export const runBenchmarkEvaluation = async (input: {
       throw new Error(
         "Recover or report the incomplete evaluation before starting another slot",
       );
-    if (ledger.evaluations.length >= 64 && !input.resume)
+    if (ledger.evaluations.length >= slots.length && !input.resume)
       throw new Error("Benchmark evaluation limit reached");
     if (
       (input.resume
         ? ledger.evaluations.at(-1)?.slotId
-        : benchmarkSlots[ledger.evaluations.length]?.id) !== slot.id
+        : slots[ledger.evaluations.length]?.id) !== slot.id
     )
       throw new Error(
         "Benchmark evaluations must follow the frozen sequential order",
@@ -628,8 +783,13 @@ export const runBenchmarkEvaluation = async (input: {
       throw new Error(
         "Pilot measurement, evaluation count or unfinished invocation disagrees with the benchmark ledger",
       );
-    if (slot.split === "held-out" && !ledger.pair && !ledger.promotion)
-      throw new Error("Freeze development routing before held-out outcomes");
+    if (
+      slot.split === "held-out" &&
+      (ledger.plan
+        ? ledger.fixedSelection === undefined
+        : !ledger.pair && !ledger.promotion)
+    )
+      throw new Error("Freeze development selection before held-out outcomes");
     if (slot.arm === "adaptive" && !ledger.pair)
       throw new Error("Adaptive evaluation needs a frozen routing pair");
     if (slot.arm !== "adaptive" && slot.split === "development" && ledger.pair)
@@ -641,6 +801,20 @@ export const runBenchmarkEvaluation = async (input: {
     const task = await options.project.getTask(options.selected[0]!.id);
     if (!task || task.reference !== options.selected[0]!.reference)
       throw new Error("Selected benchmark task changed");
+    if (
+      ledger.plan &&
+      (hash(task.requiredRoles) !==
+        hash(["standards-review", "specification-review"]) ||
+        task.requiredRoles.some((role) => {
+          const config = options.policy.roles[role]?.agent.codexConfiguration;
+          return (
+            config?.model !== "gpt-6-sol" ||
+            config.effort !== "high" ||
+            config.serviceTier !== "default"
+          );
+        }))
+    )
+      throw new Error("Fixed benchmark reviews must use Sol High Standard");
     const prompts = await Promise.all(
       ["implementation", ...task.requiredRoles].map(async (role) => {
         const value = options.project.prompt(task, role);
@@ -732,7 +906,7 @@ export const runBenchmarkEvaluation = async (input: {
     const expected =
       slot.arm === "adaptive"
         ? pilotConfigurations[ledger.pair!.start]
-        : pilotConfigurations[slot.arm];
+        : arms[slot.arm];
     if (
       !expected ||
       configured?.model !== expected.model ||
@@ -1005,7 +1179,13 @@ export const runBenchmarkEvaluation = async (input: {
       sessionIds,
       requested: `${configured.model}/${configured.effort}/default`,
       effective: `${input.effective.model}/${input.effective.effort}/${input.effective.serviceTier} (${input.effective.source})${slot.arm === "adaptive" ? `; fallback ${input.fallbackEffective!.model}/${input.fallbackEffective!.effort}/${input.fallbackEffective!.serviceTier} (${input.fallbackEffective!.source})` : ""}`,
-      status: accepted && isolatedSessions ? "accepted" : "incomplete",
+      status:
+        accepted && isolatedSessions
+          ? "accepted"
+          : isolatedSessions &&
+              snapshot?.tasks[options.selected[0]!.id]?.status === "failed"
+            ? "failed"
+            : "incomplete",
       technicalPassed: snapshot?.checksPassed?.[options.selected[0]!.id]
         ? true
         : null,
@@ -1038,6 +1218,190 @@ export const runBenchmarkEvaluation = async (input: {
         : [...ledger.evaluations, result],
     });
     return result;
+  });
+
+/** Price the verified role counters at the rates frozen in a fixed study. */
+export const fixedBenchmarkCredits = (
+  ledger: BenchmarkLedger,
+  evaluation: BenchmarkEvaluation,
+): number | null => {
+  const plan = ledger.plan;
+  const slot = plan?.slots.find((item) => item.id === evaluation.slotId);
+  const tokens = evaluation.usage?.tokens;
+  if (
+    !plan ||
+    !slot ||
+    slot.arm === "adaptive" ||
+    !tokens?.attributableTotal ||
+    tokens.unknown.length ||
+    !tokens.invocations
+  )
+    return null;
+  const counterModels = new Map<string, string>();
+  for (const invocation of Object.values(tokens.invocations)) {
+    if (!invocation.coverageComplete || !invocation.counterIds.length)
+      return null;
+    const model = invocation.role.startsWith("implementation")
+      ? plan.arms[slot.arm]?.model
+      : "gpt-6-sol";
+    if (!model || !plan.rates[model]) return null;
+    for (const id of invocation.counterIds) {
+      const prior = counterModels.get(id);
+      if (prior && prior !== model) return null;
+      counterModels.set(id, model);
+    }
+  }
+  if (
+    !counterModels.size ||
+    counterModels.size !== Object.keys(tokens.deltas).length ||
+    Object.keys(tokens.deltas).some((id) => !counterModels.has(id))
+  )
+    return null;
+  let credits = 0;
+  for (const [id, model] of counterModels) {
+    const delta = tokens.deltas[id]!;
+    const rate = plan.rates[model]!;
+    credits +=
+      ((delta.inputTokens + delta.cacheCreationInputTokens) * rate.input +
+        delta.cacheReadInputTokens * rate.cachedInput +
+        delta.outputTokens * rate.output) /
+      1_000_000;
+  }
+  return Number.isFinite(credits) ? credits : null;
+};
+
+const fixedResults = (
+  ledger: BenchmarkLedger,
+  split: BenchmarkSlot["split"],
+  arm: number,
+): BenchmarkEvaluation[] => {
+  const ids = new Set(
+    ledger
+      .plan!.slots.filter((slot) => slot.split === split && slot.arm === arm)
+      .map((slot) => slot.id),
+  );
+  return ledger.evaluations.filter((evaluation) => ids.has(evaluation.slotId));
+};
+
+const fixedCandidateCredits = (
+  ledger: BenchmarkLedger,
+  split: BenchmarkSlot["split"],
+  arm: number,
+): number | null => {
+  const plan = ledger.plan!;
+  const candidate = fixedResults(ledger, split, arm);
+  const reference = fixedResults(ledger, split, plan.reference);
+  if (
+    candidate.length !== 4 ||
+    reference.length !== 4 ||
+    [...candidate, ...reference].some(
+      (item) =>
+        item.status !== "accepted" ||
+        item.technicalPassed !== true ||
+        item.projectAccepted !== true ||
+        !item.reviewPassed ||
+        item.falseAcceptance ||
+        fixedBenchmarkCredits(ledger, item) === null,
+    )
+  )
+    return null;
+  const total = (items: BenchmarkEvaluation[]) =>
+    items.reduce((sum, item) => sum + fixedBenchmarkCredits(ledger, item)!, 0);
+  const candidateCost = total(candidate);
+  const referenceCost = total(reference);
+  if (
+    referenceCost <= 0 ||
+    candidateCost > 0.8 * referenceCost ||
+    ([1, 2] as const).some(
+      (repetition) =>
+        total(
+          candidate.filter((item) =>
+            plan.slots.some(
+              (slot) =>
+                slot.id === item.slotId && slot.repetition === repetition,
+            ),
+          ),
+        ) >=
+        total(
+          reference.filter((item) =>
+            plan.slots.some(
+              (slot) =>
+                slot.id === item.slotId && slot.repetition === repetition,
+            ),
+          ),
+        ),
+    )
+  )
+    return null;
+  return candidateCost;
+};
+
+/** Freeze a fixed challenger from development results before held-out work. */
+export const freezeFixedBenchmarkSelection = async (
+  directory: string,
+  policyId: string,
+): Promise<BenchmarkLedger["fixedSelection"]> =>
+  withBenchmarkLock(directory, async () => {
+    const ledger = await readBenchmark(directory, policyId);
+    if (!ledger.plan) throw new Error("Fixed benchmark plan is required");
+    if (ledger.fixedSelection) return ledger.fixedSelection;
+    const development = ledger.plan.slots.filter(
+      (slot) => slot.split === "development",
+    );
+    if (
+      ledger.evaluations.length !== development.length ||
+      ledger.evaluations.some(
+        (item) => !development.some((slot) => slot.id === item.slotId),
+      )
+    )
+      throw new Error("Complete development slots before freezing selection");
+    const qualified = ledger.plan.arms
+      .map((_, arm) => ({
+        arm,
+        credits:
+          arm === ledger.plan!.reference
+            ? null
+            : fixedCandidateCredits(ledger, "development", arm),
+      }))
+      .filter(
+        (item): item is { arm: number; credits: number } =>
+          item.credits !== null,
+      )
+      .sort((a, b) => a.credits - b.credits || a.arm - b.arm);
+    const selection = qualified[0]
+      ? {
+          arm: qualified[0].arm,
+          reason:
+            "Lowest verified development credit cost among qualified fixed challengers",
+        }
+      : {
+          arm: null,
+          reason:
+            "No development challenger met the frozen quality and 20% credit rule",
+        };
+    await save(directory, { ...ledger, fixedSelection: selection });
+    return selection;
+  });
+
+/** Assess only the preselected fixed challenger against complete held-out evidence. */
+export const assessFixedBenchmark = async (
+  directory: string,
+  policyId: string,
+): Promise<"qualified" | "retain-fixed"> =>
+  withBenchmarkLock(directory, async () => {
+    const ledger = await readBenchmark(directory, policyId);
+    if (!ledger.plan || !ledger.fixedSelection)
+      throw new Error("Fixed benchmark selection is required");
+    if (ledger.fixedDisposition) return ledger.fixedDisposition;
+    if (ledger.evaluations.length !== ledger.plan.slots.length)
+      throw new Error("All fixed slots are required for assessment");
+    const qualified =
+      ledger.fixedSelection.arm !== null &&
+      fixedCandidateCredits(ledger, "held-out", ledger.fixedSelection.arm) !==
+        null;
+    const fixedDisposition = qualified ? "qualified" : "retain-fixed";
+    await save(directory, { ...ledger, fixedDisposition });
+    return fixedDisposition;
   });
 
 const resultsFor = (

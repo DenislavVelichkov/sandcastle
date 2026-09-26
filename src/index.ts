@@ -3,6 +3,13 @@ export {
   benchmarkFixtures,
   benchmarkSlots,
   benchmarkProtocolHash,
+  standardCreditRates,
+  makeFixedBenchmarkPlan,
+  fixedBenchmarkProtocolHash,
+  initializeFixedBenchmark,
+  fixedBenchmarkCredits,
+  freezeFixedBenchmarkSelection,
+  assessFixedBenchmark,
   exportBenchmarkFixture,
   readBenchmark,
   runBenchmarkEvaluation,
@@ -23,6 +30,7 @@ export type {
   BenchmarkProbe,
   BenchmarkTaskClass,
   BenchmarkPolicyAdmission,
+  FixedBenchmarkPlan,
 } from "./benchmark.js";
 export { writeBenchmarkReport } from "./benchmarkReport.js";
 export type { BenchmarkReportRow } from "./benchmarkReport.js";

@@ -3,10 +3,17 @@ import {
   accrueWorkflowTime,
   continueAfterAccountReset,
   initialWorkflowUsage,
+  pilotLimitsFor,
   type AccountObservation,
   type WorkflowUsageOptions,
   type WorkflowUsageState,
 } from "./workflowUsage.js";
+
+const defaultPilotLimits = {
+  overallMs: 4 * 60 * 60_000,
+  evaluations: 64,
+  accountRisePercentPoints: 5,
+};
 
 /** One pilot spans separate, sequential durable workflow invocations. */
 export interface PilotBudgetState {
@@ -14,6 +21,8 @@ export interface PilotBudgetState {
   readonly id: string;
   readonly policyId: string;
   readonly runtimeIdentity: string;
+  /** Frozen study limits; absent on original four-hour ledgers. */
+  readonly limits?: ReturnType<typeof pilotLimitsFor>;
   readonly baseline: AccountObservation;
   readonly guardBaseline: AccountObservation;
   readonly latest: AccountObservation;
@@ -48,6 +57,7 @@ export const beginPilotInvocation = (
   now: number,
 ): { budget: PilotBudgetState; usage: WorkflowUsageState } => {
   const id = options.pilot?.id;
+  const limits = pilotLimitsFor(options);
   if (
     !id ||
     !options.pilot?.directory ||
@@ -65,7 +75,9 @@ export const beginPilotInvocation = (
       prior.measurementCalls > 6 ||
       !Number.isSafeInteger(prior.evaluations) ||
       prior.evaluations < 0 ||
-      prior.evaluations > 64 ||
+      prior.evaluations > limits.evaluations ||
+      JSON.stringify(prior.limits ?? defaultPilotLimits) !==
+        JSON.stringify(limits) ||
       !prior.baseline?.accountId ||
       !prior.guardBaseline ||
       !Array.isArray(prior.resetContinuations) ||
@@ -79,7 +91,7 @@ export const beginPilotInvocation = (
     throw new Error(
       "Pilot identity changed or another evaluation is unfinished",
     );
-  if (prior && prior.activeMs >= 4 * 60 * 60_000)
+  if (prior && prior.activeMs >= limits.overallMs)
     throw new Error("Pilot active-time limit reached");
   if (options.activity === "measurement") {
     if (prior?.evaluations)
@@ -109,12 +121,17 @@ export const beginPilotInvocation = (
     throw new Error("Pilot measurement prerequisite is incomplete");
   if (
     options.activity === "pilot" &&
-    (prior?.evaluations ?? 0) + tasks.length > 64
+    (prior?.evaluations ?? 0) + tasks.length > limits.evaluations
   )
-    throw new Error("Pilot permits at most 64 evaluations");
+    throw new Error(`Pilot permits at most ${limits.evaluations} evaluations`);
   const baseline = prior?.baseline ?? reading;
   const guardBaseline = prior?.guardBaseline ?? reading;
-  const reason = accountGuardReason(guardBaseline, reading, now);
+  const reason = accountGuardReason(
+    guardBaseline,
+    reading,
+    now,
+    limits.accountRisePercentPoints,
+  );
   if (reason && !options.resetContinuation) throw new Error(reason);
   const fresh = initialWorkflowUsage(
     options,
@@ -154,6 +171,7 @@ export const beginPilotInvocation = (
     id,
     policyId: options.policyId,
     runtimeIdentity,
+    limits,
     baseline,
     guardBaseline: usage.guardBaseline,
     latest: reading,
@@ -200,6 +218,8 @@ export const recordPilotUsage = (
     !Number.isSafeInteger(usage.activeMs) ||
     !Number.isSafeInteger(usage.invocations) ||
     usage.activeMs < budget.activeMs ||
+    JSON.stringify(usage.pilotLimits ?? defaultPilotLimits) !==
+      JSON.stringify(budget.limits ?? defaultPilotLimits) ||
     (episode.activity === "measurement" &&
       (usage.invocations < budget.measurementCalls || usage.invocations > 6))
   )

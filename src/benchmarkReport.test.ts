@@ -7,10 +7,100 @@ import {
   benchmarkFixtures,
   benchmarkProtocolHash,
   benchmarkSlots,
+  fixedBenchmarkProtocolHash,
+  makeFixedBenchmarkPlan,
   type BenchmarkEvaluation,
   type BenchmarkLedger,
 } from "./benchmark.js";
 import { writeBenchmarkReport } from "./benchmarkReport.js";
+
+it("reports the explicit 40-slot fixed study with verified credits and separate account movement", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "fixed-report-"));
+  const plan = makeFixedBenchmarkPlan([
+    { model: "gpt-6-luna", effort: "max" },
+    { model: "gpt-6-sol", effort: "xhigh" },
+    { model: "gpt-6-astra", effort: "medium" },
+    { model: "gpt-6-astra", effort: "max" },
+    { model: "gpt-6-sol", effort: "high" },
+  ]);
+  const now = Date.now();
+  const baseline = {
+    ...observation,
+    observedAt: now,
+    windows: { weekly: { usedPercent: 20, resetsAt: now + 604_800_000 } },
+  };
+  const latest = {
+    ...baseline,
+    windows: { weekly: { ...baseline.windows.weekly, usedPercent: 22 } },
+  };
+  const ledger: BenchmarkLedger = {
+    version: 1,
+    protocolHash: fixedBenchmarkProtocolHash(plan),
+    policyId: "fixed-report",
+    plan,
+    accountResolution: { weekly: 1 },
+    windowDurationMs: { weekly: 604_800_000 },
+    evaluations: plan.slots.map((slot) => ({
+      ...evaluation(slot),
+      usage: {
+        taskMs: { [slot.id]: 60_000 },
+        tokens: {
+          attributableTotal: {
+            inputTokens: 1_000_000,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            outputTokens: 0,
+          },
+          unknown: [],
+          deltas: {
+            implementation: {
+              inputTokens: 1_000_000,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 0,
+              outputTokens: 0,
+            },
+          },
+          invocations: {
+            implementation: {
+              role: "implementation",
+              coverageComplete: true,
+              counterIds: ["implementation"],
+            },
+          },
+        },
+      } as unknown as BenchmarkEvaluation["usage"],
+    })),
+    fixedSelection: { arm: 0, reason: "Development selection" },
+    fixedDisposition: "qualified",
+  };
+  try {
+    await writeFile(join(directory, "benchmark.json"), JSON.stringify(ledger));
+    await writeFile(
+      join(directory, "budget.json"),
+      JSON.stringify({
+        policyId: ledger.policyId,
+        activeMs: 3_600_000,
+        baseline,
+        latest,
+      }),
+    );
+    const files = await writeBenchmarkReport({
+      directory,
+      policyId: ledger.policyId,
+      outputDirectory: join(directory, "report"),
+    });
+    const html = await readFile(files.html, "utf8");
+    const json = JSON.parse(await readFile(files.json, "utf8"));
+    expect(html).toContain("40/40");
+    expect(html).toContain("Fixed challenger qualified");
+    expect(html).toContain("gpt-6-astra:max");
+    expect(html).toContain("percentage points per active hour");
+    expect(json.rows).toHaveLength(40);
+    expect(json.rows[0].standardCredits).toBe(2.5);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 const observation = {
   accountId: "synthetic-account",

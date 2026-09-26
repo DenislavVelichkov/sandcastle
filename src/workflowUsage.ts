@@ -72,6 +72,7 @@ export const accountGuardReason = (
   baseline: AccountObservation,
   current: AccountObservation,
   now: number,
+  riseLimitPercentPoints = 5,
 ): string | undefined => {
   if (
     !baseline.accountId ||
@@ -107,8 +108,8 @@ export const accountGuardReason = (
       before.resetsAt !== after.resetsAt
     )
       return `Account window ${name} changed or is invalid`;
-    if (after.usedPercent - before.usedPercent >= 5)
-      return `Account window ${name} rose by 5 percentage points`;
+    if (after.usedPercent - before.usedPercent >= riseLimitPercentPoints)
+      return `Account window ${name} rose by ${riseLimitPercentPoints} percentage points`;
     if (after.usedPercent > 80)
       return `Account window ${name} has less than 20% remaining`;
   }
@@ -171,7 +172,14 @@ export interface WorkflowUsageOptions {
   /** Bound activity whose ceilings apply to this invocation. */
   readonly activity: "library-proof" | "pilot" | "measurement";
   /** Shared host-only budget for every measurement and evaluation in one pilot. */
-  readonly pilot?: { readonly id: string; readonly directory: string };
+  readonly pilot?: {
+    readonly id: string;
+    readonly directory: string;
+    /** Frozen study limits. Omitted fields retain the original pilot limits. */
+    readonly overallLimitMs?: number;
+    readonly evaluationLimit?: number;
+    readonly accountRiseLimitPercentPoints?: number;
+  };
   /** Explicit owner decision to continue after an account-window reset. */
   readonly resetContinuation?: { readonly id: string; readonly reason: string };
   /** Read every non-null applicable window from the worker's ordinary account. */
@@ -227,6 +235,12 @@ export interface WorkflowUsageState {
   readonly policyId: string;
   /** Activity whose ceilings govern this run. */
   readonly activity: WorkflowUsageOptions["activity"];
+  /** Frozen pilot limits; absent on older four-hour ledgers. */
+  readonly pilotLimits?: {
+    readonly overallMs: number;
+    readonly evaluations: number;
+    readonly accountRisePercentPoints: number;
+  };
   /** Frozen worker CLI, image, home and account configuration identity. */
   readonly runtimeIdentity: string;
   /** Explicit settings requested for each role. */
@@ -301,6 +315,27 @@ const roleLimitMs = (role: string): number =>
   role === "implementation" ? 30 * 60_000 : invocationMs;
 const roleKey = (taskId: string, role: string): string => `${taskId}/${role}`;
 
+export const pilotLimitsFor = (options: WorkflowUsageOptions) => {
+  const limits = {
+    overallMs: options.pilot?.overallLimitMs ?? 4 * 60 * 60_000,
+    evaluations: options.pilot?.evaluationLimit ?? 64,
+    accountRisePercentPoints: options.pilot?.accountRiseLimitPercentPoints ?? 5,
+  };
+  if (
+    !Number.isSafeInteger(limits.overallMs) ||
+    limits.overallMs < 1 ||
+    limits.overallMs > 24 * 60 * 60_000 ||
+    !Number.isSafeInteger(limits.evaluations) ||
+    limits.evaluations < 1 ||
+    limits.evaluations > 64 ||
+    !Number.isFinite(limits.accountRisePercentPoints) ||
+    limits.accountRisePercentPoints <= 0 ||
+    limits.accountRisePercentPoints > 100
+  )
+    throw new Error("Pilot limits must be finite and bounded");
+  return limits;
+};
+
 export const initialWorkflowUsage = (
   options: WorkflowUsageOptions,
   runtimeIdentity: string,
@@ -318,16 +353,25 @@ export const initialWorkflowUsage = (
     0,
   );
   const limits = activityLimits[options.activity];
+  const pilotLimits = options.pilot ? pilotLimitsFor(options) : undefined;
   const callLimit = "calls" in limits ? limits.calls : undefined;
   if (callLimit !== undefined && reservedCalls > callLimit)
     throw new Error("Required roles exceed the activity invocation allowance");
-  if (options.activity === "pilot" && tasks.length > 64)
-    throw new Error("Pilot permits at most 64 evaluations");
-  const reason = accountGuardReason(baseline, baseline, Date.now());
+  if (options.activity === "pilot" && tasks.length > pilotLimits!.evaluations)
+    throw new Error(
+      `Pilot permits at most ${pilotLimits!.evaluations} evaluations`,
+    );
+  const reason = accountGuardReason(
+    baseline,
+    baseline,
+    Date.now(),
+    pilotLimits?.accountRisePercentPoints,
+  );
   if (reason) throw new Error(reason);
   return {
     policyId: options.policyId,
     activity: options.activity,
+    ...(pilotLimits ? { pilotLimits } : {}),
     runtimeIdentity,
     requested,
     effective: null,
@@ -379,7 +423,10 @@ export const accrueWorkflowTime = (
         }
       : state.taskMs,
     activeUpdatedAt: now,
-    ...(activeMs >= activityLimits[state.activity].overallMs
+    ...(activeMs >=
+    (state.activity === "pilot"
+      ? (state.pilotLimits?.overallMs ?? activityLimits.pilot.overallMs)
+      : activityLimits[state.activity].overallMs)
       ? { stopReason: "Overall active-time limit reached" }
       : {}),
   };
@@ -423,7 +470,12 @@ export const observeWorkflowUsage = (
       activeElapsed
     : 0;
   const reason =
-    accountGuardReason(state.guardBaseline ?? state.baseline, reading, now) ??
+    accountGuardReason(
+      state.guardBaseline ?? state.baseline,
+      reading,
+      now,
+      state.pilotLimits?.accountRisePercentPoints,
+    ) ??
     state.stopReason ??
     (state.currentTask &&
     (state.taskMs[state.currentTask] ?? 0) >=
@@ -621,7 +673,12 @@ export const continueAfterAccountReset = (
     throw new Error(
       "Reset continuation needs a new decision and matching account",
     );
-  const changed = accountGuardReason(guardBaseline, reading, now);
+  const changed = accountGuardReason(
+    guardBaseline,
+    reading,
+    now,
+    state.pilotLimits?.accountRisePercentPoints,
+  );
   if (!changed?.includes("changed or is invalid"))
     throw new Error("No account-window reset is awaiting continuation");
   const reconciled = {
@@ -635,7 +692,12 @@ export const continueAfterAccountReset = (
       ]),
     ),
   } as AccountObservation;
-  const reason = accountGuardReason(reconciled, reading, now);
+  const reason = accountGuardReason(
+    reconciled,
+    reading,
+    now,
+    state.pilotLimits?.accountRisePercentPoints,
+  );
   if (reason) throw new Error(reason);
   return {
     ...state,
@@ -672,6 +734,7 @@ export const resumeWorkflowUsage = (
     state.guardBaseline ?? state.baseline,
     reading,
     now,
+    state.pilotLimits?.accountRisePercentPoints,
   );
   const observed = {
     ...state,

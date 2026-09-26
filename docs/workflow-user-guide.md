@@ -102,7 +102,22 @@ The [issue #18 release adoption report](proofs/issue-18-release-adoption.md) rec
 
 ## Run the bounded benchmark
 
-The public benchmark functions are project calls, not `sandcastle` CLI commands. An owner-approved host entry supplies the project's existing task, grader, required reviews, acceptance functions, actual worker model catalog, account readings and installed package identity. Use the [bounded benchmark API](workflow.md#bounded-benchmark) to bind those functions. The four historical base and reference commits are in `benchmarkFixtures`; do not replace them after seeing outcomes. A protected grader and the reference patch stay outside each agent worktree. Exporting and preflighting these real fixtures starts the later pilot's four-hour clock, so the deterministic tests in this repository do not do that work.
+For the fixed follow-up to [issue #26](https://github.com/DenislavVelichkov/sandcastle/issues/26), run this command from a clean committed Sandcastle checkout after `pnpm run build`. It uses the repository-owned protected host entry at `scripts/issue-31-pilot.mjs`. Every arm, including the Sol High reference, is explicit:
+
+```sh
+pnpm exec tsx src/main.ts benchmark \
+  --arm gpt-6-luna:max \
+  --arm gpt-6-sol:xhigh \
+  --arm gpt-6-astra:medium \
+  --arm gpt-6-astra:max \
+  --arm gpt-6-sol:high
+```
+
+The command freezes a 40-slot order (four historical cases, two repetitions, five arms), then runs calibration, protected preflight, development, held-out work and a local report. It can be restarted with the same arguments and committed build after a host interruption; an incomplete evaluation keeps recovery ownership and will not be skipped. The separate report command can render partial evidence. The host enforces a 12-hour active budget and a conservative 12-hour elapsed cap from preparation, a 20-percentage-point account rise cap, and the original per-evaluation and invocation caps. Successful completed grading failures are recorded as failed slots and the next slot may proceed. The protected first-candidate check can spend the second implementation attempt before final reviews; a failure in those final reviews is terminal for that evaluation. The fixed challenger is selected using development results and assessed using held-out results; an incomplete study retains Sol High without a ranking. Standard credit-equivalent cost uses verified role counters, while observed subscription percentage-point movement per active hour is shown separately with reading uncertainty and outside-activity confounding.
+
+The original adaptive protocol below remains available to hosts that supply its own protected entry.
+
+The original adaptive benchmark is a project API. A host entry supplies the task, grader, required reviews, acceptance functions, actual worker model catalog, account readings and installed package identity. Use the [bounded benchmark API](workflow.md#bounded-benchmark) to bind those functions. The four historical base and reference commits are in `benchmarkFixtures`; do not replace them after seeing outcomes. A protected grader and the reference patch stay outside each agent worktree. Exporting and preflighting these real fixtures starts the original pilot's four-hour clock, so the deterministic tests in this repository do not do that work.
 
 Before inference, complete [the benchmark manifest template](benchmark-manifest.template.json) in protected host state with the exact installed release, worker CLI and image, account, prompts, tools, cache and role configurations. Replace every `null` and fill the maps with the applicable hashes and measurements. Use `sha256sum <completed-manifest.json>` to obtain the `conditionsHash` passed to every evaluation; retain the file beside the host ledger. Run the six-call measurement exercise within 15 active minutes, under the same pilot budget and account baseline. After calibration, use `withBenchmarkActivity()` around host preflight, preparation, report and cleanup work so their active time is charged to the shared four-hour budget. `benchmarkSlots` gives the declared order. For each slot, start a fresh answer-free worktree and session, then call `runBenchmarkEvaluation()` once with its slot ID. The operation uses the installed durable controller and writes the attempt to the host-only `benchmark.json`. A stopped or incomplete attempt remains counted; inspect its checkpoint and budget before an explicit recovery. Do not substitute an unrun slot or reset its allowance.
 

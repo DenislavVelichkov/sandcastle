@@ -206,3 +206,117 @@ it("carries measurement time, calls and the original account baseline into score
   expect(afterDecision.budget.activeMs).toBe(settled.activeMs + 1_000);
   expect(afterDecision.budget.resetContinuations).toHaveLength(1);
 });
+
+it("keeps a fixed study's 12-hour, 40-slot and 20-point guards across invocations", () => {
+  const now = Date.now();
+  const baseline: AccountObservation = {
+    accountId: "fixed-study-account",
+    observedAt: now,
+    denied: false,
+    windows: {
+      weekly: { usedPercent: 40, resetsAt: now + 7 * 24 * 60 * 60_000 },
+    },
+  };
+  const common: WorkflowUsageOptions = {
+    policyId: "fixed-study",
+    activity: "measurement",
+    pilot: {
+      id: "fixed-study",
+      directory: "/tmp/fixed-study",
+      overallLimitMs: 12 * 60 * 60_000,
+      evaluationLimit: 40,
+      accountRiseLimitPercentPoints: 20,
+    },
+    readAccount: async () => baseline,
+    listModels: async () => ({ data: [] }),
+  };
+  const requested = {
+    implementation: {
+      model: "gpt-6-sol",
+      effort: "high",
+      serviceTier: "default" as const,
+    },
+  };
+  const task = [{ id: "case", requiredRoles: [] }];
+  const measured = beginPilotInvocation(
+    undefined,
+    common,
+    "measurement",
+    "runtime",
+    baseline,
+    task,
+    1,
+    requested,
+    now,
+    now,
+  );
+  const settled = settlePilotInvocation(
+    measured.budget,
+    "measurement",
+    measured.usage,
+    true,
+  );
+  const pilot = { ...common, activity: "pilot" as const };
+  const reading = (usedPercent: number): AccountObservation => ({
+    ...baseline,
+    windows: {
+      weekly: { ...baseline.windows.weekly!, usedPercent },
+    },
+  });
+  expect(
+    beginPilotInvocation(
+      { ...settled, activeMs: 4 * 60 * 60_000 },
+      pilot,
+      "slot-1",
+      "runtime",
+      reading(59),
+      task,
+      2,
+      requested,
+      now,
+      now,
+    ).budget.evaluations,
+  ).toBe(1);
+  expect(() =>
+    beginPilotInvocation(
+      settled,
+      pilot,
+      "slot-1",
+      "runtime",
+      reading(60),
+      task,
+      2,
+      requested,
+      now,
+      now,
+    ),
+  ).toThrow(/20 percentage points/);
+  expect(() =>
+    beginPilotInvocation(
+      { ...settled, evaluations: 40 },
+      pilot,
+      "slot-41",
+      "runtime",
+      baseline,
+      task,
+      2,
+      requested,
+      now,
+      now,
+    ),
+  ).toThrow(/40 evaluations/);
+  expect(() =>
+    beginPilotInvocation(
+      { ...settled, activeMs: 12 * 60 * 60_000 },
+      pilot,
+      "over-time",
+      "runtime",
+      baseline,
+      task,
+      2,
+      requested,
+      now,
+      now,
+    ),
+  ).toThrow(/active-time limit/);
+});

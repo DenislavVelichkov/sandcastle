@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import {
   benchmarkFixtures,
   benchmarkSlots,
+  fixedBenchmarkCredits,
   readBenchmark,
   type BenchmarkEvaluation,
   type BenchmarkLedger,
@@ -68,6 +69,7 @@ export interface BenchmarkReportRow {
   readonly humanWaitingMs: null;
   readonly tokenCoverage: string;
   readonly verifiedTokens: number | null;
+  readonly standardCredits: number | null;
   readonly window: string;
   readonly lower: number | null;
   readonly upper: number | null;
@@ -79,7 +81,9 @@ export interface BenchmarkReportRow {
 
 const rowsFor = (ledger: BenchmarkLedger): BenchmarkReportRow[] =>
   ledger.evaluations.flatMap((item) => {
-    const slot = benchmarkSlots.find((entry) => entry.id === item.slotId);
+    const slot = (ledger.plan?.slots ?? benchmarkSlots).find(
+      (entry) => entry.id === item.slotId,
+    );
     if (!slot)
       throw new Error(`Unknown benchmark slot in ledger: ${item.slotId}`);
     const total = item.usage?.tokens?.attributableTotal;
@@ -108,7 +112,10 @@ const rowsFor = (ledger: BenchmarkLedger): BenchmarkReportRow[] =>
       return {
         slotId: item.slotId,
         split: slot.split,
-        configuration: names[slot.arm === "adaptive" ? 7 : slot.arm]!,
+        configuration:
+          ledger.plan && slot.arm !== "adaptive"
+            ? `${ledger.plan.arms[slot.arm]!.model}:${ledger.plan.arms[slot.arm]!.effort}`
+            : names[slot.arm === "adaptive" ? 7 : slot.arm]!,
         fixture: slot.fixture,
         repetition: slot.repetition,
         status: item.status,
@@ -123,6 +130,9 @@ const rowsFor = (ledger: BenchmarkLedger): BenchmarkReportRow[] =>
         humanWaitingMs: null,
         tokenCoverage,
         verifiedTokens,
+        standardCredits: ledger.plan
+          ? fixedBenchmarkCredits(ledger, item)
+          : null,
         window,
         lower: cost?.lower ?? null,
         upper: cost?.upper ?? null,
@@ -155,14 +165,20 @@ const htmlFor = (
   rows: readonly BenchmarkReportRow[],
 ) => {
   const bySlot = new Map(ledger.evaluations.map((item) => [item.slotId, item]));
-  const armRows = names
+  const slots = ledger.plan?.slots ?? benchmarkSlots;
+  const armNames = ledger.plan
+    ? ledger.plan.arms.map((arm) => `${arm.model}:${arm.effort}`)
+    : names;
+  const referenceArm = ledger.plan?.reference ?? reference;
+  const armRows = armNames
     .map((name, index) => {
-      const slots = benchmarkSlots.filter(
-        (slot) => slot.arm === (index === 7 ? "adaptive" : index),
+      const selectedSlots = slots.filter(
+        (slot) =>
+          slot.arm === (index === 7 && !ledger.plan ? "adaptive" : index),
       );
-      const dev = slots.filter((slot) => slot.split === "development");
-      const held = slots.filter((slot) => slot.split === "held-out");
-      const cells = (selected: typeof slots) => {
+      const dev = selectedSlots.filter((slot) => slot.split === "development");
+      const held = selectedSlots.filter((slot) => slot.split === "held-out");
+      const cells = (selected: typeof selectedSlots) => {
         const attempted = selected
           .map((slot) => bySlot.get(slot.id))
           .filter((item) => item !== undefined);
@@ -181,12 +197,12 @@ const htmlFor = (
           : 0;
         return `<td><span class="metric">${accepted}/${selected.length}</span><span class="sub">${attempted.length} attempted · ${technical} technical passed${technicalUnknown ? ` · ${technicalUnknown} technical unknown` : ""} · ${first} first pass</span><span class="track"><span style="width:${width}%"></span></span></td>`;
       };
-      return `<tr><th scope="row">${escapeHtml(name)}${index === reference ? ` ${badge("Reference")}` : ""}${index === 7 ? ` ${badge("Frozen route")}` : ""}<span class="sub">${index === 7 ? "Selected start → fallback" : `${pilotConfigurations[index]!.model} / ${pilotConfigurations[index]!.effort}`}</span></th>${cells(dev)}${cells(held)}</tr>`;
+      return `<tr><th scope="row">${escapeHtml(name)}${index === referenceArm ? ` ${badge("Reference")}` : ""}${index === 7 && !ledger.plan ? ` ${badge("Frozen route")}` : ""}<span class="sub">${index === 7 && !ledger.plan ? "Selected start → fallback" : ledger.plan ? "Standard service tier" : `${pilotConfigurations[index]!.model} / ${pilotConfigurations[index]!.effort}`}</span></th>${cells(dev)}${cells(held)}</tr>`;
     })
     .join("");
 
   const windowNames = Object.keys(ledger.accountResolution ?? {});
-  const usageRows = names
+  const usageRows = armNames
     .flatMap((name) =>
       ["development", "held-out"].flatMap((split) =>
         windowNames.map((window) => {
@@ -223,8 +239,14 @@ const htmlFor = (
           reportReservation.label === "benchmark-report"
         ? Math.max(0, budget.activeMs - reportReservation.reservedMs)
         : budget.activeMs;
-  const recommendation =
-    ledger.promotion === "admitted" && pair
+  const recommendation = ledger.plan
+    ? ledger.fixedDisposition === "qualified" &&
+      ledger.fixedSelection?.arm != null
+      ? `The held-out assessment qualified ${armNames[ledger.fixedSelection.arm]} against fixed Sol High. Activation remains a separate decision.`
+      : ledger.fixedDisposition === "retain-fixed"
+        ? "The held-out assessment retains fixed Sol High. The frozen challenger did not meet all quality and credit rules."
+        : "Keep fixed Sol High while the fixed study or its assessment is incomplete."
+    : ledger.promotion === "admitted" && pair
       ? `The held-out assessment admitted ${names[pair.start]} as the starting configuration and ${names[pair.fallback]} after an independently checked implementation failure. Owner activation remains separate.`
       : ledger.promotion === "fixed-policy"
         ? "The recorded assessment retains fixed Sol High. The evidence did not meet the adaptive admission rule."
@@ -232,6 +254,49 @@ const htmlFor = (
   const pairSummary = pair
     ? `Frozen trial pair: ${names[pair.start]} starts; ${names[pair.fallback]} follows only after an actionable independent implementation failure. ${ledger.promotion === "admitted" ? "Eligible for explicit owner activation." : "Not active; keep fixed Sol High."}`
     : "No adaptive pair is frozen in this ledger.";
+  const fixedSummary = ledger.fixedSelection
+    ? ledger.fixedSelection.arm === null
+      ? `Development selection: no qualified challenger. ${ledger.fixedSelection.reason}`
+      : `Development selection: ${armNames[ledger.fixedSelection.arm]}. ${ledger.fixedSelection.reason}`
+    : "Development selection has not been frozen.";
+  const creditRows = ledger.plan
+    ? armNames
+        .flatMap((name) =>
+          ["development", "held-out"].map((split) => {
+            const selected = rows.filter(
+              (row) =>
+                row.configuration === name &&
+                row.split === split &&
+                row.window === (windowNames[0] ?? "Unspecified"),
+            );
+            const complete =
+              selected.length === 4 &&
+              selected.every((row) => row.standardCredits !== null);
+            const credits = complete
+              ? selected.reduce((sum, row) => sum + row.standardCredits!, 0)
+              : null;
+            return `<tr><th scope="row">${escapeHtml(name)}</th><td>${escapeHtml(split)}</td><td>${credits === null ? "Unknown" : credits.toFixed(3)}</td><td>${badge(complete ? "Complete" : `Partial ${selected.filter((row) => row.standardCredits !== null).length}/4`, complete ? "good" : "warn")}</td></tr>`;
+          }),
+        )
+        .join("")
+    : "";
+  const hourlyUsage =
+    budget && activeAtReportStart && activeAtReportStart > 0
+      ? Object.entries(budget.baseline.windows).map(([name, baseline]) => {
+          const latest = budget.latest.windows[name];
+          const resolution = ledger.accountResolution?.[name];
+          if (
+            !latest ||
+            !resolution ||
+            baseline.resetsAt !== latest.resetsAt ||
+            latest.usedPercent < baseline.usedPercent
+          )
+            return `${name}: unavailable (window reset or reading changed)`;
+          const delta = latest.usedPercent - baseline.usedPercent;
+          const hours = activeAtReportStart / 3_600_000;
+          return `${name}: ${(Math.max(0, delta - resolution) / hours).toFixed(2)}–${((delta + resolution) / hours).toFixed(2)} percentage points per active hour`;
+        })
+      : [];
   const manifestEntries = manifest ? Object.entries(manifest) : [];
   const manifestStatus = !manifest
     ? "Not supplied"
@@ -240,8 +305,8 @@ const htmlFor = (
       : "Supplied; no frozen host conditions hash is recorded";
   const evidence = ledger.evaluations
     .map((item) => {
-      const slot = benchmarkSlots.find((entry) => entry.id === item.slotId)!;
-      return `<details><summary><strong>${escapeHtml(names[slot.arm === "adaptive" ? 7 : slot.arm])}</strong><span>${escapeHtml(slot.split)} · ${escapeHtml(slot.fixture)} · repetition ${slot.repetition}</span>${badge(item.status, item.status === "accepted" ? "good" : "warn")}</summary><dl class="facts"><div><dt>Technical check</dt><dd>${status(item.technicalPassed ?? null)}</dd></div><div><dt>Project acceptance</dt><dd>${status(item.projectAccepted ?? null)}</dd></div><div><dt>First iteration</dt><dd>${status(item.firstIterationSuccess)}</dd></div><div><dt>Review</dt><dd>${status(item.reviewPassed)}</dd></div><div><dt>Active evaluation time</dt><dd>${escapeHtml(formatMs(item.usage?.taskMs ? Object.values(item.usage.taskMs)[0] : null))}</dd></div><div><dt>Human waiting</dt><dd>Not measured in ledger</dd></div><div><dt>Account cost</dt><dd>${escapeHtml([...new Set(rows.filter((row) => row.slotId === item.slotId).map((row) => row.costStatus))].join(", "))}</dd></div><div><dt>Token coverage</dt><dd>${escapeHtml(rows.find((row) => row.slotId === item.slotId)?.tokenCoverage)}</dd></div></dl><p>${escapeHtml(item.reason ?? "No recorded exception")}</p><pre>${escapeHtml(JSON.stringify(item, null, 2))}</pre></details>`;
+      const slot = slots.find((entry) => entry.id === item.slotId)!;
+      return `<details><summary><strong>${escapeHtml(ledger.plan && slot.arm !== "adaptive" ? armNames[slot.arm] : names[slot.arm === "adaptive" ? 7 : slot.arm])}</strong><span>${escapeHtml(slot.split)} · ${escapeHtml(slot.fixture)} · repetition ${slot.repetition}</span>${badge(item.status, item.status === "accepted" ? "good" : "warn")}</summary><dl class="facts"><div><dt>Technical check</dt><dd>${status(item.technicalPassed ?? null)}</dd></div><div><dt>Project acceptance</dt><dd>${status(item.projectAccepted ?? null)}</dd></div><div><dt>First iteration</dt><dd>${status(item.firstIterationSuccess)}</dd></div><div><dt>Review</dt><dd>${status(item.reviewPassed)}</dd></div><div><dt>Active evaluation time</dt><dd>${escapeHtml(formatMs(item.usage?.taskMs ? Object.values(item.usage.taskMs)[0] : null))}</dd></div><div><dt>Human waiting</dt><dd>Not measured in ledger</dd></div><div><dt>Account cost</dt><dd>${escapeHtml([...new Set(rows.filter((row) => row.slotId === item.slotId).map((row) => row.costStatus))].join(", "))}</dd></div><div><dt>Token coverage</dt><dd>${escapeHtml(rows.find((row) => row.slotId === item.slotId)?.tokenCoverage)}</dd></div>${ledger.plan ? `<div><dt>Standard credits</dt><dd>${escapeHtml(rows.find((row) => row.slotId === item.slotId)?.standardCredits?.toFixed(3) ?? "Unknown")}</dd></div>` : ""}</dl><p>${escapeHtml(item.reason ?? "No recorded exception")}</p><pre>${escapeHtml(JSON.stringify(item, null, 2))}</pre></details>`;
     })
     .join("");
   return `<!doctype html>
@@ -249,14 +314,15 @@ const htmlFor = (
 <style>
 :root{color-scheme:light;--ink:#17252b;--muted:#4b6268;--paper:#f6f3ec;--panel:#fffdf9;--line:#c9d2ce;--accent:#087c72;--good:#075e52;--warn:#954a17;--focus:#a14808}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 "Source Sans 3","Segoe UI",sans-serif}main{max-width:1200px;margin:auto;padding:32px 24px 80px}header{border-bottom:4px solid var(--ink);padding:0 0 28px;margin-bottom:34px}.eyebrow{font:700 .8rem/1.2 "Consolas",monospace;text-transform:uppercase;letter-spacing:.13em;color:var(--accent)}h1,h2,h3{font-family:Georgia,serif;line-height:1.1}h1{font-size:clamp(2.5rem,6vw,5.5rem);letter-spacing:-.045em;margin:.3em 0}h2{font-size:clamp(1.8rem,3vw,2.6rem);margin:0 0 16px}h3{font-size:1.25rem}.lead{max-width:75ch;font-size:1.15rem}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card,section{background:var(--panel);border:1px solid var(--line)}.card{padding:18px}.card b{display:block;font:700 2rem/1 Georgia,serif;margin:8px 0}.card span,.sub,small{color:var(--muted)}section{padding:26px;margin:24px 0}p{max-width:85ch}.badge{display:inline-block;border:1px solid var(--line);padding:2px 8px;border-radius:99px;font:700 .72rem/1.4 "Consolas",monospace;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap}.badge.good{background:#e0f2ea;color:var(--good);border-color:#9bc9b5}.badge.warn{background:#fff0df;color:var(--warn);border-color:#dfb184}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:650px}th,td{text-align:left;vertical-align:top;padding:14px 12px;border-bottom:1px solid var(--line)}thead th{font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}tbody th{font-weight:700}.sub{display:block;font-size:.8rem;font-weight:400}.metric{font:700 1.35rem/1.2 Georgia,serif}.track{display:block;height:6px;background:#e3e9e5;margin-top:8px}.track span{display:block;height:100%;background:var(--accent)}.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}.facts div{border-top:1px solid var(--line);padding-top:8px;min-width:0}dt{font-size:.8rem;color:var(--muted)}dd{margin:3px 0;overflow-wrap:anywhere}details{border-top:1px solid var(--line);padding:12px 0}summary{cursor:pointer;display:flex;align-items:center;gap:12px;flex-wrap:wrap}summary span:nth-child(2){color:var(--muted);flex:1}details pre{max-height:360px;overflow:auto;background:#edf1ee;padding:16px;font-size:.75rem;white-space:pre-wrap;overflow-wrap:anywhere}a{color:#075e74;text-decoration-thickness:2px;text-underline-offset:3px}a:focus-visible,summary:focus-visible{outline:3px solid var(--focus);outline-offset:3px}.notice{border-left:4px solid var(--accent);padding-left:18px}.warning{border-left-color:var(--warn)}.mono{font-family:"Consolas",monospace;overflow-wrap:anywhere}ul{padding-left:22px}@media(max-width:760px){main{padding:20px 14px 50px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}section{padding:18px}.facts{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:440px){.grid,.facts{grid-template-columns:1fr}summary{align-items:flex-start}}
 </style></head><body><main>
-<header><p class="eyebrow">Sandcastle / controlled comparison</p><h1>Benchmark evidence</h1><p class="lead">A local record of seven fixed configurations and the frozen adaptive route. All figures below come from the retained ledger; this report does not run an evaluation or grant project acceptance.</p><p><a href="report.json">Download JSON evidence</a> · <a href="evaluations.csv">Download CSV rows</a></p></header>
-<div class="grid"><div class="card"><span>Evaluations recorded</span><b>${ledger.evaluations.length}/64</b><small>${64 - ledger.evaluations.length} scheduled slots remain</small></div><div class="card"><span>Accepted</span><b>${count(ledger.evaluations, (item) => item.status === "accepted")}</b><small>Includes review and isolated session checks</small></div><div class="card"><span>First iteration</span><b>${count(ledger.evaluations, (item) => item.firstIterationSuccess)}</b><small>Across recorded evaluations</small></div><div class="card"><span>Pilot active time</span><b>${escapeHtml(formatMs(activeAtReportStart))}</b><small>At report start; report generation is charged afterward</small></div></div>
-<section><p class="eyebrow">Executive summary</p><h2>${escapeHtml(ledger.promotion === "admitted" ? "Adaptive route admitted" : ledger.promotion === "fixed-policy" ? "Fixed policy retained" : "Evidence still accumulating")}</h2><p class="lead notice ${ledger.promotion === "fixed-policy" ? "warning" : ""}">${escapeHtml(recommendation)}</p><p>${escapeHtml(pairSummary)} ${ledger.promotion ? "This is the ledger's recorded assessment, not a report-side decision." : "No promotion result has been recorded."}</p><p>Qualification requires four accepted development evaluations for each eligible configuration, a qualifying Sol High reference, complete attributable token coverage and at least 20% conservative savings in every comparable account window. Held-out admission additionally requires all matched adaptive outcomes and same-direction savings in both repetitions. Unknown or coarse measurements cannot establish savings.</p></section>
-<section><p class="eyebrow">Outcome by configuration</p><h2>Development and held-out</h2><p>Bars show accepted evaluations out of scheduled evaluations. Adaptive development results are shown as evidence only; the frozen pair is selected before held-out results.</p><div class="table-wrap"><table><thead><tr><th scope="col">Configuration</th><th scope="col">Development</th><th scope="col">Held-out</th></tr></thead><tbody>${armRows}</tbody></table></div></section>
-<section><p class="eyebrow">Subscription account windows</p><h2>Observed usage intervals</h2><p>Ranges are sums of retained lower and upper percentage-point bounds, not credits, dollars or token estimates. Coverage counts account readings, including failed evaluations; acceptance is shown above. Partial rows cannot establish comparative savings. Window readings and reset times appear in each evaluation and in the exports.</p>${windowNames.length ? `<div class="table-wrap"><table><thead><tr><th>Configuration</th><th>Split</th><th>Window</th><th>Observed range</th><th>Coverage</th></tr></thead><tbody>${usageRows}</tbody></table></div>` : `<p>${badge("Unknown", "warn")} No account windows were declared in the ledger.</p>`}<p class="sub">Declared reading resolution: ${escapeHtml(JSON.stringify(ledger.accountResolution ?? null))}. Window durations (ms): ${escapeHtml(JSON.stringify(ledger.windowDurationMs ?? null))}.</p></section>
+<header><p class="eyebrow">Sandcastle / controlled comparison</p><h1>Benchmark evidence</h1><p class="lead">${ledger.plan ? `A local record of ${ledger.plan.arms.length} explicitly selected fixed configurations.` : "A local record of seven fixed configurations and the frozen adaptive route."} All figures below come from the retained ledger; this report does not run an evaluation or grant project acceptance.</p><p><a href="report.json">Download JSON evidence</a> · <a href="evaluations.csv">Download CSV rows</a></p></header>
+<div class="grid"><div class="card"><span>Evaluations recorded</span><b>${ledger.evaluations.length}/${slots.length}</b><small>${slots.length - ledger.evaluations.length} scheduled slots remain</small></div><div class="card"><span>Accepted</span><b>${count(ledger.evaluations, (item) => item.status === "accepted")}</b><small>Includes review and isolated session checks</small></div><div class="card"><span>First iteration</span><b>${count(ledger.evaluations, (item) => item.firstIterationSuccess)}</b><small>Across recorded evaluations</small></div><div class="card"><span>Pilot active time</span><b>${escapeHtml(formatMs(activeAtReportStart))}</b><small>At report start; report generation is charged afterward</small></div></div>
+<section><p class="eyebrow">Executive summary</p><h2>${escapeHtml(ledger.plan ? (ledger.fixedDisposition === "qualified" ? "Fixed challenger qualified" : ledger.fixedDisposition === "retain-fixed" ? "Fixed Sol High retained" : "Evidence still accumulating") : ledger.promotion === "admitted" ? "Adaptive route admitted" : ledger.promotion === "fixed-policy" ? "Fixed policy retained" : "Evidence still accumulating")}</h2><p class="lead notice ${ledger.fixedDisposition === "retain-fixed" || ledger.promotion === "fixed-policy" ? "warning" : ""}">${escapeHtml(recommendation)}</p><p>${escapeHtml(ledger.plan ? fixedSummary : pairSummary)} ${ledger.plan ? (ledger.fixedDisposition ? "This is the ledger's recorded assessment." : "No final assessment has been recorded.") : ledger.promotion ? "This is the ledger's recorded assessment, not a report-side decision." : "No promotion result has been recorded."}</p><p>${ledger.plan ? "Qualification requires all four accepted results per split for the selected challenger and Sol High reference, passed technical and project checks, passed reviews, complete verified token coverage, at least 20% Standard credit-equivalent savings, and cheaper results in both repetitions. Subscription usage is observed separately and cannot be converted from credits." : "Qualification requires four accepted development evaluations for each eligible configuration, a qualifying Sol High reference, complete attributable token coverage and at least 20% conservative savings in every comparable account window. Held-out admission additionally requires all matched adaptive outcomes and same-direction savings in both repetitions. Unknown or coarse measurements cannot establish savings."}</p></section>
+<section><p class="eyebrow">Outcome by configuration</p><h2>Development and held-out</h2><p>Bars show accepted evaluations out of scheduled evaluations. ${ledger.plan ? "The development challenger is frozen before held-out results." : "Adaptive development results are shown as evidence only; the frozen pair is selected before held-out results."}</p><div class="table-wrap"><table><thead><tr><th scope="col">Configuration</th><th scope="col">Development</th><th scope="col">Held-out</th></tr></thead><tbody>${armRows}</tbody></table></div></section>
+${ledger.plan ? `<section><p class="eyebrow">Standard credit-equivalent estimate</p><h2>Verified workflow cost</h2><p>Credits price verified implementation and required review token counters using the frozen Standard rates. A complete row contains four evaluations; this estimate does not translate to subscription percentage usage.</p><div class="table-wrap"><table><thead><tr><th>Configuration</th><th>Split</th><th>Credits</th><th>Coverage</th></tr></thead><tbody>${creditRows}</tbody></table></div><p class="sub">Rate source: <a href="${escapeHtml(ledger.plan.rateSource)}">frozen Standard credit rates</a>. Rates per million tokens: ${escapeHtml(JSON.stringify(ledger.plan.rates))}.</p></section>` : ""}
+<section><p class="eyebrow">Subscription account windows</p><h2>Observed usage intervals</h2><p>Ranges are sums of retained lower and upper percentage-point bounds, not credits, dollars or token estimates. Coverage counts account readings, including failed evaluations; acceptance is shown above. Partial rows cannot establish comparative savings. Window readings and reset times appear in each evaluation and in the exports.</p>${windowNames.length ? `<div class="table-wrap"><table><thead><tr><th>Configuration</th><th>Split</th><th>Window</th><th>Observed range</th><th>Coverage</th></tr></thead><tbody>${usageRows}</tbody></table></div>` : `<p>${badge("Unknown", "warn")} No account windows were declared in the ledger.</p>`}${ledger.plan ? `<p>Whole-study account movement per active hour: ${hourlyUsage.length ? escapeHtml(hourlyUsage.join("; ")) : "Unavailable"}. This is account-wide movement, including possible outside activity, and is not attributed to individual models.</p>` : ""}<p class="sub">Declared reading resolution: ${escapeHtml(JSON.stringify(ledger.accountResolution ?? null))}. Window durations (ms): ${escapeHtml(JSON.stringify(ledger.windowDurationMs ?? null))}.</p></section>
 <section><p class="eyebrow">Unresolved outcomes</p><h2>Rejected, failed, capped or blocked</h2>${exceptions.length ? `<ul>${exceptions.map((item) => `<li><strong>${escapeHtml(item.slotId)}</strong>: ${escapeHtml(item.reason ?? (item.status === "incomplete" ? "Incomplete; no reason recorded" : "Review or protected acceptance failed"))}${item.usage?.stopReason ? ` · guard: ${escapeHtml(item.usage.stopReason)}` : ""}</li>`).join("")}</ul>` : "<p>No recorded exceptions. Unattempted slots are not successes.</p>"}<p>Human waiting duration is not measured by the benchmark ledger. Active evaluation time and raw provider coverage are shown per evaluation; pilot active time includes shared measurement and host activities when the budget is available.</p></section>
 <section><p class="eyebrow">Reproducibility</p><h2>Artifacts and conditions</h2><dl class="facts"><div><dt>Policy</dt><dd>${escapeHtml(ledger.policyId)}</dd></div><div><dt>Protocol SHA-256</dt><dd class="mono">${escapeHtml(ledger.protocolHash)}</dd></div><div><dt>Ledger SHA-256</dt><dd class="mono">${escapeHtml(ledgerHash)}</dd></div><div><dt>Host conditions SHA-256</dt><dd class="mono">${escapeHtml(plain(ledger.hostConditionsHash))}</dd></div><div><dt>Pilot runtime</dt><dd class="mono">${escapeHtml(plain(budget?.runtimeIdentity))}</dd></div><div><dt>Fixture conditions</dt><dd class="mono">${escapeHtml(JSON.stringify(ledger.fixtureConditions ?? null))}</dd></div></dl><h3>Historical case identities</h3><ul>${benchmarkFixtures.map((fixture) => `<li><strong>${escapeHtml(fixture.id)}</strong> (${escapeHtml(fixture.split)}): base <span class="mono">${fixture.base}</span>, reference <span class="mono">${fixture.reference}</span>. ${escapeHtml(fixture.focus)}</li>`).join("")}</ul><h3>Host manifest</h3><p>${escapeHtml(manifestStatus)}</p>${manifest ? `<dl class="facts">${manifestEntries.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd class="mono">${escapeHtml(plain(typeof value === "object" ? JSON.stringify(value) : value))}</dd></div>`).join("")}</dl>` : "<p>Exact worker, artifact and environment identities are unavailable for this report.</p>"}<p>Limitations: source observations are the ledger's account readings, counter paths and protected preflight records. Missing, overlapping, delayed, reset or confounded measurements remain uncertain. A synthetic fixture does not establish live savings. The report does not recalculate qualification or promotion.</p></section>
-<section><p class="eyebrow">Audit trail</p><h2>Evaluation evidence</h2><p>Open a row to inspect its recorded candidate, sessions, preflight, review, account readings, token sources and reason. ${ledger.evaluations.length} of 64 slots have records.</p>${evidence || "<p>No evaluations recorded yet.</p>"}</section>
+<section><p class="eyebrow">Audit trail</p><h2>Evaluation evidence</h2><p>Open a row to inspect its recorded candidate, sessions, preflight, review, account readings, token sources and reason. ${ledger.evaluations.length} of ${slots.length} slots have records.</p>${evidence || "<p>No evaluations recorded yet.</p>"}</section>
 </main></body></html>`;
 };
 
@@ -317,6 +383,7 @@ export const writeBenchmarkReport = async (input: {
       humanWaitingMs: "",
       tokenCoverage: "",
       verifiedTokens: "",
+      standardCredits: "",
       window: "",
       lower: "",
       upper: "",

@@ -7,11 +7,16 @@ import { codex, createWorktree } from "./index.js";
 import {
   admitBenchmarkPolicy,
   assessBenchmarkPromotion,
+  assessFixedBenchmark,
   benchmarkFixtures,
   benchmarkProtocolHash,
   benchmarkSlots,
   exportFixtureTree,
+  fixedBenchmarkCredits,
+  freezeFixedBenchmarkSelection,
   freezeBenchmarkPair,
+  initializeFixedBenchmark,
+  makeFixedBenchmarkPlan,
   readBenchmark,
   runBenchmarkEvaluation,
   withBenchmarkActivity,
@@ -101,6 +106,129 @@ const result = (
       unknown: [],
     },
   } as unknown as BenchmarkEvaluation["usage"],
+});
+
+it("freezes five explicit arms, prices all role calls and validates a fixed challenger", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "fixed-benchmark-"));
+  const arms = [
+    { model: "gpt-6-luna", effort: "max" },
+    { model: "gpt-6-sol", effort: "xhigh" },
+    { model: "gpt-6-astra", effort: "medium" },
+    { model: "gpt-6-astra", effort: "max" },
+    { model: "gpt-6-sol", effort: "high" },
+  ];
+  try {
+    expect(() => makeFixedBenchmarkPlan(arms.slice(0, 4))).toThrow(
+      /explicit gpt-6-sol:high/,
+    );
+    expect(() => makeFixedBenchmarkPlan([...arms, arms[0]!])).toThrow(
+      /distinct/,
+    );
+    const initial = await initializeFixedBenchmark(
+      directory,
+      "fixed-study",
+      arms,
+    );
+    const plan = initial.plan!;
+    expect(plan.reference).toBe(4);
+    expect(plan.slots).toHaveLength(40);
+    expect(
+      plan.slots.filter((slot) => slot.split === "development"),
+    ).toHaveLength(20);
+    expect(plan.slots.find((slot) => slot.id === "stream-log-2-0")?.arm).toBe(
+      4,
+    );
+    expect(
+      await initializeFixedBenchmark(directory, "fixed-study", arms),
+    ).toEqual(initial);
+    const evaluation = (slot: (typeof plan.slots)[number]) => {
+      const counters = Object.fromEntries(
+        ["implementation", "standards-review", "specification-review"].map(
+          (role) => [
+            role,
+            {
+              inputTokens: role === "implementation" ? 1_000_000 : 100_000,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 0,
+              outputTokens: 0,
+            },
+          ],
+        ),
+      );
+      return {
+        ...result(slot, 1),
+        technicalPassed: true,
+        projectAccepted: true,
+        usage: {
+          tokens: {
+            attributableTotal: {
+              inputTokens: 1_200_000,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 0,
+              outputTokens: 0,
+            },
+            unknown: [],
+            deltas: counters,
+            invocations: Object.fromEntries(
+              Object.keys(counters).map((role) => [
+                role,
+                { role, coverageComplete: true, counterIds: [role] },
+              ]),
+            ),
+          },
+        } as unknown as BenchmarkEvaluation["usage"],
+      } satisfies BenchmarkEvaluation;
+    };
+    const development = plan.slots
+      .filter((slot) => slot.split === "development")
+      .map(evaluation);
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({ ...initial, evaluations: development }),
+    );
+    const priced = await readBenchmark(directory, "fixed-study");
+    expect(fixedBenchmarkCredits(priced, development[0]!)).toBe(12.5);
+    expect(fixedBenchmarkCredits(priced, development[4]!)).toBe(60);
+    expect(
+      await freezeFixedBenchmarkSelection(directory, "fixed-study"),
+    ).toMatchObject({
+      arm: 0,
+    });
+    const selected = await readBenchmark(directory, "fixed-study");
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({
+        ...selected,
+        evaluations: [
+          ...development,
+          ...plan.slots
+            .filter((slot) => slot.split === "held-out")
+            .map(evaluation),
+        ],
+      }),
+    );
+    expect(await assessFixedBenchmark(directory, "fixed-study")).toBe(
+      "qualified",
+    );
+    const completed = await readBenchmark(directory, "fixed-study");
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({
+        ...completed,
+        fixedDisposition: undefined,
+        evaluations: completed.evaluations.map((item) =>
+          item.slotId === "merge-to-head-1-0"
+            ? { ...item, status: "failed" }
+            : item,
+        ),
+      }),
+    );
+    expect(await assessFixedBenchmark(directory, "fixed-study")).toBe(
+      "retain-fixed",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 it("exports a synthetic base without correction history and preflights both states", async () => {
