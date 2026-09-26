@@ -1,0 +1,182 @@
+{
+  "old": {
+    "tag": "v0.12.0-dv8.21.0",
+    "source": "46aae5d7278be702f395c3f2c0f2631dfda19c13",
+    "sha256": "f3e3801822a171a15ebed9be4b972cfa2c3545cbe87bd12261ad613b711f8cb2"
+  },
+  "next": {
+    "tag": "v0.12.0-dv8.22.0",
+    "source": "b56bd6c26039e99946f0bafaaee1b334b4c11f5d",
+    "sha256": "6f0991b8c18cbaac63115ca67c1df04575483a53b0b2f273852e0d93922373e9"
+  },
+  "imageId": "sha256:4196d66a565c6f195728d9952f161f4adfe2ad753052a08b7ec7f1c5a6bda42b",
+  "roots": [
+    {
+      "root": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/eligible",
+      "tool": "npm",
+      "customHashes": {
+        ".sandcastle/custom-prompt.md": "4583b9bcafbc7a8437463e883d25152a5f1db56bdd7a2fc8422fdf4d9a20c6dc",
+        ".sandcastle/custom-hook.mjs": "3c8487d412b051f36a3b4d2b545c6b130c28dbdcdb3d26b62d9a32a92eebf041",
+        ".sandcastle/owner-policy.json": "5564e9153e886f6d040938ca750d092ce8e0f8968b34bf1b63799744db8487d6"
+      }
+    },
+    {
+      "root": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending",
+      "tool": "pnpm",
+      "customHashes": {
+        ".sandcastle/custom-prompt.md": "4583b9bcafbc7a8437463e883d25152a5f1db56bdd7a2fc8422fdf4d9a20c6dc",
+        ".sandcastle/custom-hook.mjs": "3c8487d412b051f36a3b4d2b545c6b130c28dbdcdb3d26b62d9a32a92eebf041",
+        ".sandcastle/owner-policy.json": "5564e9153e886f6d040938ca750d092ce8e0f8968b34bf1b63799744db8487d6"
+      }
+    }
+  ],
+  "rollout": {
+    "release": "v0.12.0-dv8.22.0",
+    "results": [
+      {
+        "identity": {
+          "installation": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/host-state/sandcastle/installations/76db7d8f50b54041aa0046ffec6ae1125e5a2df2d6701df78ede494208e03b83",
+          "project": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/eligible/.git",
+          "worktree": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/eligible",
+          "packageWorkspace": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/eligible"
+        },
+        "action": "updated",
+        "readiness": {
+          "installation": "verified",
+          "controller": "unverified",
+          "models": "verified",
+          "browser": "unverified",
+          "native": "unverified",
+          "humanResponse": "unverified"
+        },
+        "readinessAsOf": "2026-09-26T08:33:20.967Z",
+        "recoveryOwner": "selected project",
+        "rollbackAvailable": true
+      },
+      {
+        "identity": {
+          "installation": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/host-state/sandcastle/installations/aa7804b800ba4247d21314a122dfa1077934379051537f997c0b0826ae4ccb3e",
+          "project": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending/.git",
+          "worktree": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending",
+          "packageWorkspace": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending"
+        },
+        "readiness": {
+          "controller": "unverified",
+          "browser": "unverified",
+          "native": "unverified",
+          "humanResponse": "unverified",
+          "installation": "verified",
+          "models": "verified"
+        },
+        "readinessAsOf": "2026-09-26T08:32:46.952Z",
+        "recoveryOwner": "selected project",
+        "rollbackAvailable": false,
+        "action": "deferred",
+        "reason": "Unfinished or pending run defers update: /home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending-run"
+      }
+    ]
+  },
+  "repeated": {
+    "release": "v0.12.0-dv8.22.0",
+    "results": [
+      {
+        "identity": {
+          "installation": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/host-state/sandcastle/installations/76db7d8f50b54041aa0046ffec6ae1125e5a2df2d6701df78ede494208e03b83",
+          "project": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/eligible/.git",
+          "worktree": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/eligible",
+          "packageWorkspace": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/eligible"
+        },
+        "action": "current",
+        "readiness": {
+          "installation": "verified",
+          "controller": "unverified",
+          "models": "verified",
+          "browser": "unverified",
+          "native": "unverified",
+          "humanResponse": "unverified"
+        },
+        "readinessAsOf": "2026-09-26T08:33:20.967Z",
+        "recoveryOwner": "selected project",
+        "rollbackAvailable": true
+      },
+      {
+        "identity": {
+          "installation": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/host-state/sandcastle/installations/aa7804b800ba4247d21314a122dfa1077934379051537f997c0b0826ae4ccb3e",
+          "project": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending/.git",
+          "worktree": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending",
+          "packageWorkspace": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending"
+        },
+        "readiness": {
+          "controller": "unverified",
+          "browser": "unverified",
+          "native": "unverified",
+          "humanResponse": "unverified",
+          "installation": "verified",
+          "models": "verified"
+        },
+        "readinessAsOf": "2026-09-26T08:32:46.952Z",
+        "recoveryOwner": "selected project",
+        "rollbackAvailable": false,
+        "action": "deferred",
+        "reason": "Unfinished or pending run defers update: /home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending-run"
+      }
+    ]
+  },
+  "failedRollout": {
+    "release": "v0.12.0-dv8.22.0",
+    "results": [
+      {
+        "identity": {
+          "installation": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/host-state/sandcastle/installations/76db7d8f50b54041aa0046ffec6ae1125e5a2df2d6701df78ede494208e03b83",
+          "project": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/eligible/.git",
+          "worktree": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/eligible",
+          "packageWorkspace": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/eligible"
+        },
+        "readiness": {
+          "installation": "verified",
+          "controller": "unverified",
+          "models": "verified",
+          "browser": "unverified",
+          "native": "unverified",
+          "humanResponse": "unverified"
+        },
+        "readinessAsOf": "2026-09-26T08:33:20.967Z",
+        "recoveryOwner": "selected project",
+        "rollbackAvailable": true,
+        "action": "failed",
+        "reason": "Managed file changed: .sandcastle/main.mjs; review old/current/proposed before updating"
+      },
+      {
+        "identity": {
+          "installation": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/host-state/sandcastle/installations/aa7804b800ba4247d21314a122dfa1077934379051537f997c0b0826ae4ccb3e",
+          "project": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending/.git",
+          "worktree": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending",
+          "packageWorkspace": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending"
+        },
+        "readiness": {
+          "controller": "unverified",
+          "browser": "unverified",
+          "native": "unverified",
+          "humanResponse": "unverified",
+          "installation": "verified",
+          "models": "verified"
+        },
+        "readinessAsOf": "2026-09-26T08:32:46.952Z",
+        "recoveryOwner": "selected project",
+        "rollbackAvailable": false,
+        "action": "deferred",
+        "reason": "Unfinished or pending run defers update: /home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending-run"
+      }
+    ]
+  },
+  "pending": {
+    "runDirectory": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue25-run-L5HVOE/pending-run",
+    "requestId": "b1681563-4345-4941-aef3-4bb823849f9d",
+    "remaining": 0,
+    "response": "queued"
+  },
+  "recovery": {
+    "apply": "old",
+    "rollback": "old"
+  }
+}
