@@ -125,12 +125,27 @@ it("renders complete and partial ledgers with exports matching the displayed evi
     expect(csv).toContain(`"${json.rows[0]!.slotId}"`);
     expect(csv).toContain(`"${json.rows[0]!.window}"`);
     expect(html).toContain("Adaptive route admitted");
+    expect(html).toContain("Eligible for explicit owner activation.");
     expect(html).toContain("64/64");
     expect(html).not.toContain("Astra xHigh");
     expect(html).toContain("Sol xHigh");
     expect(html).toContain("Development and held-out");
     expect(html).toContain("4.00–8.00 pp");
     expect(html).toContain("synthetic-cli");
+
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({ ...base, promotion: "fixed-policy" }),
+    );
+    const fixedFiles = await writeBenchmarkReport({
+      directory,
+      policyId: base.policyId,
+      outputDirectory,
+      manifestPath,
+    });
+    const fixedHtml = await readFile(fixedFiles.html, "utf8");
+    expect(fixedHtml).toContain("Fixed policy retained");
+    expect(fixedHtml).toContain("Not active; keep fixed Sol High.");
 
     const partial: BenchmarkLedger = {
       ...base,
