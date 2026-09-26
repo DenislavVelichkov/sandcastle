@@ -1,17 +1,23 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { expect, it, vi } from "vitest";
 import { codex, createWorktree } from "./index.js";
 import {
   admitBenchmarkPolicy,
   assessBenchmarkPromotion,
+  assessFixedBenchmark,
   benchmarkFixtures,
   benchmarkProtocolHash,
   benchmarkSlots,
   exportFixtureTree,
+  fixedBenchmarkCredits,
+  freezeFixedBenchmarkSelection,
   freezeBenchmarkPair,
+  initializeFixedBenchmark,
+  makeFixedBenchmarkPlan,
   readBenchmark,
   runBenchmarkEvaluation,
   withBenchmarkActivity,
@@ -86,12 +92,35 @@ const result = (
   requested: String(slot.arm),
   effective: String(slot.arm),
   status: "accepted",
+  technicalPassed: true,
+  projectAccepted: true,
   firstIterationSuccess: slot.arm === 5,
   reviewPassed: true,
   falseAcceptance: false,
   cost: cost(amount, amount),
   usage: {
+    requested: Object.fromEntries(
+      ["implementation", "standards-review", "specification-review"].map(
+        (role) => [
+          role,
+          { model: "synthetic", effort: "high", serviceTier: "default" },
+        ],
+      ),
+    ),
     tokens: {
+      invocations: Object.fromEntries(
+        ["implementation", "standards-review", "specification-review"].map(
+          (role) => [
+            role,
+            {
+              role,
+              coverageComplete: true,
+              counterIds: [role],
+              requiredSessionIds: [`${slot.id}-${role}`],
+            },
+          ],
+        ),
+      ),
       attributableTotal: {
         inputTokens: 1,
         cacheCreationInputTokens: 0,
@@ -101,6 +130,147 @@ const result = (
       unknown: [],
     },
   } as unknown as BenchmarkEvaluation["usage"],
+});
+
+it("freezes five explicit arms, prices all role calls and validates a fixed challenger", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "fixed-benchmark-"));
+  const arms = [
+    { model: "gpt-6-luna", effort: "max" },
+    { model: "gpt-6-sol", effort: "xhigh" },
+    { model: "gpt-6-astra", effort: "medium" },
+    { model: "gpt-6-astra", effort: "max" },
+    { model: "gpt-6-sol", effort: "high" },
+  ];
+  try {
+    expect(() => makeFixedBenchmarkPlan(arms.slice(0, 4))).toThrow(
+      /explicit gpt-6-sol:high/,
+    );
+    expect(() => makeFixedBenchmarkPlan([...arms, arms[0]!])).toThrow(
+      /distinct/,
+    );
+    const initial = await initializeFixedBenchmark(
+      directory,
+      "fixed-study",
+      arms,
+    );
+    const plan = initial.plan!;
+    expect(plan.reference).toBe(4);
+    expect(plan.slots).toHaveLength(40);
+    expect(
+      plan.slots.filter((slot) => slot.split === "development"),
+    ).toHaveLength(20);
+    expect(plan.slots.find((slot) => slot.id === "stream-log-2-0")?.arm).toBe(
+      4,
+    );
+    expect(
+      await initializeFixedBenchmark(directory, "fixed-study", arms),
+    ).toEqual(initial);
+    const evaluation = (slot: (typeof plan.slots)[number]) => {
+      const counters = Object.fromEntries(
+        ["implementation", "standards-review", "specification-review"].map(
+          (role) => [
+            role,
+            {
+              inputTokens: role === "implementation" ? 1_000_000 : 100_000,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 0,
+              outputTokens: 0,
+            },
+          ],
+        ),
+      );
+      return {
+        ...result(slot, 1),
+        technicalPassed: true,
+        projectAccepted: true,
+        usage: {
+          tokens: {
+            attributableTotal: {
+              inputTokens: 1_200_000,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 0,
+              outputTokens: 0,
+            },
+            unknown: [],
+            deltas: counters,
+            invocations: Object.fromEntries(
+              Object.keys(counters).map((role) => [
+                role,
+                { role, coverageComplete: true, counterIds: [role] },
+              ]),
+            ),
+          },
+        } as unknown as BenchmarkEvaluation["usage"],
+      } satisfies BenchmarkEvaluation;
+    };
+    const development = plan.slots
+      .filter((slot) => slot.split === "development")
+      .map(evaluation);
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({ ...initial, evaluations: development }),
+    );
+    const priced = await readBenchmark(directory, "fixed-study");
+    expect(fixedBenchmarkCredits(priced, development[0]!)).toBe(12.5);
+    expect(fixedBenchmarkCredits(priced, development[4]!)).toBe(60);
+    expect(
+      fixedBenchmarkCredits(priced, {
+        ...development[0]!,
+        usage: {
+          ...development[0]!.usage!,
+          tokens: {
+            ...development[0]!.usage!.tokens,
+            invocations: {
+              unknown: {
+                role: "unpriced-role",
+                coverageComplete: true,
+                counterIds: ["implementation"],
+              },
+            },
+          },
+        } as unknown as BenchmarkEvaluation["usage"],
+      }),
+    ).toBeNull();
+    expect(
+      await freezeFixedBenchmarkSelection(directory, "fixed-study"),
+    ).toMatchObject({
+      arm: 0,
+    });
+    const selected = await readBenchmark(directory, "fixed-study");
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({
+        ...selected,
+        evaluations: [
+          ...development,
+          ...plan.slots
+            .filter((slot) => slot.split === "held-out")
+            .map(evaluation),
+        ],
+      }),
+    );
+    expect(await assessFixedBenchmark(directory, "fixed-study")).toBe(
+      "qualified",
+    );
+    const completed = await readBenchmark(directory, "fixed-study");
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({
+        ...completed,
+        fixedDisposition: undefined,
+        evaluations: completed.evaluations.map((item) =>
+          item.slotId === "merge-to-head-1-0"
+            ? { ...item, status: "failed" }
+            : item,
+        ),
+      }),
+    );
+    expect(await assessFixedBenchmark(directory, "fixed-study")).toBe(
+      "retain-fixed",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 it("exports a synthetic base without correction history and preflights both states", async () => {
@@ -203,6 +373,13 @@ it("freezes the 28-case development decision before held-out evidence and reject
       version: 1,
       protocolHash: benchmarkProtocolHash,
       policyId: "bench",
+      hostConditionsHash: "synthetic-artifact-configuration-and-contract",
+      fixtureConditions: Object.fromEntries(
+        benchmarkFixtures.map((fixture) => [
+          fixture.id,
+          `contract-${fixture.id}`,
+        ]),
+      ),
       accountResolution: { short: 0.1, weekly: 0.1 },
       windowDurationMs: {
         short: 5 * 60 * 60_000,
@@ -218,6 +395,19 @@ it("freezes the 28-case development decision before held-out evidence and reject
       rule: "independent-implementation-failure",
     });
     expect(await freezeBenchmarkPair(directory, "bench")).toEqual(pair);
+    const frozen = await readBenchmark(directory, "bench");
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({
+        ...frozen,
+        evaluations: evaluations.map((item, index) =>
+          index === 0 ? { ...item, reviewPassed: false } : item,
+        ),
+      }),
+    );
+    await expect(freezeBenchmarkPair(directory, "bench")).rejects.toThrow(
+      /development evidence/i,
+    );
     const tiedFallback = evaluations.map((item) => {
       const arm = benchmarkSlots.find((slot) => slot.id === item.slotId)?.arm;
       return {
@@ -251,19 +441,19 @@ it("freezes the 28-case development decision before held-out evidence and reject
       JSON.stringify({ ...base, evaluations: unknownReference }),
     );
     expect(await freezeBenchmarkPair(directory, "bench")).toBeNull();
-    await writeFile(
-      join(directory, "benchmark.json"),
-      JSON.stringify({ ...base, pair, evaluations }),
-    );
+    await writeFile(join(directory, "benchmark.json"), JSON.stringify(frozen));
     await expect(assessBenchmarkPromotion(directory, "bench")).rejects.toThrow(
       /64 scheduled/,
     );
-    const all = benchmarkSlots.map((slot) =>
-      result(slot, slot.arm === 5 ? 10 : 7),
-    );
+    const all = [
+      ...evaluations,
+      ...benchmarkSlots
+        .slice(28)
+        .map((slot) => result(slot, slot.arm === 5 ? 10 : 7)),
+    ];
     await writeFile(
       join(directory, "benchmark.json"),
-      JSON.stringify({ ...base, pair, evaluations: all }),
+      JSON.stringify({ ...frozen, evaluations: all }),
     );
     expect(await assessBenchmarkPromotion(directory, "bench")).toBe("admitted");
     expect(
@@ -273,9 +463,91 @@ it("freezes the 28-case development decision before held-out evidence and reject
         "independently-gradable-regression",
       ),
     ).toMatchObject({ version: 1, policyId: "bench", pair });
+    const admitted = await readBenchmark(directory, "bench");
+    const admission = await admitBenchmarkPolicy(
+      directory,
+      "bench",
+      "independently-gradable-regression",
+    );
+    expect(
+      await admitBenchmarkPolicy(
+        directory,
+        "bench",
+        "independently-gradable-regression",
+      ),
+    ).toEqual(admission);
+    expect(admission).toMatchObject({
+      conditionsHash: base.hostConditionsHash,
+    });
+    const featureAdmission = await admitBenchmarkPolicy(
+      directory,
+      "bench",
+      "independently-gradable-bounded-feature",
+    );
+    expect(featureAdmission.policyHash).not.toBe(admission.policyHash);
+    for (const change of [
+      { hostConditionsHash: "different-artifact" },
+      { fixtureConditions: { "stream-log": "changed-acceptance" } },
+      { pair: { ...pair, start: 1 } },
+      { pairEvidenceHash: undefined },
+      { promotionEvidenceHash: undefined },
+      { evaluations: admitted.evaluations.slice(1) },
+    ]) {
+      await writeFile(
+        join(directory, "benchmark.json"),
+        JSON.stringify({ ...admitted, ...change }),
+      );
+      await expect(
+        admitBenchmarkPolicy(
+          directory,
+          "bench",
+          "independently-gradable-regression",
+        ),
+      ).rejects.toThrow(/evidence/i);
+    }
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({
+        ...admitted,
+        evaluations: admitted.evaluations.map((item) =>
+          item.slotId === "merge-to-head-2-adaptive"
+            ? { ...item, cost: null }
+            : item,
+        ),
+      }),
+    );
     await expect(
-      admitBenchmarkPolicy(directory, "bench", "weakly-gradable" as never),
-    ).rejects.toThrow(/does not admit/);
+      admitBenchmarkPolicy(
+        directory,
+        "bench",
+        "independently-gradable-regression",
+      ),
+    ).rejects.toThrow(/evidence/i);
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify(admitted),
+    );
+    for (const taskClass of [
+      "weakly-gradable",
+      "unfamiliar",
+      "security-sensitive",
+      "architectural",
+      "visual",
+    ]) {
+      await expect(
+        admitBenchmarkPolicy(directory, "bench", taskClass as never),
+      ).rejects.toThrow(/does not admit/);
+    }
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({
+        ...frozen,
+        evaluations: all.map((item, index) => (index === 63 ? all[62] : item)),
+      }),
+    );
+    await expect(assessBenchmarkPromotion(directory, "bench")).rejects.toThrow(
+      /64 scheduled/,
+    );
     const failed = all.map((item) =>
       item.slotId === "merge-to-head-2-adaptive"
         ? { ...item, cost: null }
@@ -283,7 +555,7 @@ it("freezes the 28-case development decision before held-out evidence and reject
     );
     await writeFile(
       join(directory, "benchmark.json"),
-      JSON.stringify({ ...base, pair, evaluations: failed }),
+      JSON.stringify({ ...frozen, evaluations: failed }),
     );
     expect(await assessBenchmarkPromotion(directory, "bench")).toBe(
       "fixed-policy",
@@ -295,7 +567,7 @@ it("freezes the 28-case development decision before held-out evidence and reject
     );
     await writeFile(
       join(directory, "benchmark.json"),
-      JSON.stringify({ ...base, pair, evaluations: capped }),
+      JSON.stringify({ ...frozen, evaluations: capped }),
     );
     expect(await assessBenchmarkPromotion(directory, "bench")).toBe(
       "fixed-policy",
@@ -307,10 +579,90 @@ it("freezes the 28-case development decision before held-out evidence and reject
         "independently-gradable-regression",
       ),
     ).rejects.toThrow(/does not admit/);
+    const retained = await readBenchmark(directory, "bench");
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({ ...retained, promotion: "admitted" }),
+    );
+    await expect(
+      admitBenchmarkPolicy(
+        directory,
+        "bench",
+        "independently-gradable-regression",
+      ),
+    ).rejects.toThrow(/evidence/i);
+    await expect(assessBenchmarkPromotion(directory, "bench")).rejects.toThrow(
+      /evidence/i,
+    );
+    for (const change of [
+      { technicalPassed: false },
+      { projectAccepted: false },
+      { reviewPassed: false },
+      { falseAcceptance: true },
+      {
+        usage: {
+          ...all.at(-1)!.usage,
+          tokens: { ...all.at(-1)!.usage!.tokens, invocations: {} },
+        },
+      },
+      { cost: cost(10, 10) },
+      { cost: cost(-2, -1) },
+      { cost: { short: cost(7, 7).short } },
+    ]) {
+      await writeFile(
+        join(directory, "benchmark.json"),
+        JSON.stringify({
+          ...frozen,
+          evaluations: all.map((item) =>
+            item.slotId === "merge-to-head-2-adaptive"
+              ? { ...item, ...change }
+              : item,
+          ),
+        }),
+      );
+      expect(await assessBenchmarkPromotion(directory, "bench")).toBe(
+        "fixed-policy",
+      );
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+it.each([
+  [
+    "issue-26-v7-report",
+    "issue26-seven-arm-v7",
+    "2dcf2d9f0f7da91e42d3a2437f13c324b6a70a55b04454b5d0a1eeecb7b211a4",
+  ],
+  [
+    "issue-31-v2-report",
+    "issue31-fixed-v2",
+    "c4a29b8c6b93fbaa6336654f3bc29280b8cf34aaeb565d76b1ac35af76bc01dc",
+  ],
+])(
+  "retains fixed policy from the published %s without rewriting evidence",
+  async (report, policyId, expectedHash) => {
+    const directory = resolve("docs/proofs", report);
+    const ledgerPath = join(directory, "benchmark.json");
+    const before = await readFile(ledgerPath);
+    expect(createHash("sha256").update(before).digest("hex")).toBe(
+      expectedHash,
+    );
+    const ledger = await readBenchmark(directory, policyId);
+    expect(ledger.evaluations).toHaveLength(1);
+    expect(ledger.evaluations[0]?.status).toBe("incomplete");
+    for (const taskClass of [
+      "independently-gradable-regression",
+      "independently-gradable-bounded-feature",
+    ] as const) {
+      await expect(
+        admitBenchmarkPolicy(directory, policyId, taskClass),
+      ).rejects.toThrow(/evidence does not admit/);
+    }
+    expect(await readFile(ledgerPath)).toEqual(before);
+  },
+);
 
 it("runs the first synthetic slot through the installed controller and project gates", async () => {
   const root = await mkdtemp(join(tmpdir(), "benchmark-entry-"));
@@ -657,248 +1009,278 @@ it("runs the first synthetic slot through the installed controller and project g
     await writeFile(
       join(pilot, "benchmark.json"),
       JSON.stringify({
-        version: 1,
-        protocolHash: benchmarkProtocolHash,
-        policyId: "bench",
-        pair: {
-          start: 0,
-          fallback: 5,
-          rule: "independent-implementation-failure",
-        },
+        ...(await readBenchmark(pilot, "bench")),
+        evaluations: benchmarkSlots
+          .slice(0, 28)
+          .map((slot) => result(slot, slot.arm === 5 ? 10 : 7)),
+      }),
+    );
+    await freezeBenchmarkPair(pilot, "bench");
+    await writeFile(
+      join(pilot, "benchmark.json"),
+      JSON.stringify({
+        ...(await readBenchmark(pilot, "bench")),
         evaluations: benchmarkSlots
           .slice(0, 56)
           .map((slot) => result(slot, slot.arm === 5 ? 10 : 7)),
       }),
     );
-    const { fixture: adaptiveFixture, worktree: adaptive } =
-      await makeFixture("adaptive-fixture");
-    let calls = 0;
-    const adaptiveModels: string[] = [];
-    try {
-      const adaptiveOptions = {
-        ...options,
-        directory: join(root, "adaptive-state"),
-        invocationId: adaptiveSlot.id,
-        project: { ...options.project, root: adaptiveFixture },
-        worktrees: {
-          task: {
-            ...adaptive,
-            run: async (runOptions: Parameters<typeof adaptive.run>[0]) => {
-              const review = runOptions.prompt === "Review the synthetic case";
-              if (!review) calls++;
-              adaptiveModels.push(
-                runOptions.agent.codexConfiguration?.model ?? "unknown",
-              );
-              if (calls === 2 && !review)
-                expect(runOptions.resumeSession).toBe("session-1");
-              await runOptions.onIterationStart?.(1);
-              if (!review) {
-                await writeFile(
-                  join(adaptive.worktreePath, "result.txt"),
-                  `attempt ${calls}\n`,
+    const adaptiveLedger = await readFile(
+      join(pilot, "benchmark.json"),
+      "utf8",
+    );
+    const adaptiveBudget = await readFile(join(pilot, "budget.json"), "utf8");
+    for (const sessionAvailable of [true, false]) {
+      await writeFile(join(pilot, "benchmark.json"), adaptiveLedger);
+      await writeFile(join(pilot, "budget.json"), adaptiveBudget);
+      const { fixture: adaptiveFixture, worktree: adaptive } =
+        await makeFixture(`adaptive-fixture-${sessionAvailable}`);
+      let calls = 0;
+      const adaptiveModels: string[] = [];
+      try {
+        const adaptiveOptions = {
+          ...options,
+          directory: join(root, `adaptive-state-${sessionAvailable}`),
+          invocationId: adaptiveSlot.id,
+          project: { ...options.project, root: adaptiveFixture },
+          worktrees: {
+            task: {
+              ...adaptive,
+              run: async (runOptions: Parameters<typeof adaptive.run>[0]) => {
+                const review =
+                  runOptions.prompt === "Review the synthetic case";
+                if (!review) calls++;
+                adaptiveModels.push(
+                  runOptions.agent.codexConfiguration?.model ?? "unknown",
                 );
-                git(adaptive.worktreePath, "add", "result.txt");
-                git(adaptive.worktreePath, "commit", "-m", `attempt ${calls}`);
-              }
-              const iteration = {
-                sessionId: review ? "adaptive-review" : `session-${calls}`,
-                sessionFilePath: join(
-                  root,
-                  review ? "adaptive-review.jsonl" : `adaptive-${calls}.jsonl`,
-                ),
-              };
-              await writeFile(iteration.sessionFilePath, "{}\n");
-              await runOptions.onSessionCaptured?.(iteration);
-              await runOptions.onIterationComplete?.(1, iteration);
-              return {
-                iterations: [iteration],
-                commits: review
-                  ? []
-                  : [{ sha: git(adaptive.worktreePath, "rev-parse", "HEAD") }],
-              } as never;
+                if (calls === 2 && !review) {
+                  expect(runOptions.resumeSession).toBe(
+                    sessionAvailable ? "session-1" : undefined,
+                  );
+                  if (!sessionAvailable) {
+                    expect(runOptions.prompt).toContain(
+                      "Original task: Fix the bounded synthetic case",
+                    );
+                    expect(runOptions.prompt).toContain(
+                      "One implementation iteration remains",
+                    );
+                  }
+                }
+                expect(runOptions.maxIterations).toBe(1);
+                await runOptions.onIterationStart?.(1);
+                if (!review) {
+                  await writeFile(
+                    join(adaptive.worktreePath, "result.txt"),
+                    `attempt ${calls}\n`,
+                  );
+                  git(adaptive.worktreePath, "add", "result.txt");
+                  git(
+                    adaptive.worktreePath,
+                    "commit",
+                    "-m",
+                    `attempt ${calls}`,
+                  );
+                }
+                const iteration = {
+                  sessionId:
+                    !sessionAvailable && !review && calls === 1
+                      ? undefined
+                      : review
+                        ? "adaptive-review"
+                        : `session-${calls}`,
+                  sessionFilePath: join(
+                    root,
+                    review
+                      ? "adaptive-review.jsonl"
+                      : `adaptive-${calls}.jsonl`,
+                  ),
+                };
+                await writeFile(iteration.sessionFilePath, "{}\n");
+                await runOptions.onSessionCaptured?.(iteration);
+                await runOptions.onIterationComplete?.(1, iteration);
+                return {
+                  iterations: [iteration],
+                  commits: review
+                    ? []
+                    : [
+                        {
+                          sha: git(adaptive.worktreePath, "rev-parse", "HEAD"),
+                        },
+                      ],
+                } as never;
+              },
             },
           },
-        },
-        policy: {
-          ...options.policy,
-          implementationFallback: {
-            agent: codex("gpt-6-sol", {
-              effort: "high",
-              serviceTier: "default",
-            }),
-            sandbox: options.policy.roles.implementation.sandbox,
+          policy: {
+            ...options.policy,
+            implementationFallback: {
+              agent: codex("gpt-6-sol", {
+                effort: "high",
+                serviceTier: "default",
+              }),
+              sandbox: options.policy.roles.implementation.sandbox,
+            },
           },
-        },
-        usage: {
-          ...options.usage,
-          listModels: async () => ({
-            data: [
-              {
-                model: "gpt-6-luna",
-                supportedReasoningEfforts: [{ reasoningEffort: "max" }],
-              },
-              {
-                model: "gpt-6-sol",
-                supportedReasoningEfforts: [{ reasoningEffort: "high" }],
-              },
-            ],
+          usage: {
+            ...options.usage,
+            listModels: async () => ({
+              data: [
+                {
+                  model: "gpt-6-luna",
+                  supportedReasoningEfforts: [{ reasoningEffort: "max" }],
+                },
+                {
+                  model: "gpt-6-sol",
+                  supportedReasoningEfforts: [{ reasoningEffort: "high" }],
+                },
+              ],
+            }),
+          },
+        };
+        let adaptiveFinished = false;
+        const adaptivePromise = runBenchmarkEvaluation({
+          directory: pilot,
+          slotId: adaptiveSlot.id,
+          options: adaptiveOptions,
+          protectedGrader: grader,
+          fixture: receipt("stream-log", adaptive.worktreePath),
+          conditionsHash: "synthetic-matched-conditions",
+          accountResolution: { short: 0.1, weekly: 0.1 },
+          windowDurationMs: {
+            short: 5 * 60 * 60_000,
+            weekly: 7 * 24 * 60 * 60_000,
+          },
+          settled: true,
+          reviewPassed: true,
+          effective: {
+            model: "gpt-6-luna",
+            effort: "max",
+            serviceTier: "default",
+            source: "worker CLI config",
+          },
+          fallbackEffective: {
+            model: "gpt-6-sol",
+            effort: "high",
+            serviceTier: "default",
+            source: "worker CLI config",
+          },
+          probe: async () => ({
+            status: "implementation-failure",
+            reason: "independent assertion failed",
+            evidence: [grader],
           }),
-        },
-      };
-      let adaptiveFinished = false;
-      const adaptivePromise = runBenchmarkEvaluation({
-        directory: pilot,
-        slotId: adaptiveSlot.id,
-        options: adaptiveOptions,
-        protectedGrader: grader,
-        fixture: receipt("stream-log", adaptive.worktreePath),
-        conditionsHash: "synthetic-matched-conditions",
-        accountResolution: { short: 0.1, weekly: 0.1 },
-        windowDurationMs: {
-          short: 5 * 60 * 60_000,
-          weekly: 7 * 24 * 60 * 60_000,
-        },
-        settled: true,
-        reviewPassed: true,
-        effective: {
-          model: "gpt-6-luna",
-          effort: "max",
-          serviceTier: "default",
-          source: "worker CLI config",
-        },
-        fallbackEffective: {
-          model: "gpt-6-sol",
-          effort: "high",
-          serviceTier: "default",
-          source: "worker CLI config",
-        },
-        probe: async () => ({
-          status: "implementation-failure",
-          reason: "independent assertion failed",
-          evidence: [grader],
-        }),
-      }).finally(() => {
-        adaptiveFinished = true;
-      });
-      await advanceUntil(() => adaptiveFinished);
-      const adaptiveResult = await adaptivePromise;
-      expect(adaptiveResult.status).toBe("accepted");
-      expect(adaptiveResult.firstIterationSuccess).toBe(false);
-      expect(adaptiveModels).toEqual(["gpt-6-luna", "gpt-6-sol", "gpt-6-sol"]);
-      expect(
-        JSON.parse(await readFile(join(pilot, "budget.json"), "utf8"))
-          .evaluations,
-      ).toBe(57);
-    } finally {
-      await adaptive.close();
+        }).finally(() => {
+          adaptiveFinished = true;
+        });
+        await advanceUntil(() => adaptiveFinished);
+        const adaptiveResult = await adaptivePromise;
+        expect(adaptiveResult.status).toBe("accepted");
+        expect(adaptiveResult.firstIterationSuccess).toBe(false);
+        expect(adaptiveModels).toEqual([
+          "gpt-6-luna",
+          "gpt-6-sol",
+          "gpt-6-sol",
+        ]);
+        expect(adaptiveResult.usage?.remaining.task?.implementation).toBe(0);
+        expect(adaptiveResult.usage?.remaining.task?.review).toBe(0);
+        expect(
+          JSON.parse(await readFile(join(pilot, "budget.json"), "utf8"))
+            .evaluations,
+        ).toBe(57);
+      } finally {
+        await adaptive.close();
+      }
     }
     const incompleteSlot = benchmarkSlots[57]!;
-    const { fixture: incompleteFixture, worktree: incompleteWorktree } =
-      await makeFixture("incomplete-fixture");
-    try {
-      const incompleteOptions = {
-        ...options,
-        directory: join(root, "incomplete-state"),
-        invocationId: incompleteSlot.id,
-        project: { ...options.project, root: incompleteFixture },
-        worktrees: {
-          task: {
-            ...incompleteWorktree,
-            run: async (
-              runOptions: Parameters<typeof incompleteWorktree.run>[0],
-            ) => {
-              await runOptions.onIterationStart?.(1);
-              await writeFile(
-                join(incompleteWorktree.worktreePath, "result.txt"),
-                "unfixed\n",
-              );
-              git(incompleteWorktree.worktreePath, "add", "result.txt");
-              git(incompleteWorktree.worktreePath, "commit", "-m", "unfixed");
-              const iteration = {
-                sessionId: "incomplete-session",
-                sessionFilePath: join(root, "incomplete.jsonl"),
-              };
-              await writeFile(iteration.sessionFilePath, "{}\n");
-              await runOptions.onSessionCaptured?.(iteration);
-              await runOptions.onIterationComplete?.(1, iteration);
-              return {
-                iterations: [iteration],
-                commits: [
-                  {
-                    sha: git(
-                      incompleteWorktree.worktreePath,
-                      "rev-parse",
-                      "HEAD",
-                    ),
-                  },
-                ],
-              } as never;
+    const replayLedger = await readFile(join(pilot, "benchmark.json"), "utf8");
+    const replayBudget = await readFile(join(pilot, "budget.json"), "utf8");
+    for (const scenario of [
+      "environment",
+      "unchanged",
+      "timeout",
+      "missing-evidence",
+    ] as const) {
+      await writeFile(join(pilot, "benchmark.json"), replayLedger);
+      await writeFile(join(pilot, "budget.json"), replayBudget);
+      const { fixture: incompleteFixture, worktree: incompleteWorktree } =
+        await makeFixture(`incomplete-${scenario}`);
+      let attempted = 0;
+      try {
+        const incompleteOptions = {
+          ...options,
+          directory: join(root, `incomplete-state-${scenario}`),
+          invocationId: incompleteSlot.id,
+          project: { ...options.project, root: incompleteFixture },
+          worktrees: {
+            task: {
+              ...incompleteWorktree,
+              run: async (
+                runOptions: Parameters<typeof incompleteWorktree.run>[0],
+              ) => {
+                await runOptions.onIterationStart?.(1);
+                attempted++;
+                if (scenario === "timeout") throw new Error("Provider timeout");
+                if (scenario === "unchanged") {
+                  git(
+                    incompleteWorktree.worktreePath,
+                    "commit",
+                    "--allow-empty",
+                    "-m",
+                    "no source change",
+                  );
+                } else {
+                  await writeFile(
+                    join(incompleteWorktree.worktreePath, "result.txt"),
+                    "unfixed\n",
+                  );
+                  git(incompleteWorktree.worktreePath, "add", "result.txt");
+                  git(
+                    incompleteWorktree.worktreePath,
+                    "commit",
+                    "-m",
+                    "unfixed",
+                  );
+                }
+                const iteration = {
+                  sessionId: "incomplete-session",
+                  sessionFilePath: join(root, "incomplete.jsonl"),
+                };
+                await writeFile(iteration.sessionFilePath, "{}\n");
+                await runOptions.onSessionCaptured?.(iteration);
+                await runOptions.onIterationComplete?.(1, iteration);
+                return {
+                  iterations: [iteration],
+                  commits: [
+                    {
+                      sha: git(
+                        incompleteWorktree.worktreePath,
+                        "rev-parse",
+                        "HEAD",
+                      ),
+                    },
+                  ],
+                } as never;
+              },
             },
           },
-        },
-        policy: {
-          ...options.policy,
-          implementationFallback: {
-            agent: codex("gpt-6-sol", {
-              effort: "high",
-              serviceTier: "default",
-            }),
-            sandbox: options.policy.roles.implementation.sandbox,
+          policy: {
+            ...options.policy,
+            implementationFallback: {
+              agent: codex("gpt-6-sol", {
+                effort: "high",
+                serviceTier: "default",
+              }),
+              sandbox: options.policy.roles.implementation.sandbox,
+            },
           },
-        },
-      };
-      let incompleteFinished = false;
-      const incompletePromise = runBenchmarkEvaluation({
-        directory: pilot,
-        slotId: incompleteSlot.id,
-        options: incompleteOptions,
-        protectedGrader: grader,
-        fixture: receipt("stream-log", incompleteWorktree.worktreePath),
-        conditionsHash: "synthetic-matched-conditions",
-        accountResolution: { short: 0.1, weekly: 0.1 },
-        windowDurationMs: {
-          short: 5 * 60 * 60_000,
-          weekly: 7 * 24 * 60 * 60_000,
-        },
-        settled: false,
-        reviewPassed: false,
-        effective: {
-          model: "gpt-6-luna",
-          effort: "max",
-          serviceTier: "default",
-          source: "worker CLI config",
-        },
-        fallbackEffective: {
-          model: "gpt-6-sol",
-          effort: "high",
-          serviceTier: "default",
-          source: "worker CLI config",
-        },
-        probe: async () => ({
-          status: "environment-failure",
-          reason: "grader unavailable",
-          evidence: [grader],
-        }),
-      }).finally(() => {
-        incompleteFinished = true;
-      });
-      await advanceUntil(() => incompleteFinished);
-      const incomplete = await incompletePromise;
-      expect(incomplete.status).toBe("incomplete");
-      expect(incomplete.reason).toMatch(/grader unavailable/);
-      expect((await readBenchmark(pilot, "bench")).evaluations).toHaveLength(
-        58,
-      );
-      await expect(
-        runBenchmarkEvaluation({
+        };
+        let incompleteFinished = false;
+        const incompletePromise = runBenchmarkEvaluation({
           directory: pilot,
-          slotId: benchmarkSlots[58]!.id,
-          options: {
-            ...incompleteOptions,
-            invocationId: benchmarkSlots[58]!.id,
-          },
+          slotId: incompleteSlot.id,
+          options: incompleteOptions,
           protectedGrader: grader,
-          fixture: receipt("output-retry", incompleteWorktree.worktreePath),
+          fixture: receipt("stream-log", incompleteWorktree.worktreePath),
           conditionsHash: "synthetic-matched-conditions",
           accountResolution: { short: 0.1, weekly: 0.1 },
           windowDurationMs: {
@@ -920,18 +1302,74 @@ it("runs the first synthetic slot through the installed controller and project g
             source: "worker CLI config",
           },
           probe: async () => ({
-            status: "passed",
-            reason: "passed",
-            evidence: [grader],
+            status:
+              scenario === "environment"
+                ? "environment-failure"
+                : "implementation-failure",
+            reason: "grader unavailable",
+            evidence: scenario === "missing-evidence" ? [] : [grader],
           }),
-        }),
-      ).rejects.toThrow(/Recover or report/);
-    } finally {
-      await incompleteWorktree.close();
+        }).finally(() => {
+          incompleteFinished = true;
+        });
+        await advanceUntil(() => incompleteFinished);
+        const incomplete = await incompletePromise;
+        expect(incomplete.status).toBe("incomplete");
+        expect(attempted).toBe(1);
+        expect(incomplete.reason).toMatch(
+          scenario === "unchanged"
+            ? /unchanged/i
+            : scenario === "timeout"
+              ? /timeout/i
+              : /grader unavailable/,
+        );
+        expect((await readBenchmark(pilot, "bench")).evaluations).toHaveLength(
+          58,
+        );
+        await expect(
+          runBenchmarkEvaluation({
+            directory: pilot,
+            slotId: benchmarkSlots[58]!.id,
+            options: {
+              ...incompleteOptions,
+              invocationId: benchmarkSlots[58]!.id,
+            },
+            protectedGrader: grader,
+            fixture: receipt("output-retry", incompleteWorktree.worktreePath),
+            conditionsHash: "synthetic-matched-conditions",
+            accountResolution: { short: 0.1, weekly: 0.1 },
+            windowDurationMs: {
+              short: 5 * 60 * 60_000,
+              weekly: 7 * 24 * 60 * 60_000,
+            },
+            settled: false,
+            reviewPassed: false,
+            effective: {
+              model: "gpt-6-luna",
+              effort: "max",
+              serviceTier: "default",
+              source: "worker CLI config",
+            },
+            fallbackEffective: {
+              model: "gpt-6-sol",
+              effort: "high",
+              serviceTier: "default",
+              source: "worker CLI config",
+            },
+            probe: async () => ({
+              status: "passed",
+              reason: "passed",
+              evidence: [grader],
+            }),
+          }),
+        ).rejects.toThrow(/Recover or report/);
+      } finally {
+        await incompleteWorktree.close();
+      }
     }
   } finally {
     vi.useRealTimers();
     await worktree.close();
     await rm(root, { recursive: true, force: true }).catch(() => {});
   }
-}, 30_000);
+}, 60_000);

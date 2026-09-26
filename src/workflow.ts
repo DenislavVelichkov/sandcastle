@@ -378,6 +378,8 @@ export const inspectWorkflow = async (
 
 export interface WorkflowResult {
   readonly status: "accepted" | "blocked";
+  /** A completed project check rejected the candidate; recovery cannot change that result. */
+  readonly terminalFailure?: true;
   readonly completed: readonly {
     readonly candidate: WorkflowCandidate;
     readonly check: WorkflowDecision;
@@ -505,6 +507,15 @@ export const runWorkflow = async (
           throw new Error(
             `Project must supply exactly one prompt or prompt file for ${task.id}/${role}`,
           );
+        if (
+          Object.keys(invocation).some(
+            (key) =>
+              !["prompt", "promptFile", "promptArgs", "hooks"].includes(key),
+          )
+        )
+          throw new Error(
+            "Unsupported workflow prompt option; policy and retry settings belong to the controller",
+          );
         if (!options.onInvocationStart)
           await options.onRoleStarted?.(task.id, role);
         let roleStarted = false;
@@ -622,6 +633,7 @@ export const runWorkflow = async (
         });
         return {
           status: "blocked",
+          terminalFailure: true,
           completed,
           reason: check.reason ?? `Project check failed for ${task.id}`,
         };

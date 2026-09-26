@@ -7,10 +7,122 @@ import {
   benchmarkFixtures,
   benchmarkProtocolHash,
   benchmarkSlots,
+  fixedBenchmarkProtocolHash,
+  makeFixedBenchmarkPlan,
   type BenchmarkEvaluation,
   type BenchmarkLedger,
 } from "./benchmark.js";
 import { writeBenchmarkReport } from "./benchmarkReport.js";
+
+it("reports the explicit 40-slot fixed study with verified credits and separate account movement", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "fixed-report-"));
+  const plan = makeFixedBenchmarkPlan([
+    { model: "gpt-6-luna", effort: "max" },
+    { model: "gpt-6-sol", effort: "xhigh" },
+    { model: "gpt-6-astra", effort: "medium" },
+    { model: "gpt-6-astra", effort: "max" },
+    { model: "gpt-6-sol", effort: "high" },
+  ]);
+  const now = Date.now();
+  const baseline = {
+    ...observation,
+    observedAt: now,
+    windows: { weekly: { usedPercent: 20, resetsAt: now + 604_800_000 } },
+  };
+  const latest = {
+    ...baseline,
+    windows: { weekly: { ...baseline.windows.weekly, usedPercent: 22 } },
+  };
+  const ledger: BenchmarkLedger = {
+    version: 1,
+    protocolHash: fixedBenchmarkProtocolHash(plan),
+    policyId: "fixed-report",
+    plan,
+    accountResolution: { weekly: 1 },
+    windowDurationMs: { weekly: 604_800_000 },
+    evaluations: plan.slots.map((slot) => ({
+      ...evaluation(slot),
+      usage: {
+        taskMs: { [slot.id]: 60_000 },
+        tokens: {
+          attributableTotal: {
+            inputTokens: 1_000_000,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            outputTokens: 0,
+          },
+          unknown: [],
+          deltas: {
+            implementation: {
+              inputTokens: 1_000_000,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 0,
+              outputTokens: 0,
+            },
+          },
+          invocations: {
+            implementation: {
+              role: "implementation",
+              coverageComplete: true,
+              counterIds: ["implementation"],
+            },
+          },
+        },
+      } as unknown as BenchmarkEvaluation["usage"],
+    })),
+    fixedSelection: { arm: 0, reason: "Development selection" },
+    fixedDisposition: "qualified",
+  };
+  try {
+    await writeFile(join(directory, "benchmark.json"), JSON.stringify(ledger));
+    await writeFile(
+      join(directory, "budget.json"),
+      JSON.stringify({
+        policyId: ledger.policyId,
+        activeMs: 3_600_000,
+        baseline,
+        latest,
+      }),
+    );
+    const files = await writeBenchmarkReport({
+      directory,
+      policyId: ledger.policyId,
+      outputDirectory: join(directory, "report"),
+    });
+    const html = await readFile(files.html, "utf8");
+    const json = JSON.parse(await readFile(files.json, "utf8"));
+    expect(html).toContain("40/40");
+    expect(html).toContain("Fixed challenger qualified");
+    expect(html).toContain("gpt-6-astra:max");
+    expect(html).toContain("percentage points per active hour");
+    expect(json.rows).toHaveLength(40);
+    expect(json.rows[0].standardCredits).toBe(2.5);
+
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({
+        ...ledger,
+        evaluations: ledger.evaluations.slice(0, 1),
+        fixedSelection: undefined,
+        fixedDisposition: undefined,
+      }),
+    );
+    const partial = await writeBenchmarkReport({
+      directory,
+      policyId: ledger.policyId,
+      outputDirectory: join(directory, "report"),
+    });
+    const partialJson = JSON.parse(await readFile(partial.json, "utf8"));
+    expect(partialJson.rows).toHaveLength(40);
+    expect(partialJson.rows[1]).toMatchObject({ status: "unrun" });
+    expect(await readFile(partial.html, "utf8")).toContain("Unrun slots (39)");
+    expect(
+      (await readFile(partial.csv, "utf8")).trim().split("\n"),
+    ).toHaveLength(41);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 const observation = {
   accountId: "synthetic-account",
@@ -204,7 +316,14 @@ it("renders complete and partial ledgers with exports matching the displayed evi
     const partialHtml = await readFile(partialFiles.html, "utf8");
     const partialJson = JSON.parse(
       await readFile(partialFiles.json, "utf8"),
-    ) as { rows: { lower: number | null; costStatus: string }[] };
+    ) as {
+      rows: {
+        slotId: string;
+        status: string;
+        lower: number | null;
+        costStatus: string;
+      }[];
+    };
     const partialCsv = await readFile(partialFiles.csv, "utf8");
     expect(partialHtml).toContain("Fixed policy retained");
     expect(partialHtml).toContain("4/64");
@@ -215,6 +334,15 @@ it("renders complete and partial ledgers with exports matching the displayed evi
     expect(partialHtml).toContain("&lt;script&gt;");
     expect(partialHtml).not.toContain("<script>alert");
     expect(partialJson.rows[0]!.lower).toBeNull();
+    expect(partialJson.rows).toHaveLength(64);
+    expect(partialJson.rows[4]).toMatchObject({
+      slotId: benchmarkSlots[4]!.id,
+      status: "unrun",
+      lower: null,
+      costStatus: "Unrun",
+    });
+    expect(partialHtml).toContain("Unrun slots (60)");
+    expect(partialCsv.trim().split("\n")).toHaveLength(65);
     expect(partialCsv).toContain(
       '"\'=HYPERLINK(""x""), <script>alert(""x"")</script>"',
     );
@@ -232,9 +360,12 @@ it("renders complete and partial ledgers with exports matching the displayed evi
     expect(await readFile(emptyFiles.html, "utf8")).toContain(
       "No evaluations recorded yet.",
     );
+    expect(await readFile(emptyFiles.html, "utf8")).toContain(
+      "Unrun slots (64)",
+    );
     expect(
       (await readFile(emptyFiles.csv, "utf8")).trim().split("\n"),
-    ).toHaveLength(1);
+    ).toHaveLength(65);
     await writeFile(
       join(directory, "benchmark.json"),
       JSON.stringify({

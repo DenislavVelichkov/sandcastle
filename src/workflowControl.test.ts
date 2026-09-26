@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import {
   createWorktree,
+  codex,
   cancelWorkflowTask,
   processWorkflowResponses,
   requestWorkflowRework,
@@ -17,9 +18,182 @@ import {
   type WorkflowRequest,
   type Worktree,
 } from "./index.js";
+import { beginPilotInvocation, settlePilotInvocation } from "./pilotBudget.js";
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+
+it("settles a completed protected-check failure and releases its pilot reservation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "sandcastle-pilot-failed-"));
+  const directory = join(root, "state");
+  const pilot = join(root, "pilot");
+  try {
+    git(root, "init", "-b", "main");
+    git(root, "config", "user.name", "Test");
+    git(root, "config", "user.email", "test@example.com");
+    await writeFile(join(root, "README.md"), "base\n");
+    git(root, "add", "README.md");
+    git(root, "commit", "-m", "base");
+    const worktree = await createWorktree({
+      cwd: root,
+      branchStrategy: { type: "branch", branch: "failed-case" },
+    });
+    const now = Date.now();
+    const account = {
+      accountId: "account",
+      observedAt: now,
+      denied: false,
+      windows: {
+        weekly: { usedPercent: 10, resetsAt: now + 7 * 24 * 60 * 60_000 },
+      },
+    };
+    const usage = {
+      policyId: "failed-case",
+      pilot: { id: "pilot", directory: pilot },
+      readAccount: async () => ({ ...account, observedAt: Date.now() }),
+      listModels: async () => ({
+        data: [
+          {
+            model: "gpt-6-sol",
+            supportedReasoningEfforts: [{ reasoningEffort: "high" }],
+          },
+        ],
+      }),
+    };
+    const calibration = beginPilotInvocation(
+      undefined,
+      { ...usage, activity: "measurement" },
+      "calibration",
+      "runtime",
+      account,
+      [{ id: "calibration", requiredRoles: [] }],
+      1,
+      {
+        implementation: {
+          model: "gpt-6-sol",
+          effort: "high",
+          serviceTier: "default",
+        },
+      },
+      now,
+      now,
+    );
+    await mkdir(pilot);
+    await writeFile(
+      join(pilot, "budget.json"),
+      JSON.stringify(
+        settlePilotInvocation(
+          calibration.budget,
+          "calibration",
+          calibration.usage,
+          true,
+        ),
+      ),
+    );
+    let released = 0;
+    const agent = codex("gpt-6-sol", {
+      effort: "high",
+      serviceTier: "default",
+    });
+    const task: WorkflowTask = {
+      id: "case",
+      reference: "case",
+      state: "ready",
+      dependencies: [],
+      scope: ["result.txt"],
+      requiredRoles: [],
+      requiredCapabilities: [],
+    };
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let done = false;
+    const pending = runDurableWorkflow({
+      directory,
+      projectId: "project",
+      invocationId: "failed-case",
+      runtimeIdentity: "runtime",
+      selected: [{ id: task.id, reference: task.reference }],
+      worktrees: {
+        case: {
+          ...worktree,
+          run: async (options) => {
+            await options.onIterationStart?.(1);
+            await writeFile(
+              join(worktree.worktreePath, "result.txt"),
+              "candidate\n",
+            );
+            git(worktree.worktreePath, "add", "result.txt");
+            git(worktree.worktreePath, "commit", "-m", "candidate");
+            const iteration = {
+              sessionId: "failed-session",
+              sessionFilePath: join(root, "failed-session.jsonl"),
+            };
+            await writeFile(iteration.sessionFilePath, "{}\n");
+            await options.onSessionCaptured?.(iteration);
+            await options.onIterationComplete?.(1, iteration);
+            return {
+              iterations: [iteration],
+              commits: [
+                { sha: git(worktree.worktreePath, "rev-parse", "HEAD") },
+              ],
+            } as never;
+          },
+        },
+      },
+      project: {
+        root,
+        capabilities: [],
+        getTask: async () => task,
+        reserve: async () => ({
+          id: "reservation",
+          retain: async () => {},
+          release: async () => {
+            released++;
+          },
+        }),
+        prompt: () => "Implement the case",
+        check: async () => ({
+          status: "failed",
+          evidence: ["protected check failed"],
+          reason: "Protected check failed",
+        }),
+        accept: async () => {
+          throw new Error("Failed checks must not be accepted");
+        },
+        validateHumanRequest: async () => false,
+      },
+      policy: {
+        iterations: 1,
+        roles: {
+          implementation: {
+            agent,
+            sandbox: { tag: "none", create: async () => ({}) } as never,
+          },
+        },
+      },
+      usage: { ...usage, activity: "pilot" },
+    }).finally(() => {
+      done = true;
+    });
+    for (let attempt = 0; attempt < 600 && !done; attempt++) {
+      await vi.advanceTimersByTimeAsync(1_000);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    expect(done).toBe(true);
+    const result = await pending;
+    expect(result.tasks.case?.status).toBe("failed");
+    expect(result.resources.retained).toBe(false);
+    expect(released).toBe(1);
+    const budget = JSON.parse(
+      await readFile(join(pilot, "budget.json"), "utf8"),
+    );
+    expect(budget.activeInvocationId).toBeUndefined();
+    expect(budget.episodes["failed-case"].complete).toBe(true);
+    expect(budget.evaluations).toBe(1);
+  } finally {
+    vi.useRealTimers();
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30_000);
 
 it("queues an authenticated answer under the execution lock and applies it while independent work runs", async () => {
   const root = await mkdtemp(join(tmpdir(), "sandcastle-answers-"));

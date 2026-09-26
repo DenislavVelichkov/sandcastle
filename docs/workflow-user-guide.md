@@ -10,10 +10,11 @@ This guide covers the maintained `@ai-hero/sandcastle` release and its independe
 4. [Use the daily controls](#use-the-daily-controls)
 5. [Check evidence and limits](#check-evidence-and-limits)
 6. [Run the bounded benchmark](#run-the-bounded-benchmark)
-7. [Open and interpret the benchmark report](#open-and-interpret-the-benchmark-report)
-8. [Prepare the native diagnostic](#prepare-the-native-diagnostic)
-9. [Change an installation](#change-an-installation)
-10. [Troubleshoot](#troubleshoot)
+7. [Review the routing decision](#review-the-routing-decision)
+8. [Open and interpret the benchmark report](#open-and-interpret-the-benchmark-report)
+9. [Prepare the native diagnostic](#prepare-the-native-diagnostic)
+10. [Change an installation](#change-an-installation)
+11. [Troubleshoot](#troubleshoot)
 
 ## Install the published release
 
@@ -102,11 +103,44 @@ The [issue #18 release adoption report](proofs/issue-18-release-adoption.md) rec
 
 ## Run the bounded benchmark
 
-The public benchmark functions are project calls, not `sandcastle` CLI commands. An owner-approved host entry supplies the project's existing task, grader, required reviews, acceptance functions, actual worker model catalog, account readings and installed package identity. Use the [bounded benchmark API](workflow.md#bounded-benchmark) to bind those functions. The four historical base and reference commits are in `benchmarkFixtures`; do not replace them after seeing outcomes. A protected grader and the reference patch stay outside each agent worktree. Exporting and preflighting these real fixtures starts the later pilot's four-hour clock, so the deterministic tests in this repository do not do that work.
+For the fixed follow-up to [issue #26](https://github.com/DenislavVelichkov/sandcastle/issues/26), run this command from a clean committed Sandcastle checkout after `pnpm run build`. It uses the repository-owned protected host entry at `.sandcastle/benchmark.mjs`; other projects may provide their own entry at that path. Every arm, including the Sol High reference, is explicit:
+
+```sh
+pnpm exec tsx src/main.ts benchmark \
+  --arm gpt-6-luna:max \
+  --arm gpt-6-sol:xhigh \
+  --arm gpt-6-astra:medium \
+  --arm gpt-6-astra:max \
+  --arm gpt-6-sol:high
+```
+
+The command freezes a 40-slot order (four historical cases, two repetitions, five arms), then runs calibration, protected preflight, development, held-out work and a local report. It can be restarted with the same arguments and committed build after a host interruption; an incomplete evaluation keeps recovery ownership and will not be skipped. The separate report command can render partial evidence. The host enforces a 12-hour active budget and a conservative 12-hour elapsed cap from preparation, a 20-percentage-point account rise cap, and the original per-evaluation and invocation caps. Successful completed grading failures are recorded as failed slots and the next slot may proceed. The protected first-candidate check can spend the second implementation attempt before final reviews; a failure in those final reviews is terminal for that evaluation. The fixed challenger is selected using development results and assessed using held-out results; an incomplete study retains Sol High without a ranking. Standard credit-equivalent cost uses verified role counters, while observed subscription percentage-point movement per active hour is shown separately with reading uncertainty and outside-activity confounding.
+
+The original adaptive protocol below remains available to hosts that supply its own protected entry.
+
+The original adaptive benchmark is a project API. A host entry supplies the task, grader, required reviews, acceptance functions, actual worker model catalog, account readings and installed package identity. Use the [bounded benchmark API](workflow.md#bounded-benchmark) to bind those functions. The four historical base and reference commits are in `benchmarkFixtures`; do not replace them after seeing outcomes. A protected grader and the reference patch stay outside each agent worktree. Exporting and preflighting these real fixtures starts the original pilot's four-hour clock, so the deterministic tests in this repository do not do that work.
 
 Before inference, complete [the benchmark manifest template](benchmark-manifest.template.json) in protected host state with the exact installed release, worker CLI and image, account, prompts, tools, cache and role configurations. Replace every `null` and fill the maps with the applicable hashes and measurements. Use `sha256sum <completed-manifest.json>` to obtain the `conditionsHash` passed to every evaluation; retain the file beside the host ledger. Run the six-call measurement exercise within 15 active minutes, under the same pilot budget and account baseline. After calibration, use `withBenchmarkActivity()` around host preflight, preparation, report and cleanup work so their active time is charged to the shared four-hour budget. `benchmarkSlots` gives the declared order. For each slot, start a fresh answer-free worktree and session, then call `runBenchmarkEvaluation()` once with its slot ID. The operation uses the installed durable controller and writes the attempt to the host-only `benchmark.json`. A stopped or incomplete attempt remains counted; inspect its checkpoint and budget before an explicit recovery. Do not substitute an unrun slot or reset its allowance.
 
 After 28 fixed development evaluations, call `freezeBenchmarkPair()`. A returned `null` keeps Sol High fixed. A returned pair fixes the start, fallback and independent-failure rule before any held-out result is exposed. Run the remaining declared slots sequentially on an otherwise quiet account. The protected first-iteration check may authorize one second implementation call only for an actionable implementation defect; the other failure classes stop without escalation. Call `assessBenchmarkPromotion()` after all 64 slots. `admitted` supports `admitBenchmarkPolicy()` for the tested independently gradable task classes and the separate owner policy decision; `fixed-policy` leaves Sol High in place. `readBenchmark()` gives the JSON ledger for the later browser report. Do not treat an unchanged coarse account percentage as zero cost, or a synthetic pass as measured model savings.
+
+## Review the routing decision
+
+**Retain fixed Sol High.** The [seventh pilot](proofs/issue-26-v7-report/findings.md) attempted one development slot, which remained incomplete after specification review. Its other 63 slots are unrun. There is no qualified development pair, held-out comparison or attributable subscription-savings result. The [separate fixed study](proofs/issue-31-v2-report/findings.md) also stopped after one incomplete slot, at an account reset. Its credit comparison cannot replace the original adaptive protocol's subscription evidence. Neither study authorizes a project policy change.
+
+To check the retained adaptive evidence without modifying it, run this from the Sandcastle source checkout:
+
+```sh
+pnpm exec tsx --eval 'import { admitBenchmarkPolicy } from "./src/index.ts"; import { resolve } from "node:path"; admitBenchmarkPolicy(resolve("docs/proofs/issue-26-v7-report"), "issue26-seven-arm-v7", "independently-gradable-regression").then(console.log, error => { console.error(error.message); process.exitCode = 1; });'
+```
+
+The expected result is exit code 1 and `Benchmark evidence does not admit this task class`. Leave the project's current policy, required roles, acceptance contract and unfinished runs in place. Preserve the original reports and recovery ownership. Unused evaluations do not authorize tuning, replacement cases or another pilot.
+
+For a future qualifying study, the source admission checks bind the development selection and held-out assessment to their recorded inputs. The receipt contains `version`, `policyId`, `policyHash`, `protocolHash`, `conditionsHash`, `evidenceHash`, `taskClass` and the frozen `pair`. Changed evidence, missing role costs, unknown acceptance or an unsupported task class denies admission. Older assessment flags without these bindings cannot be upgraded by adding hashes after held-out exposure. These stricter checks are in the source candidate for issue #27; the published `v0.12.0-dv8.23.0` archive is unchanged.
+
+A receipt is evidence for a separate explicit owner request naming one project, the policy version/hash and the tested task classes. Before any activation, match its conditions hash to the exact artifact/configuration/acceptance manifest and verify the selected project's required roles and contract. Record the receipt in the new run's project-owned policy/runtime identity. Activation applies only to new runs through a separately verified project binding. There is no live adaptive activation from this incomplete evidence. Existing unfinished runs keep their original runtime, policy, sessions and spent allowances; migration needs a separate tested request. Weakly gradable, unfamiliar, security-sensitive, architectural and visual tasks retain the project-selected fixed assessment.
+
+The [capability evidence index](workflow-evidence.md) distinguishes these deterministic checks from live recovery, measured savings and policy activation.
 
 ## Open and interpret the benchmark report
 
@@ -121,7 +155,7 @@ The command reads `benchmark.json`, the shared `budget.json` and the manifest. I
 
 Start with the development and held-out comparison table. Its denominator is every scheduled slot, so an unrun evaluation does not look successful. Each bar counts accepted outcomes; the text separates technical checks and first-iteration success. The usage table gives lower and upper percentage-point intervals for each account window and labels partial coverage. An unchanged coarse reading, a missing interval, an overlapping token counter or a reset remains uncertain. Open an evaluation row for its fixture commits, requested and effective configuration, session lineage, protected preflight, account readings, token sources, review and failure reason. Human waiting is shown as not measured because the benchmark ledger has no wait-duration field; do not subtract it from active time or infer savings from it.
 
-Keep `report.html`, `report.json` and `evaluations.csv` together. The HTML links to both exports. JSON retains the source ledger, pilot budget, manifest, ledger hash and the rows used by the CSV. CSV has one row per recorded evaluation and declared account window, including incomplete evaluations and unknown values. It prefixes a leading spreadsheet formula character in a text field with an apostrophe; JSON keeps the original value. Inspect `report.json` if a source field is missing from a table; an empty CSV value means unknown, not zero. A report generated before all 64 slots remains a partial report. Re-run the command after the source changes to capture a new snapshot; use the ledger hash to identify which source bytes produced a copy.
+Keep `report.html`, `report.json` and `evaluations.csv` together. The HTML links to both exports. JSON retains the source ledger, pilot budget, manifest, ledger hash and the rows used by the CSV. CSV has one row per scheduled slot and declared account window, including explicit `unrun` rows, incomplete evaluations and unknown values. It prefixes a leading spreadsheet formula character in a text field with an apostrophe; JSON keeps the original value. Inspect `report.json` if a source field is missing from a table; an empty CSV value means unknown, not zero. A report generated before all slots finish remains a partial report. Re-run the command after the source changes to capture a new snapshot; use the ledger hash to identify which source bytes produced a copy.
 
 ## Prepare the native diagnostic
 

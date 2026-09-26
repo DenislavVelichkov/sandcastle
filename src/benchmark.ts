@@ -83,6 +83,34 @@ export interface BenchmarkSlot {
   readonly arm: BenchmarkArm;
 }
 
+export interface FixedBenchmarkPlan {
+  /** Discriminator for the explicit-arm study. */
+  readonly kind: "fixed";
+  /** Requested implementation arms in frozen launch order. */
+  readonly arms: readonly { readonly model: string; readonly effort: string }[];
+  /** Index of the explicit Sol High reference arm. */
+  readonly reference: number;
+  /** Sequential development and held-out evaluation order. */
+  readonly slots: readonly BenchmarkSlot[];
+  /** Shared active-time ceiling. */
+  readonly overallLimitMs: number;
+  /** Allowed account-window rise from the guard baseline. */
+  readonly accountRiseLimitPercentPoints: number;
+  /** Standard Codex credits per million tokens, frozen with this protocol. */
+  readonly rates: Readonly<
+    Record<
+      string,
+      {
+        readonly input: number;
+        readonly cachedInput: number;
+        readonly output: number;
+      }
+    >
+  >;
+  /** Published source of the frozen Standard rates. */
+  readonly rateSource: string;
+}
+
 /** Replication two reverses the fixed arm order within each case. */
 const fixedSlots = benchmarkFixtures.flatMap((fixture) =>
   ([1, 2] as const).flatMap((repetition) =>
@@ -124,7 +152,7 @@ export interface BenchmarkEvaluation {
   readonly sessionIds: readonly string[];
   readonly requested: string;
   readonly effective: string | null;
-  readonly status: "accepted" | "incomplete";
+  readonly status: "accepted" | "failed" | "incomplete";
   readonly technicalPassed?: boolean | null;
   readonly projectAccepted?: boolean | null;
   readonly taskStatus?: string | null;
@@ -170,6 +198,10 @@ export interface BenchmarkPolicyAdmission {
   readonly policyId: string;
   readonly protocolHash: string;
   readonly evidenceHash: string;
+  /** Frozen artifact, worker configuration, roles and acceptance manifest hash. */
+  readonly conditionsHash: string;
+  /** Identity of this policy, including its permitted task class and evidence. */
+  readonly policyHash: string;
   readonly taskClass: BenchmarkTaskClass;
   readonly pair: BenchmarkPair;
 }
@@ -177,6 +209,15 @@ export interface BenchmarkLedger {
   readonly version: 1;
   readonly protocolHash: string;
   readonly policyId: string;
+  /** Fixed-study design; absent on the original adaptive ledger. */
+  readonly plan?: FixedBenchmarkPlan;
+  /** Development-only selection frozen before held-out work. */
+  readonly fixedSelection?: {
+    readonly arm: number | null;
+    readonly reason: string;
+  };
+  /** Recorded held-out decision for the fixed study. */
+  readonly fixedDisposition?: "qualified" | "retain-fixed";
   readonly hostConditionsHash?: string;
   readonly accountResolution?: Readonly<Record<string, number>>;
   readonly windowDurationMs?: Readonly<Record<string, number>>;
@@ -191,16 +232,135 @@ export interface BenchmarkLedger {
     readonly reason?: string;
   }[];
   readonly pair?: BenchmarkPair;
+  /** Development inputs and selected pair frozen before any held-out outcome. */
+  readonly pairEvidenceHash?: string;
   readonly promotion?: "admitted" | "fixed-policy";
+  /** Inputs of the completed assessment; admission rejects later evidence drift. */
+  readonly promotionEvidenceHash?: string;
 }
 
 const hash = (value: unknown): string =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const promotionEvidenceHash = (ledger: BenchmarkLedger): string => {
+  const { promotionEvidenceHash, activities, ...evidence } = ledger;
+  return hash(evidence);
+};
+const pairEvidenceHash = (ledger: BenchmarkLedger): string =>
+  hash({
+    protocolHash: ledger.protocolHash,
+    policyId: ledger.policyId,
+    hostConditionsHash: ledger.hostConditionsHash,
+    accountResolution: ledger.accountResolution,
+    windowDurationMs: ledger.windowDurationMs,
+    fixtureConditions: benchmarkFixtures
+      .filter((fixture) => fixture.split === "development")
+      .map((fixture) => ledger.fixtureConditions?.[fixture.id]),
+    evaluations: ledger.evaluations.slice(0, 28),
+    pair: ledger.pair,
+  });
+const verifyFrozenPair = (ledger: BenchmarkLedger): void => {
+  if (!ledger.pair || ledger.pairEvidenceHash !== pairEvidenceHash(ledger))
+    throw new Error("Frozen development evidence changed or is unbound");
+};
+/** Standard credit rates per million tokens frozen by the fixed protocol. */
+export const standardCreditRates = {
+  "gpt-6-astra": { input: 250, cachedInput: 25, output: 1250 },
+  "gpt-6-sol": { input: 50, cachedInput: 5, output: 250 },
+  "gpt-6-luna": { input: 2.5, cachedInput: 0.25, output: 12.5 },
+} as const;
+/** Validate explicit arms and create the counterbalanced fixed schedule. */
+export const makeFixedBenchmarkPlan = (
+  arms: readonly { readonly model: string; readonly effort: string }[],
+): FixedBenchmarkPlan => {
+  if (
+    arms.length < 2 ||
+    arms.length > 7 ||
+    new Set(arms.map((arm) => `${arm.model}:${arm.effort}`)).size !==
+      arms.length ||
+    arms.some(
+      (arm) =>
+        !pilotConfigurations.some(
+          (allowed) =>
+            allowed.model === arm.model && allowed.effort === arm.effort,
+        ),
+    )
+  )
+    throw new Error(
+      "Benchmark arms must be distinct supported model:effort pairs",
+    );
+  const reference = arms.findIndex(
+    (arm) => arm.model === "gpt-6-sol" && arm.effort === "high",
+  );
+  if (reference < 0)
+    throw new Error(
+      "Fixed benchmark needs an explicit gpt-6-sol:high reference",
+    );
+  const slots = benchmarkFixtures.flatMap((fixture) =>
+    ([1, 2] as const).flatMap((repetition) =>
+      arms.map((_, index) => ({
+        id: `${fixture.id}-${repetition}-${index}`,
+        fixture: fixture.id,
+        split: fixture.split,
+        repetition,
+        arm: repetition === 1 ? index : arms.length - 1 - index,
+      })),
+    ),
+  );
+  return {
+    kind: "fixed",
+    arms: arms.map((arm) => ({ model: arm.model, effort: arm.effort })),
+    reference,
+    slots: [
+      ...slots.filter((slot) => slot.split === "development"),
+      ...slots.filter((slot) => slot.split === "held-out"),
+    ],
+    overallLimitMs: 12 * 60 * 60_000,
+    accountRiseLimitPercentPoints: 20,
+    rates: standardCreditRates,
+    rateSource: "https://learn.chatgpt.com/docs/pricing",
+  };
+};
+/** Bind historical cases, schedule, arms and rates to one protocol identity. */
+export const fixedBenchmarkProtocolHash = (plan: FixedBenchmarkPlan): string =>
+  hash({ benchmarkFixtures, plan });
 export const benchmarkProtocolHash = hash({
   benchmarkFixtures,
   benchmarkSlots,
   pilotConfigurations,
 });
+/** Create or verify a host-only fixed ledger before any model call. */
+export const initializeFixedBenchmark = async (
+  directory: string,
+  policyId: string,
+  arms: readonly { readonly model: string; readonly effort: string }[],
+): Promise<BenchmarkLedger> =>
+  withBenchmarkLock(directory, async () => {
+    const plan = makeFixedBenchmarkPlan(arms);
+    const protocolHash = fixedBenchmarkProtocolHash(plan);
+    try {
+      const prior = JSON.parse(
+        await readFile(ledgerPath(directory), "utf8"),
+      ) as BenchmarkLedger;
+      if (
+        prior.policyId !== policyId ||
+        prior.protocolHash !== protocolHash ||
+        hash(prior.plan) !== hash(plan)
+      )
+        throw new Error("Frozen fixed benchmark differs from requested arms");
+      return prior;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const ledger: BenchmarkLedger = {
+      version: 1,
+      protocolHash,
+      policyId,
+      plan,
+      evaluations: [],
+    };
+    await save(directory, ledger);
+    return ledger;
+  });
 const ledgerPath = (directory: string) => join(directory, "benchmark.json");
 const withBenchmarkLock = async <T>(
   directory: string,
@@ -386,9 +546,36 @@ export const readBenchmark = async (
       evaluations: [],
     };
   }
+  if (ledger.plan) {
+    const expected = makeFixedBenchmarkPlan(ledger.plan.arms);
+    if (
+      ledger.plan.kind !== "fixed" ||
+      ledger.plan.reference !== expected.reference ||
+      hash(ledger.plan.slots) !== hash(expected.slots) ||
+      ledger.plan.overallLimitMs !== expected.overallLimitMs ||
+      ledger.plan.accountRiseLimitPercentPoints !==
+        expected.accountRiseLimitPercentPoints ||
+      !ledger.plan.rates ||
+      ledger.plan.rateSource !== expected.rateSource ||
+      hash(ledger.plan.rates) !== hash(expected.rates) ||
+      Object.values(ledger.plan.rates).some(
+        (rate) =>
+          !Number.isFinite(rate.input) ||
+          !Number.isFinite(rate.cachedInput) ||
+          !Number.isFinite(rate.output) ||
+          rate.input <= 0 ||
+          rate.cachedInput <= 0 ||
+          rate.output <= 0,
+      )
+    )
+      throw new Error("Fixed benchmark plan is invalid");
+  }
   if (
     ledger.version !== 1 ||
-    ledger.protocolHash !== benchmarkProtocolHash ||
+    ledger.protocolHash !==
+      (ledger.plan
+        ? fixedBenchmarkProtocolHash(ledger.plan)
+        : benchmarkProtocolHash) ||
     ledger.policyId !== policyId
   )
     throw new Error("Benchmark protocol or policy identity changed");
@@ -437,7 +624,8 @@ export const withBenchmarkActivity = async <T>(
         !Object.values(budget.episodes).some(
           (episode) => episode.activity === "measurement" && episode.complete,
         ) ||
-        budget.activeMs + maxActiveMs > 4 * 60 * 60_000
+        budget.activeMs + maxActiveMs >
+          (budget.limits?.overallMs ?? 4 * 60 * 60_000)
       )
         throw new Error(
           "Pilot activity cannot fit the shared active-time budget",
@@ -559,9 +747,19 @@ export const runBenchmarkEvaluation = async (input: {
       throw new Error(
         "Benchmark evaluation needs the installed pilot controller and shared budget",
       );
-    const slot = benchmarkSlots.find((item) => item.id === input.slotId);
-    if (!slot) throw new Error("Unknown benchmark slot");
     const ledger = await readBenchmark(input.directory, usage.policyId);
+    const slots = ledger.plan?.slots ?? benchmarkSlots;
+    const arms = ledger.plan?.arms ?? pilotConfigurations;
+    const slot = slots.find((item) => item.id === input.slotId);
+    if (!slot) throw new Error("Unknown benchmark slot");
+    if (
+      ledger.plan &&
+      (usage.pilot.overallLimitMs !== ledger.plan.overallLimitMs ||
+        usage.pilot.evaluationLimit !== slots.length ||
+        usage.pilot.accountRiseLimitPercentPoints !==
+          ledger.plan.accountRiseLimitPercentPoints)
+    )
+      throw new Error("Pilot limits differ from the frozen benchmark plan");
     if (
       !Object.keys(input.accountResolution).length ||
       Object.values(input.accountResolution).some(
@@ -604,12 +802,12 @@ export const runBenchmarkEvaluation = async (input: {
       throw new Error(
         "Recover or report the incomplete evaluation before starting another slot",
       );
-    if (ledger.evaluations.length >= 64 && !input.resume)
+    if (ledger.evaluations.length >= slots.length && !input.resume)
       throw new Error("Benchmark evaluation limit reached");
     if (
       (input.resume
         ? ledger.evaluations.at(-1)?.slotId
-        : benchmarkSlots[ledger.evaluations.length]?.id) !== slot.id
+        : slots[ledger.evaluations.length]?.id) !== slot.id
     )
       throw new Error(
         "Benchmark evaluations must follow the frozen sequential order",
@@ -628,10 +826,16 @@ export const runBenchmarkEvaluation = async (input: {
       throw new Error(
         "Pilot measurement, evaluation count or unfinished invocation disagrees with the benchmark ledger",
       );
-    if (slot.split === "held-out" && !ledger.pair && !ledger.promotion)
-      throw new Error("Freeze development routing before held-out outcomes");
+    if (
+      slot.split === "held-out" &&
+      (ledger.plan
+        ? ledger.fixedSelection === undefined
+        : !ledger.pair && !ledger.promotion)
+    )
+      throw new Error("Freeze development selection before held-out outcomes");
     if (slot.arm === "adaptive" && !ledger.pair)
       throw new Error("Adaptive evaluation needs a frozen routing pair");
+    if (ledger.pair) verifyFrozenPair(ledger);
     if (slot.arm !== "adaptive" && slot.split === "development" && ledger.pair)
       throw new Error("Development configuration was frozen");
     if (options.policy.iterations !== 2 || options.selected.length !== 1)
@@ -641,6 +845,20 @@ export const runBenchmarkEvaluation = async (input: {
     const task = await options.project.getTask(options.selected[0]!.id);
     if (!task || task.reference !== options.selected[0]!.reference)
       throw new Error("Selected benchmark task changed");
+    if (
+      ledger.plan &&
+      (hash(task.requiredRoles) !==
+        hash(["standards-review", "specification-review"]) ||
+        task.requiredRoles.some((role) => {
+          const config = options.policy.roles[role]?.agent.codexConfiguration;
+          return (
+            config?.model !== "gpt-6-sol" ||
+            config.effort !== "high" ||
+            config.serviceTier !== "default"
+          );
+        }))
+    )
+      throw new Error("Fixed benchmark reviews must use Sol High Standard");
     const prompts = await Promise.all(
       ["implementation", ...task.requiredRoles].map(async (role) => {
         const value = options.project.prompt(task, role);
@@ -732,7 +950,7 @@ export const runBenchmarkEvaluation = async (input: {
     const expected =
       slot.arm === "adaptive"
         ? pilotConfigurations[ledger.pair!.start]
-        : pilotConfigurations[slot.arm];
+        : arms[slot.arm];
     if (
       !expected ||
       configured?.model !== expected.model ||
@@ -825,6 +1043,11 @@ export const runBenchmarkEvaluation = async (input: {
           }
           return worktree.run(runOptions);
         }
+        const initialTree = git(
+          worktree.worktreePath,
+          "rev-parse",
+          "HEAD^{tree}",
+        );
         const first = await worktree.run({ ...runOptions, maxIterations: 1 });
         const head = git(worktree.worktreePath, "rev-parse", "HEAD");
         if (git(worktree.worktreePath, "status", "--porcelain"))
@@ -849,6 +1072,12 @@ export const runBenchmarkEvaluation = async (input: {
         )
           throw new Error(
             `Independent check did not authorize another implementation: ${finding.reason}`,
+          );
+        if (
+          git(worktree.worktreePath, "rev-parse", "HEAD^{tree}") === initialTree
+        )
+          throw new Error(
+            "Unchanged patch does not authorize implementation escalation",
           );
         const sessionId = first.iterations.at(-1)?.sessionId;
         activeAssignment = fallbackAssignment;
@@ -1005,7 +1234,13 @@ export const runBenchmarkEvaluation = async (input: {
       sessionIds,
       requested: `${configured.model}/${configured.effort}/default`,
       effective: `${input.effective.model}/${input.effective.effort}/${input.effective.serviceTier} (${input.effective.source})${slot.arm === "adaptive" ? `; fallback ${input.fallbackEffective!.model}/${input.fallbackEffective!.effort}/${input.fallbackEffective!.serviceTier} (${input.fallbackEffective!.source})` : ""}`,
-      status: accepted && isolatedSessions ? "accepted" : "incomplete",
+      status:
+        accepted && isolatedSessions
+          ? "accepted"
+          : isolatedSessions &&
+              snapshot?.tasks[options.selected[0]!.id]?.status === "failed"
+            ? "failed"
+            : "incomplete",
       technicalPassed: snapshot?.checksPassed?.[options.selected[0]!.id]
         ? true
         : null,
@@ -1038,6 +1273,197 @@ export const runBenchmarkEvaluation = async (input: {
         : [...ledger.evaluations, result],
     });
     return result;
+  });
+
+/** Price the verified role counters at the rates frozen in a fixed study. */
+export const fixedBenchmarkCredits = (
+  ledger: BenchmarkLedger,
+  evaluation: BenchmarkEvaluation,
+): number | null => {
+  const plan = ledger.plan;
+  const slot = plan?.slots.find((item) => item.id === evaluation.slotId);
+  const tokens = evaluation.usage?.tokens;
+  if (
+    !plan ||
+    !slot ||
+    slot.arm === "adaptive" ||
+    !tokens?.attributableTotal ||
+    tokens.unknown.length ||
+    !tokens.invocations
+  )
+    return null;
+  const counterModels = new Map<string, string>();
+  for (const invocation of Object.values(tokens.invocations)) {
+    if (!invocation.coverageComplete || !invocation.counterIds.length)
+      return null;
+    if (
+      !["implementation", "standards-review", "specification-review"].includes(
+        invocation.role,
+      )
+    )
+      return null;
+    const model =
+      invocation.role === "implementation"
+        ? plan.arms[slot.arm]?.model
+        : "gpt-6-sol";
+    if (!model || !plan.rates[model]) return null;
+    for (const id of invocation.counterIds) {
+      const prior = counterModels.get(id);
+      if (prior && prior !== model) return null;
+      counterModels.set(id, model);
+    }
+  }
+  if (
+    !counterModels.size ||
+    counterModels.size !== Object.keys(tokens.deltas).length ||
+    Object.keys(tokens.deltas).some((id) => !counterModels.has(id))
+  )
+    return null;
+  let credits = 0;
+  for (const [id, model] of counterModels) {
+    const delta = tokens.deltas[id]!;
+    const rate = plan.rates[model]!;
+    credits +=
+      ((delta.inputTokens + delta.cacheCreationInputTokens) * rate.input +
+        delta.cacheReadInputTokens * rate.cachedInput +
+        delta.outputTokens * rate.output) /
+      1_000_000;
+  }
+  return Number.isFinite(credits) ? credits : null;
+};
+
+const fixedResults = (
+  ledger: BenchmarkLedger,
+  split: BenchmarkSlot["split"],
+  arm: number,
+): BenchmarkEvaluation[] => {
+  const ids = new Set(
+    ledger
+      .plan!.slots.filter((slot) => slot.split === split && slot.arm === arm)
+      .map((slot) => slot.id),
+  );
+  return ledger.evaluations.filter((evaluation) => ids.has(evaluation.slotId));
+};
+
+const fixedCandidateCredits = (
+  ledger: BenchmarkLedger,
+  split: BenchmarkSlot["split"],
+  arm: number,
+): number | null => {
+  const plan = ledger.plan!;
+  const candidate = fixedResults(ledger, split, arm);
+  const reference = fixedResults(ledger, split, plan.reference);
+  if (
+    candidate.length !== 4 ||
+    reference.length !== 4 ||
+    [...candidate, ...reference].some(
+      (item) =>
+        item.status !== "accepted" ||
+        item.technicalPassed !== true ||
+        item.projectAccepted !== true ||
+        !item.reviewPassed ||
+        item.falseAcceptance ||
+        fixedBenchmarkCredits(ledger, item) === null,
+    )
+  )
+    return null;
+  const total = (items: BenchmarkEvaluation[]) =>
+    items.reduce((sum, item) => sum + fixedBenchmarkCredits(ledger, item)!, 0);
+  const candidateCost = total(candidate);
+  const referenceCost = total(reference);
+  if (
+    referenceCost <= 0 ||
+    candidateCost > 0.8 * referenceCost ||
+    ([1, 2] as const).some(
+      (repetition) =>
+        total(
+          candidate.filter((item) =>
+            plan.slots.some(
+              (slot) =>
+                slot.id === item.slotId && slot.repetition === repetition,
+            ),
+          ),
+        ) >=
+        total(
+          reference.filter((item) =>
+            plan.slots.some(
+              (slot) =>
+                slot.id === item.slotId && slot.repetition === repetition,
+            ),
+          ),
+        ),
+    )
+  )
+    return null;
+  return candidateCost;
+};
+
+/** Freeze a fixed challenger from development results before held-out work. */
+export const freezeFixedBenchmarkSelection = async (
+  directory: string,
+  policyId: string,
+): Promise<BenchmarkLedger["fixedSelection"]> =>
+  withBenchmarkLock(directory, async () => {
+    const ledger = await readBenchmark(directory, policyId);
+    if (!ledger.plan) throw new Error("Fixed benchmark plan is required");
+    if (ledger.fixedSelection) return ledger.fixedSelection;
+    const development = ledger.plan.slots.filter(
+      (slot) => slot.split === "development",
+    );
+    if (
+      ledger.evaluations.length !== development.length ||
+      ledger.evaluations.some(
+        (item) => !development.some((slot) => slot.id === item.slotId),
+      )
+    )
+      throw new Error("Complete development slots before freezing selection");
+    const qualified = ledger.plan.arms
+      .map((_, arm) => ({
+        arm,
+        credits:
+          arm === ledger.plan!.reference
+            ? null
+            : fixedCandidateCredits(ledger, "development", arm),
+      }))
+      .filter(
+        (item): item is { arm: number; credits: number } =>
+          item.credits !== null,
+      )
+      .sort((a, b) => a.credits - b.credits || a.arm - b.arm);
+    const selection = qualified[0]
+      ? {
+          arm: qualified[0].arm,
+          reason:
+            "Lowest verified development credit cost among qualified fixed challengers",
+        }
+      : {
+          arm: null,
+          reason:
+            "No development challenger met the frozen quality and 20% credit rule",
+        };
+    await save(directory, { ...ledger, fixedSelection: selection });
+    return selection;
+  });
+
+/** Assess only the preselected fixed challenger against complete held-out evidence. */
+export const assessFixedBenchmark = async (
+  directory: string,
+  policyId: string,
+): Promise<"qualified" | "retain-fixed"> =>
+  withBenchmarkLock(directory, async () => {
+    const ledger = await readBenchmark(directory, policyId);
+    if (!ledger.plan || !ledger.fixedSelection)
+      throw new Error("Fixed benchmark selection is required");
+    if (ledger.fixedDisposition) return ledger.fixedDisposition;
+    if (ledger.evaluations.length !== ledger.plan.slots.length)
+      throw new Error("All fixed slots are required for assessment");
+    const qualified =
+      ledger.fixedSelection.arm !== null &&
+      fixedCandidateCredits(ledger, "held-out", ledger.fixedSelection.arm) !==
+        null;
+    const fixedDisposition = qualified ? "qualified" : "retain-fixed";
+    await save(directory, { ...ledger, fixedDisposition });
+    return fixedDisposition;
   });
 
 const resultsFor = (
@@ -1120,6 +1546,47 @@ const costOrder = (
   return 0;
 };
 
+const acceptedEvaluation = (item: BenchmarkEvaluation): boolean =>
+  item.status === "accepted" &&
+  item.technicalPassed === true &&
+  item.projectAccepted === true &&
+  item.reviewPassed === true &&
+  item.falseAcceptance === false;
+
+const completeEvaluationCost = (
+  ledger: BenchmarkLedger,
+  item: BenchmarkEvaluation,
+): boolean => {
+  const tokens = item.usage?.tokens;
+  const roles = Object.keys(item.usage?.requested ?? {}).filter(
+    (role) => role !== "implementation-fallback",
+  );
+  const invocations = Object.values(tokens?.invocations ?? {});
+  const windows = Object.keys(ledger.accountResolution ?? {});
+  return Boolean(
+    tokens?.attributableTotal &&
+    tokens.unknown.length === 0 &&
+    roles.includes("implementation") &&
+    roles.every((role) => invocations.some((call) => call.role === role)) &&
+    invocations.every(
+      (call) => call.coverageComplete && call.counterIds.length > 0,
+    ) &&
+    windows.length > 0 &&
+    Object.keys(item.cost ?? {}).length === windows.length &&
+    windows.every((name) => {
+      const cost = item.cost?.[name];
+      return (
+        cost &&
+        Number.isFinite(cost.lower) &&
+        cost.lower >= 0 &&
+        Number.isFinite(cost.upper) &&
+        cost.upper >= cost.lower &&
+        cost.durationMs === ledger.windowDurationMs?.[name]
+      );
+    }),
+  );
+};
+
 export const freezeBenchmarkPair = async (
   directory: string,
   policyId: string,
@@ -1128,7 +1595,10 @@ export const freezeBenchmarkPair = async (
     const ledger = await readBenchmark(directory, policyId);
     if (!ledger.accountResolution || !ledger.windowDurationMs)
       throw new Error("Account measurement policy was not frozen");
-    if (ledger.pair) return ledger.pair;
+    if (ledger.pair) {
+      verifyFrozenPair(ledger);
+      return ledger.pair;
+    }
     if (ledger.promotion) return null;
     if (
       ledger.evaluations.some(
@@ -1141,28 +1611,23 @@ export const freezeBenchmarkPair = async (
     const arms = pilotConfigurations.map((_, index) =>
       resultsFor(ledger, "development", index),
     );
-    if (arms.some((items) => items.length !== 4))
+    if (
+      ledger.plan ||
+      ledger.evaluations.length !== 28 ||
+      ledger.evaluations.some(
+        (item, index) => item.slotId !== benchmarkSlots[index]?.id,
+      ) ||
+      arms.some((items) => items.length !== 4)
+    )
       throw new Error(
         "All 28 fixed development evaluations must be attempted before routing freezes",
       );
-    const qualified = arms.map((items) =>
-      items.every(
-        (item) =>
-          item.status === "accepted" &&
-          item.reviewPassed &&
-          !item.falseAcceptance,
-      ),
-    );
+    const qualified = arms.map((items) => items.every(acceptedEvaluation));
     const reference = arms[5]!;
     let pair: BenchmarkPair | undefined;
     if (
       qualified[5] &&
-      reference.every(
-        (item) =>
-          item.cost &&
-          item.usage?.tokens.attributableTotal &&
-          !item.usage.tokens.unknown.length,
-      )
+      reference.every((item) => completeEvaluationCost(ledger, item))
     ) {
       const eligible = arms
         .map((items, index) => index)
@@ -1170,10 +1635,8 @@ export const freezeBenchmarkPair = async (
           (index) =>
             index !== 5 &&
             qualified[index] &&
-            arms[index]!.every(
-              (item) =>
-                item.usage?.tokens.attributableTotal &&
-                !item.usage.tokens.unknown.length,
+            arms[index]!.every((item) =>
+              completeEvaluationCost(ledger, item),
             ) &&
             comparableUpper(arms[index]!, reference)?.every(
               (ratio) => ratio <= 0.8,
@@ -1188,11 +1651,8 @@ export const freezeBenchmarkPair = async (
             (index) =>
               index !== start &&
               qualified[index] &&
-              arms[index]!.every(
-                (item) =>
-                  item.cost &&
-                  item.usage?.tokens.attributableTotal &&
-                  !item.usage.tokens.unknown.length,
+              arms[index]!.every((item) =>
+                completeEvaluationCost(ledger, item),
               ),
           );
         fallback.sort(
@@ -1212,7 +1672,13 @@ export const freezeBenchmarkPair = async (
     }
     await save(
       directory,
-      pair ? { ...ledger, pair } : { ...ledger, promotion: "fixed-policy" },
+      pair
+        ? {
+            ...ledger,
+            pair,
+            pairEvidenceHash: pairEvidenceHash({ ...ledger, pair }),
+          }
+        : { ...ledger, promotion: "fixed-policy" },
     );
     return pair ?? null;
   });
@@ -1226,29 +1692,33 @@ export const assessBenchmarkPromotion = async (
     const ledger = await readBenchmark(directory, policyId);
     if (!ledger.accountResolution || !ledger.windowDurationMs)
       throw new Error("Account measurement policy was not frozen");
-    if (ledger.promotion) return ledger.promotion;
+    if (ledger.promotion) {
+      if (
+        ledger.promotion === "admitted" &&
+        ledger.promotionEvidenceHash !== promotionEvidenceHash(ledger)
+      )
+        throw new Error("Benchmark promotion evidence changed or is unbound");
+      return ledger.promotion;
+    }
     if (!ledger.pair) throw new Error("No frozen adaptive policy");
+    verifyFrozenPair(ledger);
     const adaptive = resultsFor(ledger, "held-out", "adaptive");
     const reference = resultsFor(ledger, "held-out", 5);
     if (
       ledger.evaluations.length !== 64 ||
+      ledger.plan ||
+      ledger.evaluations.some(
+        (item, index) => item.slotId !== benchmarkSlots[index]?.id,
+      ) ||
       adaptive.length !== 4 ||
       reference.length !== 4
     )
       throw new Error(
         "All 64 scheduled evaluations are required for promotion assessment",
       );
-    const quality = adaptive.every(
-      (item) =>
-        item.status === "accepted" &&
-        item.reviewPassed &&
-        !item.falseAcceptance,
-    );
-    const completeCost = [...adaptive, ...reference].every(
-      (item) =>
-        item.usage?.tokens.attributableTotal &&
-        !item.usage.tokens.unknown.length &&
-        item.cost,
+    const quality = adaptive.every(acceptedEvaluation);
+    const completeCost = [...adaptive, ...reference].every((item) =>
+      completeEvaluationCost(ledger, item),
     );
     const savings =
       (comparableUpper(adaptive, reference)?.every((ratio) => ratio <= 0.8) ??
@@ -1256,7 +1726,11 @@ export const assessBenchmarkPromotion = async (
       savingsEachRepetition(adaptive, reference);
     const promotion =
       quality && completeCost && savings ? "admitted" : "fixed-policy";
-    await save(directory, { ...ledger, promotion });
+    await save(directory, {
+      ...ledger,
+      promotion,
+      promotionEvidenceHash: promotionEvidenceHash({ ...ledger, promotion }),
+    });
     return promotion;
   });
 
@@ -1269,6 +1743,13 @@ export const admitBenchmarkPolicy = async (
   const ledger = await readBenchmark(directory, policyId);
   if (
     ledger.promotion !== "admitted" ||
+    ledger.plan ||
+    !ledger.hostConditionsHash ||
+    benchmarkFixtures.some(
+      (fixture) => !ledger.fixtureConditions?.[fixture.id],
+    ) ||
+    ledger.promotionEvidenceHash !== promotionEvidenceHash(ledger) ||
+    ledger.pairEvidenceHash !== pairEvidenceHash(ledger) ||
     !ledger.pair ||
     ![
       "independently-gradable-regression",
@@ -1276,12 +1757,14 @@ export const admitBenchmarkPolicy = async (
     ].includes(taskClass)
   )
     throw new Error("Benchmark evidence does not admit this task class");
-  return {
-    version: 1,
+  const admission = {
+    version: 1 as const,
     policyId,
     protocolHash: ledger.protocolHash,
-    evidenceHash: hash(ledger.evaluations),
+    evidenceHash: promotionEvidenceHash(ledger),
+    conditionsHash: ledger.hostConditionsHash,
     taskClass,
     pair: ledger.pair,
   };
+  return { ...admission, policyHash: hash(admission) };
 };

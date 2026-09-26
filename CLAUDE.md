@@ -5,12 +5,15 @@ The role of this file is to describe common mistakes, critical rules (the correc
 Use `pnpm run typecheck` for type checking.
 Use `pnpm` for installs, scripts, and package executables in this repository; keep its pnpm lockfiles and generated worker commands aligned.
 Run the build before the full test suite, sequentially: the build clears `dist/`, which CLI tests execute.
+If Vitest fails before collecting tests with `/tmp` `ENOSPC`, check inode availability and set `TMPDIR` to a fresh directory on the project disk. Preserve retained pilot directories.
 
 - **CRITICAL**: Native proof receipts and applicability records are bound by byte hashes. Preserve exported evidence JSON exactly; formatting changes invalidate their recorded hashes.
 - **CRITICAL**: Issue #26's protected historical grader must commit its isolated shadow before focused tests that exercise Git worktrees; an archive without `.git` makes known corrections fail preflight.
 - **CRITICAL**: Issue #26's frozen worker configuration must come from a private snapshot. The live Codex configuration can change during calibration; a runtime-identity mismatch must stop that attempt before preflight.
 - **CRITICAL**: Issue #26's review prompts must include the exact task instructions. A reviewer asked to verify requirements without them can reject calibration even when the candidate is correct.
 - **CRITICAL**: Issue #26's pilot may stop on a failed required review before using its second permitted implementation iteration. Retain that slot as incomplete; do not infer that another iteration ran or replace the frozen case.
+- **CRITICAL**: Fixed benchmark task scopes must include `.changeset`; historical candidates follow this repository's changeset rule, and a `src`-only scope rejects them after reviews.
+- In-flight benchmark activities reserve their maximum time in `budget.json`; the ledger replaces that reservation with elapsed time when the activity finishes.
 
 Check [./CONTEXT.md](./CONTEXT.md) for terminology questions.
 

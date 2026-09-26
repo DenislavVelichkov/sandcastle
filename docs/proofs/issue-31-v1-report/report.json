@@ -1,0 +1,2683 @@
+{
+  "ledger": {
+    "version": 1,
+    "protocolHash": "4d5ada6e98b6edc2021f3babdad1294e180efc6a27a9024daf931127b70b2167",
+    "policyId": "issue31-fixed-v1",
+    "plan": {
+      "kind": "fixed",
+      "arms": [
+        {
+          "model": "gpt-6-luna",
+          "effort": "max"
+        },
+        {
+          "model": "gpt-6-sol",
+          "effort": "xhigh"
+        },
+        {
+          "model": "gpt-6-astra",
+          "effort": "medium"
+        },
+        {
+          "model": "gpt-6-astra",
+          "effort": "max"
+        },
+        {
+          "model": "gpt-6-sol",
+          "effort": "high"
+        }
+      ],
+      "reference": 4,
+      "slots": [
+        {
+          "id": "stream-log-1-0",
+          "fixture": "stream-log",
+          "split": "development",
+          "repetition": 1,
+          "arm": 0
+        },
+        {
+          "id": "stream-log-1-1",
+          "fixture": "stream-log",
+          "split": "development",
+          "repetition": 1,
+          "arm": 1
+        },
+        {
+          "id": "stream-log-1-2",
+          "fixture": "stream-log",
+          "split": "development",
+          "repetition": 1,
+          "arm": 2
+        },
+        {
+          "id": "stream-log-1-3",
+          "fixture": "stream-log",
+          "split": "development",
+          "repetition": 1,
+          "arm": 3
+        },
+        {
+          "id": "stream-log-1-4",
+          "fixture": "stream-log",
+          "split": "development",
+          "repetition": 1,
+          "arm": 4
+        },
+        {
+          "id": "stream-log-2-0",
+          "fixture": "stream-log",
+          "split": "development",
+          "repetition": 2,
+          "arm": 4
+        },
+        {
+          "id": "stream-log-2-1",
+          "fixture": "stream-log",
+          "split": "development",
+          "repetition": 2,
+          "arm": 3
+        },
+        {
+          "id": "stream-log-2-2",
+          "fixture": "stream-log",
+          "split": "development",
+          "repetition": 2,
+          "arm": 2
+        },
+        {
+          "id": "stream-log-2-3",
+          "fixture": "stream-log",
+          "split": "development",
+          "repetition": 2,
+          "arm": 1
+        },
+        {
+          "id": "stream-log-2-4",
+          "fixture": "stream-log",
+          "split": "development",
+          "repetition": 2,
+          "arm": 0
+        },
+        {
+          "id": "output-retry-1-0",
+          "fixture": "output-retry",
+          "split": "development",
+          "repetition": 1,
+          "arm": 0
+        },
+        {
+          "id": "output-retry-1-1",
+          "fixture": "output-retry",
+          "split": "development",
+          "repetition": 1,
+          "arm": 1
+        },
+        {
+          "id": "output-retry-1-2",
+          "fixture": "output-retry",
+          "split": "development",
+          "repetition": 1,
+          "arm": 2
+        },
+        {
+          "id": "output-retry-1-3",
+          "fixture": "output-retry",
+          "split": "development",
+          "repetition": 1,
+          "arm": 3
+        },
+        {
+          "id": "output-retry-1-4",
+          "fixture": "output-retry",
+          "split": "development",
+          "repetition": 1,
+          "arm": 4
+        },
+        {
+          "id": "output-retry-2-0",
+          "fixture": "output-retry",
+          "split": "development",
+          "repetition": 2,
+          "arm": 4
+        },
+        {
+          "id": "output-retry-2-1",
+          "fixture": "output-retry",
+          "split": "development",
+          "repetition": 2,
+          "arm": 3
+        },
+        {
+          "id": "output-retry-2-2",
+          "fixture": "output-retry",
+          "split": "development",
+          "repetition": 2,
+          "arm": 2
+        },
+        {
+          "id": "output-retry-2-3",
+          "fixture": "output-retry",
+          "split": "development",
+          "repetition": 2,
+          "arm": 1
+        },
+        {
+          "id": "output-retry-2-4",
+          "fixture": "output-retry",
+          "split": "development",
+          "repetition": 2,
+          "arm": 0
+        },
+        {
+          "id": "merge-to-head-1-0",
+          "fixture": "merge-to-head",
+          "split": "held-out",
+          "repetition": 1,
+          "arm": 0
+        },
+        {
+          "id": "merge-to-head-1-1",
+          "fixture": "merge-to-head",
+          "split": "held-out",
+          "repetition": 1,
+          "arm": 1
+        },
+        {
+          "id": "merge-to-head-1-2",
+          "fixture": "merge-to-head",
+          "split": "held-out",
+          "repetition": 1,
+          "arm": 2
+        },
+        {
+          "id": "merge-to-head-1-3",
+          "fixture": "merge-to-head",
+          "split": "held-out",
+          "repetition": 1,
+          "arm": 3
+        },
+        {
+          "id": "merge-to-head-1-4",
+          "fixture": "merge-to-head",
+          "split": "held-out",
+          "repetition": 1,
+          "arm": 4
+        },
+        {
+          "id": "merge-to-head-2-0",
+          "fixture": "merge-to-head",
+          "split": "held-out",
+          "repetition": 2,
+          "arm": 4
+        },
+        {
+          "id": "merge-to-head-2-1",
+          "fixture": "merge-to-head",
+          "split": "held-out",
+          "repetition": 2,
+          "arm": 3
+        },
+        {
+          "id": "merge-to-head-2-2",
+          "fixture": "merge-to-head",
+          "split": "held-out",
+          "repetition": 2,
+          "arm": 2
+        },
+        {
+          "id": "merge-to-head-2-3",
+          "fixture": "merge-to-head",
+          "split": "held-out",
+          "repetition": 2,
+          "arm": 1
+        },
+        {
+          "id": "merge-to-head-2-4",
+          "fixture": "merge-to-head",
+          "split": "held-out",
+          "repetition": 2,
+          "arm": 0
+        },
+        {
+          "id": "sandbox-handle-1-0",
+          "fixture": "sandbox-handle",
+          "split": "held-out",
+          "repetition": 1,
+          "arm": 0
+        },
+        {
+          "id": "sandbox-handle-1-1",
+          "fixture": "sandbox-handle",
+          "split": "held-out",
+          "repetition": 1,
+          "arm": 1
+        },
+        {
+          "id": "sandbox-handle-1-2",
+          "fixture": "sandbox-handle",
+          "split": "held-out",
+          "repetition": 1,
+          "arm": 2
+        },
+        {
+          "id": "sandbox-handle-1-3",
+          "fixture": "sandbox-handle",
+          "split": "held-out",
+          "repetition": 1,
+          "arm": 3
+        },
+        {
+          "id": "sandbox-handle-1-4",
+          "fixture": "sandbox-handle",
+          "split": "held-out",
+          "repetition": 1,
+          "arm": 4
+        },
+        {
+          "id": "sandbox-handle-2-0",
+          "fixture": "sandbox-handle",
+          "split": "held-out",
+          "repetition": 2,
+          "arm": 4
+        },
+        {
+          "id": "sandbox-handle-2-1",
+          "fixture": "sandbox-handle",
+          "split": "held-out",
+          "repetition": 2,
+          "arm": 3
+        },
+        {
+          "id": "sandbox-handle-2-2",
+          "fixture": "sandbox-handle",
+          "split": "held-out",
+          "repetition": 2,
+          "arm": 2
+        },
+        {
+          "id": "sandbox-handle-2-3",
+          "fixture": "sandbox-handle",
+          "split": "held-out",
+          "repetition": 2,
+          "arm": 1
+        },
+        {
+          "id": "sandbox-handle-2-4",
+          "fixture": "sandbox-handle",
+          "split": "held-out",
+          "repetition": 2,
+          "arm": 0
+        }
+      ],
+      "overallLimitMs": 43200000,
+      "accountRiseLimitPercentPoints": 20,
+      "rates": {
+        "gpt-6-astra": {
+          "input": 250,
+          "cachedInput": 25,
+          "output": 1250
+        },
+        "gpt-6-sol": {
+          "input": 50,
+          "cachedInput": 5,
+          "output": 250
+        },
+        "gpt-6-luna": {
+          "input": 2.5,
+          "cachedInput": 0.25,
+          "output": 12.5
+        }
+      },
+      "rateSource": "https://learn.chatgpt.com/docs/pricing"
+    },
+    "evaluations": [
+      {
+        "slotId": "stream-log-1-0",
+        "invocationId": "stream-log-1-0",
+        "fixture": {
+          "fixtureId": "stream-log",
+          "base": "c505d4964ce6806211259e8bff9ad1d8c319a9ef",
+          "reference": "badf657b5dc81a71c141d8cd736a67804c6a86ff",
+          "exportHead": "65ffc6f3e8906a937601b7c22b013b2a656c4f64",
+          "tree": "652edcbe281c6d10841f2bebc41e342660afe2d0",
+          "preflight": {
+            "base": {
+              "focusPassed": false,
+              "otherGatesPassed": true,
+              "environmentFailure": false,
+              "evidence": [
+                "{\"fixtureId\":\"stream-log\",\"candidate\":\"65ffc6f3e8906a937601b7c22b013b2a656c4f64\",\"protectedTestSha256\":\"b63cc021e62f21007ade72a42267ef74c9b998eb26bf1e43c555a0de6fad33b7\",\"candidateTestSha256\":\"49cf2e96cec3a0fbfb13146890365532ee7056325dcb4144f54cc197fa7b0081\",\"focus\":{\"passed\":false,\"output\":\"\\n RUN  v3.2.4 /tmp/sandcastle-stream-log-grade-9MYpkz\\n\\n ❯ src/Display.test.ts (34 tests | 1 failed | 32 skipped) 16ms\\n   ↓ SilentDisplay > status > captures status messages with severity\\n   ↓ SilentDisplay > status > captures multiple status messages in order\\n   ↓ SilentDisplay > status > captures all severity levels\\n   ↓ SilentDisplay > spinner > passes through the wrapped effect result\\n   ↓ SilentDisplay > spinner > captures spinner entry with message\\n   ↓ SilentDisplay > spinner > passes through the wrapped effect failure\\n   ↓ SilentDisplay > summary > captures summary with title and rows\\n   ↓ SilentDisplay > textChunk > captures streaming chunks as textChunk entries\\n   ↓ SilentDisplay > mixed calls > captures all entry types in order\\n   ↓ FileDisplay > intro is a no-op (only delimiter in log)\\n   ↓ FileDisplay > writes status messages to file\\n   ↓ FileDisplay > writes spinner messages to file and passes through result\\n   ↓ FileDisplay > spinner done line includes elapsed time in seconds\\n   ↓ FileDisplay > writes summary to file\\n   ↓ FileDisplay > writes taskLog messages to file\\n   ↓ FileDisplay > taskLog done line includes elapsed time in seconds\\n   ↓ FileDisplay > writes text messages to file\\n   ↓ FileDisplay > text() writes each message on its own line\\n   ↓ FileDisplay > textChunk() writes raw chunks with no appended newline\\n   × FileDisplay > starts a following line entry on a fresh line after a mid-line chunk 13ms\\n     → expected '\\\\n--- Run started: 2026-09-26T15:56:2…' to contain 'Let me read the file.\\\\nRead(src/hello…'\\n   ✓ FileDisplay > does not insert an extra newline when the chunk already ends with one 2ms\\n   ↓ FileDisplay > creates log file with run delimiter on initialization\\n   ↓ FileDisplay > strips [Name] prefix from status messages\\n   ↓ FileDisplay > writes status messages without ANSI escape codes\\n   ↓ FileDisplay > appends a run delimiter on initialization instead of truncating\\n   ↓ FileDisplay > writes run delimiter with ISO 8601 UTC timestamp\\n   ↓ FileDisplay > writes summary without ANSI escape codes\\n   ↓ SilentDisplay - toolCall > stores toolCall entries for test assertions\\n   ↓ SilentDisplay - toolCall > stores multiple toolCall entries in order\\n   ↓ FileDisplay - toolCall > writes tool call as Name(args) line in log file\\n   ↓ FileDisplay - toolCall > writes different tool types correctly\\n   ↓ terminalStyle > wraps status messages with bold ANSI codes\\n   ↓ terminalStyle > wraps summary title with bold ANSI codes\\n   ↓ terminalStyle > formats summary row with bold key and dim value\\n\\n Test Files  1 failed (1)\\n      Tests  1 failed | 1 passed | 32 skipped (34)\\n   Start at  18:56:29\\n   Duration  995ms (transform 52ms, setup 13ms, collect 656ms, tests 16ms, environment 0ms, prepare 66ms)\\n\\n\\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\\n\\n FAIL  src/Display.test.ts > FileDisplay > starts a following line entry on a fresh line after a mid-line chunk\\nAssertionError: expected '\\\\n--- Run started: 2026-09-26T15:56:2…' to contain 'Let me read the file.\\\\nRead(src/hello…'\\n\\n- Expected\\n+ Received\\n\\n- Let me read the file.\\n- Read(src/hello.ts)\\n+\\n+ --- Run started: 2026-09-26T15:56:29.985Z ---\\n+ Let me read the file.Read(src/hello.ts)\\n\\n\\n ❯ src/Display.test.ts:394:17\\n    392| \\n    393|     const log = readLog(logPath);\\n    394|     expect(log).toContain(\\\"Let me read the file.\\\\nRead(src/hello.ts)\\\\n…\\n       |                 ^\\n    395|   });\\n    396| \\n\\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\\n\\n\"},\"install\":{\"passed\":true,\"output\":\"✓ Lockfile passes supply-chain policies (verified 396ms ago)\\nLockfile is up to date, resolution step is skipped\\nProgress: resolved 1, reused 0, downloaded 0, added 0\\nPackages: +504\\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\\nPackages are copied from the content-addressable store to the virtual store.\\n  Content-addressable store is at: /tmp/.pnpm-store/v11\\n  Virtual store is at:             node_modules/.pnpm\\nProgress: resolved 504, reused 504, downloaded 0, added 124\\nProgress: resolved 504, reused 504, downloaded 0, added 503\\nProgress: resolved 504, reused 504, downloaded 0, added 504, done\\n\\ndependencies:\\n+ @clack/prompts 1.1.0\\n+ @vercel/sandbox 3.5.0\\n\\ndevDependencies:\\n+ @changesets/cli 2.30.0\\n+ @daytona/sdk 0.164.0\\n+ @effect/cli 0.74.0\\n+ @effect/platform 0.95.0\\n+ @effect/platform-node 0.105.0\\n+ @effect/printer 0.48.0\\n+ @effect/printer-ansi 0.48.0\\n+ @types/node 25.5.0\\n+ @typescript/native-preview 7.0.0-dev.20260317.1\\n+ effect 3.20.0\\n+ husky 9.1.7\\n+ lint-staged 15.5.2\\n+ prettier 3.8.1\\n+ tsup 8.5.1\\n+ tsx 4.21.0\\n+ typescript 6.0.3\\n+ vitest 3.2.4\\n+ zod 4.4.3\\n\\nDone in 2.8s using pnpm v11.19.0\\n\"},\"ordinary\":{\"passed\":true,\"output\":\"ilure with dirty worktree\\n\\nWorktree preserved at /tmp/sandcastle-test-zfJLjg/.sandcastle/worktrees/sandcastle-20260926-185642-27d55e\\n  To review: cd /tmp/sandcastle-test-zfJLjg/.sandcastle/worktrees/sandcastle-20260926-185642-27d55e\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-zfJLjg/.sandcastle/worktrees/sandcastle-20260926-185642-27d55e\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory > logs copy-to-sandbox as a spinner when copyToWorktree paths are provided\\n\\nRun succeeded but worktree has uncommitted changes at /tmp/sandcastle-test-HPHrNo/.sandcastle/worktrees/sandcastle-20260926-185642-06de72\\n  To review: cd /tmp/sandcastle-test-HPHrNo/.sandcastle/worktrees/sandcastle-20260926-185642-06de72\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-HPHrNo/.sandcastle/worktrees/sandcastle-20260926-185642-06de72\\n\\nstderr | src/createWorktree.test.ts > createWorktree > reuses dirty worktree with a warning\\nReusing worktree at /tmp/ws-test-I0rNbT/.sandcastle/worktrees/dirty-branch (branch 'dirty-branch') — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory > preserves worktree and returns preservedWorktreePath on success with dirty worktree\\n\\nRun succeeded but worktree has uncommitted changes at /tmp/sandcastle-test-2ub81F/.sandcastle/worktrees/sandcastle-20260926-185642-167ef5\\n  To review: cd /tmp/sandcastle-test-2ub81F/.sandcastle/worktrees/sandcastle-20260926-185642-167ef5\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-2ub81F/.sandcastle/worktrees/sandcastle-20260926-185642-167ef5\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory > removes worktree on failure with clean worktree\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/WorktreeManager.test.ts > WorktreeManager.create > reuses dirty worktree with a warning\\nReusing worktree at /tmp/wt-repo-hsJH40/.sandcastle/worktrees/my-branch (branch 'my-branch') — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory > removes worktree when sandbox start fails (e.g. missing image)\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory > does not attach preservedWorktreePath to AgentIdleTimeoutError when worktree is clean on failure\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/WorktreeManager.test.ts > WorktreeManager.create > does not refresh a dirty reused worktree\\nReusing worktree at /tmp/wt-repo-ZP0z3M/.sandcastle/worktrees/my-branch (branch 'my-branch') — worktree has uncommitted changes\\n\\nstderr | src/createSandbox.test.ts > createSandbox > reuses dirty worktree with warning (ADR 0003)\\nReusing worktree at /tmp/sandbox-test-SO5Y5m/.sandcastle/worktrees/dirty-collision (branch 'dirty-collision') — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory — isolated providers > preserves worktree on failure with dirty worktree\\n\\nWorktree preserved at /tmp/sandcastle-test-AzRx41/.sandcastle/worktrees/sandcastle-20260926-185646-ab09db\\n  To review: cd /tmp/sandcastle-test-AzRx41/.sandcastle/worktrees/sandcastle-20260926-185646-ab09db\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-AzRx41/.sandcastle/worktrees/sandcastle-20260926-185646-ab09db\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory — isolated providers > removes worktree when isolated sandbox start fails\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/WorktreeManager.test.ts > WorktreeManager.create > reuses preserved worktree when branch is mid-rebase (detached HEAD)\\nReusing worktree at /tmp/wt-repo-xl7Zyr/.sandcastle/worktrees/feat-rebase-test (branch 'feat/rebase-test') — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory — no-sandbox provider > worktree mode: removes worktree when sandbox start fails\\n\\nWorktree removed (no uncommitted changes)\\n\\n\"},\"typecheck\":{\"passed\":true,\"output\":\"$ tsgo --noEmit\\n\"},\"build\":{\"passed\":true,\"output\":\"CLI Building entry: {\\\"index\\\":\\\"src/index.ts\\\",\\\"main\\\":\\\"src/main.ts\\\",\\\"sandboxes/docker\\\":\\\"src/sandboxes/docker.ts\\\",\\\"sandboxes/podman\\\":\\\"src/sandboxes/podman.ts\\\",\\\"sandboxes/vercel\\\":\\\"src/sandboxes/vercel.ts\\\",\\\"sandboxes/daytona\\\":\\\"src/sandboxes/daytona.ts\\\",\\\"sandboxes/no-sandbox\\\":\\\"src/sandboxes/no-sandbox.ts\\\"}\\nCLI Using tsconfig: tsconfig.json\\nCLI tsup v8.5.1\\nCLI Using tsup config: /home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/fixtures/stream-log/tsup.config.ts\\nCLI Target: node18\\nCLI Cleaning output folder\\nESM Build start\\nDTS Build start\\nESM dist/sandboxes/vercel.js         5.26 KB\\nESM dist/chunk-NGBM7T3E.js           3.40 KB\\nESM dist/chunk-BIWNFKGV.js           597.00 B\\nESM dist/chunk-62WN33RK.js           3.49 KB\\nESM dist/index.js                    123.22 KB\\nESM dist/chunk-Q4PORSIP.js           11.57 KB\\nESM dist/sandboxes/no-sandbox.js     236.00 B\\nESM dist/sandboxes/docker.js         313.00 B\\nESM dist/main.js                     681.13 KB\\nESM dist/chunk-XUN2PKMZ.js           906.47 KB\\nESM dist/sandboxes/podman.js         9.95 KB\\nESM dist/sandboxes/daytona.js        4.22 KB\\nESM dist/chunk-W3ZDBVVW.js           1.01 MB\\nESM dist/chunk-NGBM7T3E.js.map       3.90 KB\\nESM dist/chunk-62WN33RK.js.map       9.65 KB\\nESM dist/sandboxes/vercel.js.map     14.65 KB\\nESM dist/index.js.map                350.14 KB\\nESM dist/sandboxes/no-sandbox.js.map 74.00 B\\nESM dist/chunk-Q4PORSIP.js.map       31.81 KB\\nESM dist/chunk-BIWNFKGV.js.map       12.26 KB\\nESM dist/sandboxes/docker.js.map     70.00 B\\nESM dist/sandboxes/daytona.js.map    10.92 KB\\nESM dist/sandboxes/podman.js.map     26.42 KB\\nESM dist/main.js.map                 1.83 MB\\nESM dist/chunk-W3ZDBVVW.js.map       2.04 MB\\nESM dist/chunk-XUN2PKMZ.js.map       6.77 MB\\nESM ⚡️ Build success in 2914ms\\nDTS ⚡️ Build success in 5510ms\\nDTS dist/main.d.ts                     20.00 B\\nDTS dist/sandboxes/docker.d.ts         4.32 KB\\nDTS dist/sandboxes/podman.d.ts         4.92 KB\\nDTS dist/sandboxes/vercel.d.ts         3.36 KB\\nDTS dist/sandboxes/daytona.d.ts        2.15 KB\\nDTS dist/sandboxes/no-sandbox.d.ts     1.49 KB\\nDTS dist/index.d.ts                    48.51 KB\\nDTS dist/mountUtils-CCA-bbpK.d.ts      860.00 B\\nDTS dist/MountConfig-CmXclHA5.d.ts     998.00 B\\nDTS dist/SandboxProvider-EkSMuBp8.d.ts 11.19 KB\\n✓ No Effect references in public .d.ts files\\n$ tsup\\n\\\"createRequire\\\" is imported from external module \\\"module\\\" but never used in \\\"dist/main.js\\\".\\n\\\"Readable\\\" is imported from external module \\\"stream\\\" but never used in \\\"dist/chunk-W3ZDBVVW.js\\\".\\n$ rm -rf dist/templates && cp -r src/templates dist/templates && node scripts/check-public-types-effect-free.mjs\\n\"}}"
+              ]
+            },
+            "correction": {
+              "focusPassed": true,
+              "otherGatesPassed": true,
+              "environmentFailure": false,
+              "evidence": [
+                "{\"fixtureId\":\"stream-log\",\"candidate\":\"46cf4515ce42e8432b33d3321e5b448c54fdfbbf\",\"protectedTestSha256\":\"b63cc021e62f21007ade72a42267ef74c9b998eb26bf1e43c555a0de6fad33b7\",\"candidateTestSha256\":\"b63cc021e62f21007ade72a42267ef74c9b998eb26bf1e43c555a0de6fad33b7\",\"focus\":{\"passed\":true,\"output\":\"\\n RUN  v3.2.4 /tmp/sandcastle-stream-log-grade-yxVSQk\\n\\n ✓ src/Display.test.ts (34 tests | 32 skipped) 11ms\\n\\n Test Files  1 passed (1)\\n      Tests  2 passed | 32 skipped (34)\\n   Start at  18:56:58\\n   Duration  1.01s (transform 50ms, setup 14ms, collect 624ms, tests 11ms, environment 0ms, prepare 75ms)\\n\\n\"},\"install\":{\"passed\":true,\"output\":\"✓ Lockfile passes supply-chain policies (verified 409ms ago)\\nLockfile is up to date, resolution step is skipped\\nProgress: resolved 1, reused 0, downloaded 0, added 0\\nPackages: +504\\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\\nPackages are copied from the content-addressable store to the virtual store.\\n  Content-addressable store is at: /tmp/.pnpm-store/v11\\n  Virtual store is at:             node_modules/.pnpm\\nProgress: resolved 504, reused 504, downloaded 0, added 504, done\\n\\ndependencies:\\n+ @clack/prompts 1.1.0\\n+ @vercel/sandbox 3.5.0\\n\\ndevDependencies:\\n+ @changesets/cli 2.30.0\\n+ @daytona/sdk 0.164.0\\n+ @effect/cli 0.74.0\\n+ @effect/platform 0.95.0\\n+ @effect/platform-node 0.105.0\\n+ @effect/printer 0.48.0\\n+ @effect/printer-ansi 0.48.0\\n+ @types/node 25.5.0\\n+ @typescript/native-preview 7.0.0-dev.20260317.1\\n+ effect 3.20.0\\n+ husky 9.1.7\\n+ lint-staged 15.5.2\\n+ prettier 3.8.1\\n+ tsup 8.5.1\\n+ tsx 4.21.0\\n+ typescript 6.0.3\\n+ vitest 3.2.4\\n+ zod 4.4.3\\n\\nDone in 1.4s using pnpm v11.19.0\\n\"},\"ordinary\":{\"passed\":true,\"output\":\"ilure with dirty worktree\\n\\nWorktree preserved at /tmp/sandcastle-test-ipGJZy/.sandcastle/worktrees/sandcastle-20260926-185711-02b525\\n  To review: cd /tmp/sandcastle-test-ipGJZy/.sandcastle/worktrees/sandcastle-20260926-185711-02b525\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-ipGJZy/.sandcastle/worktrees/sandcastle-20260926-185711-02b525\\n\\nstderr | src/createWorktree.test.ts > createWorktree > reuses dirty worktree with a warning\\nReusing worktree at /tmp/ws-test-1ny32t/.sandcastle/worktrees/dirty-branch (branch 'dirty-branch') — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory > logs copy-to-sandbox as a spinner when copyToWorktree paths are provided\\n\\nRun succeeded but worktree has uncommitted changes at /tmp/sandcastle-test-QMdYi2/.sandcastle/worktrees/sandcastle-20260926-185712-f91f62\\n  To review: cd /tmp/sandcastle-test-QMdYi2/.sandcastle/worktrees/sandcastle-20260926-185712-f91f62\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-QMdYi2/.sandcastle/worktrees/sandcastle-20260926-185712-f91f62\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory > preserves worktree and returns preservedWorktreePath on success with dirty worktree\\n\\nRun succeeded but worktree has uncommitted changes at /tmp/sandcastle-test-QW8d2s/.sandcastle/worktrees/sandcastle-20260926-185712-f307cb\\n  To review: cd /tmp/sandcastle-test-QW8d2s/.sandcastle/worktrees/sandcastle-20260926-185712-f307cb\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-QW8d2s/.sandcastle/worktrees/sandcastle-20260926-185712-f307cb\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory > removes worktree on failure with clean worktree\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory > removes worktree when sandbox start fails (e.g. missing image)\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/WorktreeManager.test.ts > WorktreeManager.create > reuses dirty worktree with a warning\\nReusing worktree at /tmp/wt-repo-vS8Iao/.sandcastle/worktrees/my-branch (branch 'my-branch') — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory > does not attach preservedWorktreePath to AgentIdleTimeoutError when worktree is clean on failure\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/WorktreeManager.test.ts > WorktreeManager.create > does not refresh a dirty reused worktree\\nReusing worktree at /tmp/wt-repo-WAN5YD/.sandcastle/worktrees/my-branch (branch 'my-branch') — worktree has uncommitted changes\\n\\nstderr | src/createSandbox.test.ts > createSandbox > reuses dirty worktree with warning (ADR 0003)\\nReusing worktree at /tmp/sandbox-test-x0GORE/.sandcastle/worktrees/dirty-collision (branch 'dirty-collision') — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory — isolated providers > preserves worktree on failure with dirty worktree\\n\\nWorktree preserved at /tmp/sandcastle-test-wXKNwl/.sandcastle/worktrees/sandcastle-20260926-185716-6f96cf\\n  To review: cd /tmp/sandcastle-test-wXKNwl/.sandcastle/worktrees/sandcastle-20260926-185716-6f96cf\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-wXKNwl/.sandcastle/worktrees/sandcastle-20260926-185716-6f96cf\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory — isolated providers > removes worktree when isolated sandbox start fails\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/WorktreeManager.test.ts > WorktreeManager.create > reuses preserved worktree when branch is mid-rebase (detached HEAD)\\nReusing worktree at /tmp/wt-repo-CmhEmb/.sandcastle/worktrees/feat-rebase-test (branch 'feat/rebase-test') — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts > WorktreeDockerSandboxFactory — no-sandbox provider > worktree mode: removes worktree when sandbox start fails\\n\\nWorktree removed (no uncommitted changes)\\n\\n\"},\"typecheck\":{\"passed\":true,\"output\":\"$ tsgo --noEmit\\n\"},\"build\":{\"passed\":true,\"output\":\"CLI Building entry: {\\\"index\\\":\\\"src/index.ts\\\",\\\"main\\\":\\\"src/main.ts\\\",\\\"sandboxes/docker\\\":\\\"src/sandboxes/docker.ts\\\",\\\"sandboxes/podman\\\":\\\"src/sandboxes/podman.ts\\\",\\\"sandboxes/vercel\\\":\\\"src/sandboxes/vercel.ts\\\",\\\"sandboxes/daytona\\\":\\\"src/sandboxes/daytona.ts\\\",\\\"sandboxes/no-sandbox\\\":\\\"src/sandboxes/no-sandbox.ts\\\"}\\nCLI Using tsconfig: tsconfig.json\\nCLI tsup v8.5.1\\nCLI Using tsup config: /home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/fixtures/benchmark-correction-FCQmu0/tsup.config.ts\\nCLI Target: node18\\nCLI Cleaning output folder\\nESM Build start\\nDTS Build start\\nESM dist/index.js                    123.22 KB\\nESM dist/sandboxes/daytona.js        4.22 KB\\nESM dist/chunk-BIWNFKGV.js           597.00 B\\nESM dist/chunk-TFM2DOWF.js           11.57 KB\\nESM dist/chunk-62WN33RK.js           3.49 KB\\nESM dist/chunk-NGBM7T3E.js           3.40 KB\\nESM dist/sandboxes/no-sandbox.js     236.00 B\\nESM dist/main.js                     681.13 KB\\nESM dist/sandboxes/docker.js         313.00 B\\nESM dist/chunk-5GERLSUJ.js           906.78 KB\\nESM dist/sandboxes/vercel.js         5.26 KB\\nESM dist/sandboxes/podman.js         9.95 KB\\nESM dist/chunk-LWK6HTXR.js           1.01 MB\\nESM dist/sandboxes/daytona.js.map    10.92 KB\\nESM dist/chunk-BIWNFKGV.js.map       12.26 KB\\nESM dist/index.js.map                350.14 KB\\nESM dist/chunk-62WN33RK.js.map       9.65 KB\\nESM dist/chunk-TFM2DOWF.js.map       31.81 KB\\nESM dist/chunk-NGBM7T3E.js.map       3.90 KB\\nESM dist/sandboxes/no-sandbox.js.map 74.00 B\\nESM dist/sandboxes/docker.js.map     70.00 B\\nESM dist/sandboxes/vercel.js.map     14.65 KB\\nESM dist/sandboxes/podman.js.map     26.42 KB\\nESM dist/main.js.map                 1.83 MB\\nESM dist/chunk-LWK6HTXR.js.map       2.04 MB\\nESM dist/chunk-5GERLSUJ.js.map       6.77 MB\\nESM ⚡️ Build success in 2950ms\\nDTS ⚡️ Build success in 5353ms\\nDTS dist/main.d.ts                     20.00 B\\nDTS dist/sandboxes/docker.d.ts         4.32 KB\\nDTS dist/sandboxes/podman.d.ts         4.92 KB\\nDTS dist/sandboxes/vercel.d.ts         3.36 KB\\nDTS dist/sandboxes/daytona.d.ts        2.15 KB\\nDTS dist/sandboxes/no-sandbox.d.ts     1.49 KB\\nDTS dist/index.d.ts                    48.51 KB\\nDTS dist/mountUtils-CCA-bbpK.d.ts      860.00 B\\nDTS dist/MountConfig-CmXclHA5.d.ts     998.00 B\\nDTS dist/SandboxProvider-EkSMuBp8.d.ts 11.19 KB\\n✓ No Effect references in public .d.ts files\\n$ tsup\\n\\\"createRequire\\\" is imported from external module \\\"module\\\" but never used in \\\"dist/main.js\\\".\\n\\\"Readable\\\" is imported from external module \\\"stream\\\" but never used in \\\"dist/chunk-LWK6HTXR.js\\\".\\n$ rm -rf dist/templates && cp -r src/templates dist/templates && node scripts/check-public-types-effect-free.mjs\\n\"}}"
+              ]
+            }
+          }
+        },
+        "worktree": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/runs/stream-log-1-0/.sandcastle/worktrees/stream-log-1-0",
+        "sessionIds": [
+          "01a0de72-87d1-76d1-9681-6c8d6deff62e",
+          "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8",
+          "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee",
+          "01a0de7c-361e-7191-920a-62edb9493aa3"
+        ],
+        "requested": "gpt-6-luna/max/default",
+        "effective": "gpt-6-luna/max/default (worker catalog and explicit Codex command; response identity unverified)",
+        "status": "incomplete",
+        "technicalPassed": null,
+        "projectAccepted": false,
+        "taskStatus": "paused",
+        "firstIterationSuccess": false,
+        "reviewPassed": false,
+        "falseAcceptance": false,
+        "cost": null,
+        "usage": {
+          "policyId": "issue31-fixed-v1",
+          "activity": "pilot",
+          "pilotLimits": {
+            "overallMs": 43200000,
+            "evaluations": 40,
+            "accountRisePercentPoints": 20
+          },
+          "runtimeIdentity": "ef9662b9edfec0e301347ceb5368497c1077b9def504f6ac9be44adc8bc633fc",
+          "requested": {
+            "implementation": {
+              "model": "gpt-6-luna",
+              "effort": "max",
+              "serviceTier": "default"
+            },
+            "standards-review-preview": {
+              "model": "gpt-6-sol",
+              "effort": "high",
+              "serviceTier": "default"
+            },
+            "specification-review-preview": {
+              "model": "gpt-6-sol",
+              "effort": "high",
+              "serviceTier": "default"
+            },
+            "implementation-rework": {
+              "model": "gpt-6-luna",
+              "effort": "max",
+              "serviceTier": "default"
+            },
+            "standards-review": {
+              "model": "gpt-6-sol",
+              "effort": "high",
+              "serviceTier": "default"
+            },
+            "specification-review": {
+              "model": "gpt-6-sol",
+              "effort": "high",
+              "serviceTier": "default"
+            }
+          },
+          "effective": null,
+          "observed": null,
+          "baseline": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790437901657,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 49,
+                "resetsAt": 1790844222000
+              }
+            }
+          },
+          "guardBaseline": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790437901657,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 49,
+                "resetsAt": 1790844222000
+              }
+            }
+          },
+          "latest": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790439130042,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 50,
+                "resetsAt": 1790844222000
+              }
+            }
+          },
+          "accountHistory": [
+            {
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790437901657,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438437497,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438441733,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438472857,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438503951,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438535162,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438566385,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438597948,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438629325,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438660473,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438691916,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438723480,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438754753,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438793087,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438795343,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438826692,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438857833,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438889463,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438922351,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438936401,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438967653,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438998756,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790439030007,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790439061460,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790439076268,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790439107390,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790439130042,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            }
+          ],
+          "resetContinuations": [],
+          "remaining": {
+            "stream-log": {
+              "standards-review-preview": 0,
+              "specification-review-preview": 0,
+              "implementation-rework": 0,
+              "standards-review": 1,
+              "specification-review": 1,
+              "implementation": 1
+            }
+          },
+          "activeMs": 1223870,
+          "activeUpdatedAt": 1790439130220,
+          "taskMs": {
+            "stream-log": 691597
+          },
+          "roleMs": {
+            "stream-log/implementation": 307727,
+            "stream-log/standards-review-preview": 127474,
+            "stream-log/specification-review-preview": 125714,
+            "stream-log/implementation-rework": 53850
+          },
+          "invocations": 4,
+          "tokens": {
+            "counters": {
+              "01a0de72-87d1-76d1-9681-6c8d6deff62e": {
+                "counterId": "01a0de72-87d1-76d1-9681-6c8d6deff62e",
+                "coverageId": "01a0de72-87d1-76d1-9681-6c8d6deff62e",
+                "sessionId": "01a0de72-87d1-76d1-9681-6c8d6deff62e",
+                "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/stream-log-1-0/2026/09/26/rollout-2026-09-26T16-00-42-01a0de72-87d1-76d1-9681-6c8d6deff62e.jsonl",
+                "usage": {
+                  "inputTokens": 75375,
+                  "cacheCreationInputTokens": 0,
+                  "cacheReadInputTokens": 994560,
+                  "outputTokens": 13146
+                }
+              },
+              "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8": {
+                "counterId": "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8",
+                "coverageId": "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8",
+                "sessionId": "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8",
+                "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/stream-log-1-0/2026/09/26/rollout-2026-09-26T16-06-36-01a0de77-ecc5-7e52-8eb0-6e016ead4fb8.jsonl",
+                "usage": {
+                  "inputTokens": 50797,
+                  "cacheCreationInputTokens": 0,
+                  "cacheReadInputTokens": 376704,
+                  "outputTokens": 4364
+                }
+              },
+              "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee": {
+                "counterId": "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee",
+                "coverageId": "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee",
+                "sessionId": "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee",
+                "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/stream-log-1-0/2026/09/26/rollout-2026-09-26T16-08-57-01a0de7a-14d3-70f2-b96d-ad56c8ef64ee.jsonl",
+                "usage": {
+                  "inputTokens": 49245,
+                  "cacheCreationInputTokens": 0,
+                  "cacheReadInputTokens": 214528,
+                  "outputTokens": 4302
+                }
+              },
+              "01a0de7c-361e-7191-920a-62edb9493aa3": {
+                "counterId": "01a0de7c-361e-7191-920a-62edb9493aa3",
+                "coverageId": "01a0de7c-361e-7191-920a-62edb9493aa3",
+                "sessionId": "01a0de7c-361e-7191-920a-62edb9493aa3",
+                "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/stream-log-1-0/2026/09/26/rollout-2026-09-26T16-11-17-01a0de7c-361e-7191-920a-62edb9493aa3.jsonl",
+                "usage": {
+                  "inputTokens": 22575,
+                  "cacheCreationInputTokens": 0,
+                  "cacheReadInputTokens": 14080,
+                  "outputTokens": 459
+                }
+              }
+            },
+            "deltas": {
+              "01a0de72-87d1-76d1-9681-6c8d6deff62e": {
+                "inputTokens": 75375,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 994560,
+                "outputTokens": 13146
+              },
+              "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8": {
+                "inputTokens": 50797,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 376704,
+                "outputTokens": 4364
+              },
+              "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee": {
+                "inputTokens": 49245,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 214528,
+                "outputTokens": 4302
+              },
+              "01a0de7c-361e-7191-920a-62edb9493aa3": {
+                "inputTokens": 22575,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 14080,
+                "outputTokens": 459
+              }
+            },
+            "estimates": {
+              "stream-log/implementation/1": {
+                "inputTokens": 75375,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 994560,
+                "outputTokens": 13146
+              },
+              "stream-log/standards-review-preview/2": {
+                "inputTokens": 50797,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 376704,
+                "outputTokens": 4364
+              },
+              "stream-log/specification-review-preview/3": {
+                "inputTokens": 49245,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 214528,
+                "outputTokens": 4302
+              },
+              "stream-log/implementation-rework/4": null
+            },
+            "unknown": [
+              "stream-log/implementation-rework/4"
+            ],
+            "invocations": {
+              "stream-log/implementation/1": {
+                "taskId": "stream-log",
+                "role": "implementation",
+                "sessionId": "01a0de72-87d1-76d1-9681-6c8d6deff62e",
+                "startedAt": 1790438441764,
+                "settledAt": 1790438749491,
+                "outcome": "completed",
+                "requiredSessionIds": [
+                  "01a0de72-87d1-76d1-9681-6c8d6deff62e"
+                ],
+                "counterIds": [
+                  "01a0de72-87d1-76d1-9681-6c8d6deff62e"
+                ],
+                "coverageComplete": true
+              },
+              "stream-log/standards-review-preview/2": {
+                "taskId": "stream-log",
+                "role": "standards-review-preview",
+                "sessionId": "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8",
+                "startedAt": 1790438795373,
+                "settledAt": 1790438922847,
+                "outcome": "completed",
+                "requiredSessionIds": [
+                  "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8"
+                ],
+                "counterIds": [
+                  "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8"
+                ],
+                "coverageComplete": true
+              },
+              "stream-log/specification-review-preview/3": {
+                "taskId": "stream-log",
+                "role": "specification-review-preview",
+                "sessionId": "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee",
+                "startedAt": 1790438936427,
+                "settledAt": 1790439062141,
+                "outcome": "completed",
+                "requiredSessionIds": [
+                  "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee"
+                ],
+                "counterIds": [
+                  "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee"
+                ],
+                "coverageComplete": true
+              },
+              "stream-log/implementation-rework/4": {
+                "taskId": "stream-log",
+                "role": "implementation-rework",
+                "sessionId": "01a0de7c-361e-7191-920a-62edb9493aa3",
+                "startedAt": 1790439076292,
+                "settledAt": 1790439130142,
+                "outcome": "failed",
+                "requiredSessionIds": [
+                  "01a0de7c-361e-7191-920a-62edb9493aa3"
+                ],
+                "counterIds": [
+                  "01a0de7c-361e-7191-920a-62edb9493aa3"
+                ],
+                "coverageComplete": false
+              }
+            },
+            "attributableTotal": null
+          }
+        },
+        "reason": "Error: Workflow checkpoint stop requested"
+      }
+    ],
+    "activities": [
+      {
+        "label": "historical-fixture-preflight",
+        "startedAt": 1790438181420,
+        "reservedMs": 3600000,
+        "actualMs": 247890,
+        "outcome": "complete"
+      },
+      {
+        "label": "prepare-stream-log-1-0",
+        "startedAt": 1790438432383,
+        "reservedMs": 300000,
+        "actualMs": 113,
+        "outcome": "complete"
+      },
+      {
+        "label": "dependencies-stream-log-1-0",
+        "startedAt": 1790438432525,
+        "reservedMs": 300000,
+        "actualMs": 3303,
+        "outcome": "complete"
+      }
+    ],
+    "hostConditionsHash": "fc24da865683c2b2fe3a8a469142683d8d3ebb96f698ae67c9e0028e31c87fcb",
+    "accountResolution": {
+      "primary": 1
+    },
+    "windowDurationMs": {
+      "primary": 604800000
+    },
+    "fixtureConditions": {
+      "stream-log": "9de5da44acff6448f67bd00f5511515df1c79fde26c63315cf092fdf81e2a7ed"
+    }
+  },
+  "budget": {
+    "version": 2,
+    "id": "issue31-fixed-v1",
+    "policyId": "issue31-fixed-v1",
+    "runtimeIdentity": "ef9662b9edfec0e301347ceb5368497c1077b9def504f6ac9be44adc8bc633fc",
+    "limits": {
+      "overallMs": 43200000,
+      "evaluations": 40,
+      "accountRisePercentPoints": 20
+    },
+    "baseline": {
+      "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+      "observedAt": 1790437901657,
+      "denied": false,
+      "windows": {
+        "primary": {
+          "usedPercent": 49,
+          "resetsAt": 1790844222000
+        }
+      }
+    },
+    "guardBaseline": {
+      "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+      "observedAt": 1790437901657,
+      "denied": false,
+      "windows": {
+        "primary": {
+          "usedPercent": 49,
+          "resetsAt": 1790844222000
+        }
+      }
+    },
+    "latest": {
+      "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+      "observedAt": 1790439130042,
+      "denied": false,
+      "windows": {
+        "primary": {
+          "usedPercent": 50,
+          "resetsAt": 1790844222000
+        }
+      }
+    },
+    "resetContinuations": [],
+    "activeMs": 1223870,
+    "measurementCalls": 4,
+    "evaluations": 1,
+    "activeInvocationId": "stream-log-1-0",
+    "episodes": {
+      "issue31-calibration": {
+        "activity": "measurement",
+        "taskIds": [
+          "calibration"
+        ],
+        "usage": {
+          "policyId": "issue31-fixed-v1",
+          "activity": "measurement",
+          "pilotLimits": {
+            "overallMs": 43200000,
+            "evaluations": 40,
+            "accountRisePercentPoints": 20
+          },
+          "runtimeIdentity": "ef9662b9edfec0e301347ceb5368497c1077b9def504f6ac9be44adc8bc633fc",
+          "requested": {
+            "implementation": {
+              "model": "gpt-6-sol",
+              "effort": "high",
+              "serviceTier": "default"
+            },
+            "standards-review": {
+              "model": "gpt-6-sol",
+              "effort": "high",
+              "serviceTier": "default"
+            },
+            "specification-review": {
+              "model": "gpt-6-sol",
+              "effort": "high",
+              "serviceTier": "default"
+            }
+          },
+          "effective": null,
+          "observed": null,
+          "baseline": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790437901657,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 49,
+                "resetsAt": 1790844222000
+              }
+            }
+          },
+          "guardBaseline": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790437901657,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 49,
+                "resetsAt": 1790844222000
+              }
+            }
+          },
+          "latest": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790438179553,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 49,
+                "resetsAt": 1790844222000
+              }
+            }
+          },
+          "accountHistory": [
+            {
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790437901657,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "calibration",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790437903956,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "calibration",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790437931257,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790437933163,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "calibration",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790437935691,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "calibration",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790437966845,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "calibration",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790437998538,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "calibration",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438030129,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "calibration",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438061446,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "calibration",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438090223,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "calibration",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438121538,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "calibration",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438134945,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "calibration",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438165983,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "calibration",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438179553,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            }
+          ],
+          "resetContinuations": [],
+          "remaining": {
+            "calibration": {
+              "standards-review": 0,
+              "specification-review": 0,
+              "implementation": 0
+            }
+          },
+          "activeMs": 278260,
+          "activeUpdatedAt": 1790438179830,
+          "taskMs": {
+            "calibration": 275903
+          },
+          "roleMs": {
+            "calibration/implementation": 169126,
+            "calibration/standards-review": 31903,
+            "calibration/specification-review": 32439
+          },
+          "invocations": 4,
+          "tokens": {
+            "counters": {
+              "01a0de6a-5288-7580-ab09-291ccedc43ba": {
+                "counterId": "01a0de6a-5288-7580-ab09-291ccedc43ba",
+                "coverageId": "01a0de6a-5288-7580-ab09-291ccedc43ba",
+                "sessionId": "01a0de6a-5288-7580-ab09-291ccedc43ba",
+                "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/calibration/2026/09/26/rollout-2026-09-26T15-51-45-01a0de6a-5288-7580-ab09-291ccedc43ba.jsonl",
+                "usage": {
+                  "inputTokens": 2830,
+                  "cacheCreationInputTokens": 0,
+                  "cacheReadInputTokens": 120448,
+                  "outputTokens": 633
+                }
+              },
+              "01a0de6d-2a6f-7273-9ad6-4d4236bc7217": {
+                "counterId": "01a0de6d-2a6f-7273-9ad6-4d4236bc7217",
+                "coverageId": "01a0de6d-2a6f-7273-9ad6-4d4236bc7217",
+                "sessionId": "01a0de6d-2a6f-7273-9ad6-4d4236bc7217",
+                "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/calibration/2026/09/26/rollout-2026-09-26T15-54-51-01a0de6d-2a6f-7273-9ad6-4d4236bc7217.jsonl",
+                "usage": {
+                  "inputTokens": 16700,
+                  "cacheCreationInputTokens": 0,
+                  "cacheReadInputTokens": 44544,
+                  "outputTokens": 1159
+                }
+              },
+              "01a0de6d-d8ba-76f2-9867-dc0c779a2c15": {
+                "counterId": "01a0de6d-d8ba-76f2-9867-dc0c779a2c15",
+                "coverageId": "01a0de6d-d8ba-76f2-9867-dc0c779a2c15",
+                "sessionId": "01a0de6d-d8ba-76f2-9867-dc0c779a2c15",
+                "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/calibration/2026/09/26/rollout-2026-09-26T15-55-35-01a0de6d-d8ba-76f2-9867-dc0c779a2c15.jsonl",
+                "usage": {
+                  "inputTokens": 16399,
+                  "cacheCreationInputTokens": 0,
+                  "cacheReadInputTokens": 44800,
+                  "outputTokens": 998
+                }
+              }
+            },
+            "deltas": {
+              "01a0de6a-5288-7580-ab09-291ccedc43ba": {
+                "inputTokens": 2830,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 120448,
+                "outputTokens": 633
+              },
+              "01a0de6d-2a6f-7273-9ad6-4d4236bc7217": {
+                "inputTokens": 16700,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 44544,
+                "outputTokens": 1159
+              },
+              "01a0de6d-d8ba-76f2-9867-dc0c779a2c15": {
+                "inputTokens": 16399,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 44800,
+                "outputTokens": 998
+              }
+            },
+            "estimates": {
+              "calibration/implementation/1": null,
+              "calibration/implementation/2": {
+                "inputTokens": 2830,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 120448,
+                "outputTokens": 633
+              },
+              "calibration/standards-review/3": {
+                "inputTokens": 16700,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 44544,
+                "outputTokens": 1159
+              },
+              "calibration/specification-review/4": {
+                "inputTokens": 16399,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 44800,
+                "outputTokens": 998
+              }
+            },
+            "unknown": [
+              "calibration/implementation/1"
+            ],
+            "invocations": {
+              "calibration/implementation/1": {
+                "taskId": "calibration",
+                "role": "implementation",
+                "sessionId": "01a0de6a-5288-7580-ab09-291ccedc43ba",
+                "startedAt": 1790437903988,
+                "settledAt": 1790437931338,
+                "outcome": "failed",
+                "requiredSessionIds": [
+                  "01a0de6a-5288-7580-ab09-291ccedc43ba"
+                ],
+                "counterIds": [],
+                "coverageComplete": false
+              },
+              "calibration/implementation/2": {
+                "taskId": "calibration",
+                "role": "implementation",
+                "sessionId": "01a0de6a-5288-7580-ab09-291ccedc43ba",
+                "startedAt": 1790437935720,
+                "settledAt": 1790438077496,
+                "outcome": "completed",
+                "requiredSessionIds": [
+                  "01a0de6a-5288-7580-ab09-291ccedc43ba"
+                ],
+                "counterIds": [
+                  "01a0de6a-5288-7580-ab09-291ccedc43ba"
+                ],
+                "coverageComplete": true
+              },
+              "calibration/standards-review/3": {
+                "taskId": "calibration",
+                "role": "standards-review",
+                "sessionId": "01a0de6d-2a6f-7273-9ad6-4d4236bc7217",
+                "startedAt": 1790438090251,
+                "settledAt": 1790438122154,
+                "outcome": "completed",
+                "requiredSessionIds": [
+                  "01a0de6d-2a6f-7273-9ad6-4d4236bc7217"
+                ],
+                "counterIds": [
+                  "01a0de6d-2a6f-7273-9ad6-4d4236bc7217"
+                ],
+                "coverageComplete": true
+              },
+              "calibration/specification-review/4": {
+                "taskId": "calibration",
+                "role": "specification-review",
+                "sessionId": "01a0de6d-d8ba-76f2-9867-dc0c779a2c15",
+                "startedAt": 1790438134967,
+                "settledAt": 1790438167406,
+                "outcome": "completed",
+                "requiredSessionIds": [
+                  "01a0de6d-d8ba-76f2-9867-dc0c779a2c15"
+                ],
+                "counterIds": [
+                  "01a0de6d-d8ba-76f2-9867-dc0c779a2c15"
+                ],
+                "coverageComplete": true
+              }
+            },
+            "attributableTotal": null
+          }
+        },
+        "complete": true
+      },
+      "stream-log-1-0": {
+        "activity": "pilot",
+        "taskIds": [
+          "stream-log"
+        ],
+        "usage": {
+          "policyId": "issue31-fixed-v1",
+          "activity": "pilot",
+          "pilotLimits": {
+            "overallMs": 43200000,
+            "evaluations": 40,
+            "accountRisePercentPoints": 20
+          },
+          "runtimeIdentity": "ef9662b9edfec0e301347ceb5368497c1077b9def504f6ac9be44adc8bc633fc",
+          "requested": {
+            "implementation": {
+              "model": "gpt-6-luna",
+              "effort": "max",
+              "serviceTier": "default"
+            },
+            "standards-review-preview": {
+              "model": "gpt-6-sol",
+              "effort": "high",
+              "serviceTier": "default"
+            },
+            "specification-review-preview": {
+              "model": "gpt-6-sol",
+              "effort": "high",
+              "serviceTier": "default"
+            },
+            "implementation-rework": {
+              "model": "gpt-6-luna",
+              "effort": "max",
+              "serviceTier": "default"
+            },
+            "standards-review": {
+              "model": "gpt-6-sol",
+              "effort": "high",
+              "serviceTier": "default"
+            },
+            "specification-review": {
+              "model": "gpt-6-sol",
+              "effort": "high",
+              "serviceTier": "default"
+            }
+          },
+          "effective": null,
+          "observed": null,
+          "baseline": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790437901657,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 49,
+                "resetsAt": 1790844222000
+              }
+            }
+          },
+          "guardBaseline": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790437901657,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 49,
+                "resetsAt": 1790844222000
+              }
+            }
+          },
+          "latest": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790439130042,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 50,
+                "resetsAt": 1790844222000
+              }
+            }
+          },
+          "accountHistory": [
+            {
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790437901657,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438437497,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438441733,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438472857,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 49,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438503951,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438535162,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438566385,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438597948,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438629325,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438660473,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438691916,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438723480,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438754753,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438793087,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438795343,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438826692,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438857833,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438889463,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438922351,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438936401,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438967653,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790438998756,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790439030007,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790439061460,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790439076268,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790439107390,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            },
+            {
+              "taskId": "stream-log",
+              "reading": {
+                "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+                "observedAt": 1790439130042,
+                "denied": false,
+                "windows": {
+                  "primary": {
+                    "usedPercent": 50,
+                    "resetsAt": 1790844222000
+                  }
+                }
+              }
+            }
+          ],
+          "resetContinuations": [],
+          "remaining": {
+            "stream-log": {
+              "standards-review-preview": 0,
+              "specification-review-preview": 0,
+              "implementation-rework": 0,
+              "standards-review": 1,
+              "specification-review": 1,
+              "implementation": 1
+            }
+          },
+          "activeMs": 1223870,
+          "activeUpdatedAt": 1790439130220,
+          "taskMs": {
+            "stream-log": 691597
+          },
+          "roleMs": {
+            "stream-log/implementation": 307727,
+            "stream-log/standards-review-preview": 127474,
+            "stream-log/specification-review-preview": 125714,
+            "stream-log/implementation-rework": 53850
+          },
+          "invocations": 4,
+          "tokens": {
+            "counters": {
+              "01a0de72-87d1-76d1-9681-6c8d6deff62e": {
+                "counterId": "01a0de72-87d1-76d1-9681-6c8d6deff62e",
+                "coverageId": "01a0de72-87d1-76d1-9681-6c8d6deff62e",
+                "sessionId": "01a0de72-87d1-76d1-9681-6c8d6deff62e",
+                "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/stream-log-1-0/2026/09/26/rollout-2026-09-26T16-00-42-01a0de72-87d1-76d1-9681-6c8d6deff62e.jsonl",
+                "usage": {
+                  "inputTokens": 75375,
+                  "cacheCreationInputTokens": 0,
+                  "cacheReadInputTokens": 994560,
+                  "outputTokens": 13146
+                }
+              },
+              "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8": {
+                "counterId": "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8",
+                "coverageId": "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8",
+                "sessionId": "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8",
+                "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/stream-log-1-0/2026/09/26/rollout-2026-09-26T16-06-36-01a0de77-ecc5-7e52-8eb0-6e016ead4fb8.jsonl",
+                "usage": {
+                  "inputTokens": 50797,
+                  "cacheCreationInputTokens": 0,
+                  "cacheReadInputTokens": 376704,
+                  "outputTokens": 4364
+                }
+              },
+              "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee": {
+                "counterId": "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee",
+                "coverageId": "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee",
+                "sessionId": "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee",
+                "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/stream-log-1-0/2026/09/26/rollout-2026-09-26T16-08-57-01a0de7a-14d3-70f2-b96d-ad56c8ef64ee.jsonl",
+                "usage": {
+                  "inputTokens": 49245,
+                  "cacheCreationInputTokens": 0,
+                  "cacheReadInputTokens": 214528,
+                  "outputTokens": 4302
+                }
+              },
+              "01a0de7c-361e-7191-920a-62edb9493aa3": {
+                "counterId": "01a0de7c-361e-7191-920a-62edb9493aa3",
+                "coverageId": "01a0de7c-361e-7191-920a-62edb9493aa3",
+                "sessionId": "01a0de7c-361e-7191-920a-62edb9493aa3",
+                "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/stream-log-1-0/2026/09/26/rollout-2026-09-26T16-11-17-01a0de7c-361e-7191-920a-62edb9493aa3.jsonl",
+                "usage": {
+                  "inputTokens": 22575,
+                  "cacheCreationInputTokens": 0,
+                  "cacheReadInputTokens": 14080,
+                  "outputTokens": 459
+                }
+              }
+            },
+            "deltas": {
+              "01a0de72-87d1-76d1-9681-6c8d6deff62e": {
+                "inputTokens": 75375,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 994560,
+                "outputTokens": 13146
+              },
+              "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8": {
+                "inputTokens": 50797,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 376704,
+                "outputTokens": 4364
+              },
+              "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee": {
+                "inputTokens": 49245,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 214528,
+                "outputTokens": 4302
+              },
+              "01a0de7c-361e-7191-920a-62edb9493aa3": {
+                "inputTokens": 22575,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 14080,
+                "outputTokens": 459
+              }
+            },
+            "estimates": {
+              "stream-log/implementation/1": {
+                "inputTokens": 75375,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 994560,
+                "outputTokens": 13146
+              },
+              "stream-log/standards-review-preview/2": {
+                "inputTokens": 50797,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 376704,
+                "outputTokens": 4364
+              },
+              "stream-log/specification-review-preview/3": {
+                "inputTokens": 49245,
+                "cacheCreationInputTokens": 0,
+                "cacheReadInputTokens": 214528,
+                "outputTokens": 4302
+              },
+              "stream-log/implementation-rework/4": null
+            },
+            "unknown": [
+              "stream-log/implementation-rework/4"
+            ],
+            "invocations": {
+              "stream-log/implementation/1": {
+                "taskId": "stream-log",
+                "role": "implementation",
+                "sessionId": "01a0de72-87d1-76d1-9681-6c8d6deff62e",
+                "startedAt": 1790438441764,
+                "settledAt": 1790438749491,
+                "outcome": "completed",
+                "requiredSessionIds": [
+                  "01a0de72-87d1-76d1-9681-6c8d6deff62e"
+                ],
+                "counterIds": [
+                  "01a0de72-87d1-76d1-9681-6c8d6deff62e"
+                ],
+                "coverageComplete": true
+              },
+              "stream-log/standards-review-preview/2": {
+                "taskId": "stream-log",
+                "role": "standards-review-preview",
+                "sessionId": "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8",
+                "startedAt": 1790438795373,
+                "settledAt": 1790438922847,
+                "outcome": "completed",
+                "requiredSessionIds": [
+                  "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8"
+                ],
+                "counterIds": [
+                  "01a0de77-ecc5-7e52-8eb0-6e016ead4fb8"
+                ],
+                "coverageComplete": true
+              },
+              "stream-log/specification-review-preview/3": {
+                "taskId": "stream-log",
+                "role": "specification-review-preview",
+                "sessionId": "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee",
+                "startedAt": 1790438936427,
+                "settledAt": 1790439062141,
+                "outcome": "completed",
+                "requiredSessionIds": [
+                  "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee"
+                ],
+                "counterIds": [
+                  "01a0de7a-14d3-70f2-b96d-ad56c8ef64ee"
+                ],
+                "coverageComplete": true
+              },
+              "stream-log/implementation-rework/4": {
+                "taskId": "stream-log",
+                "role": "implementation-rework",
+                "sessionId": "01a0de7c-361e-7191-920a-62edb9493aa3",
+                "startedAt": 1790439076292,
+                "settledAt": 1790439130142,
+                "outcome": "failed",
+                "requiredSessionIds": [
+                  "01a0de7c-361e-7191-920a-62edb9493aa3"
+                ],
+                "counterIds": [
+                  "01a0de7c-361e-7191-920a-62edb9493aa3"
+                ],
+                "coverageComplete": false
+              }
+            },
+            "attributableTotal": null
+          }
+        },
+        "complete": false
+      }
+    }
+  },
+  "manifest": {
+    "schemaVersion": 1,
+    "protocolHash": "4d5ada6e98b6edc2021f3babdad1294e180efc6a27a9024daf931127b70b2167",
+    "installedPackage": {
+      "name": "@ai-hero/sandcastle",
+      "version": "0.12.0-dv8.23.0",
+      "sourceCommit": "a1c5f0165ebbaa549e38a5b6193502f84cc9bdaf",
+      "distHash": "e632904717de89c9315b4704a469dd300031acd6ecfa54a66f6a04c1c8148e74"
+    },
+    "sourceCommit": "a1c5f0165ebbaa549e38a5b6193502f84cc9bdaf",
+    "historicalCases": [
+      {
+        "id": "stream-log",
+        "split": "development",
+        "kind": "regression",
+        "base": "c505d4964ce6806211259e8bff9ad1d8c319a9ef",
+        "reference": "badf657b5dc81a71c141d8cd736a67804c6a86ff"
+      },
+      {
+        "id": "output-retry",
+        "split": "development",
+        "kind": "feature",
+        "base": "2867118a575faa697b000be87d429900804786cf",
+        "reference": "9f3f6d5c5f2527d5e1d8349f80eec2d36e797540"
+      },
+      {
+        "id": "merge-to-head",
+        "split": "held-out",
+        "kind": "regression",
+        "base": "2867118a575faa697b000be87d429900804786cf",
+        "reference": "f7879c5ca6853c6afa79cb836d918de8de64db03"
+      },
+      {
+        "id": "sandbox-handle",
+        "split": "held-out",
+        "kind": "feature",
+        "base": "f1aa0809d097db0d5c674e13c9ac3374ba2a629b",
+        "reference": "0f577a42fdbfe49111b8e00694399ee0c9ddd559"
+      }
+    ],
+    "configurations": [
+      {
+        "model": "gpt-6-luna",
+        "effort": "max",
+        "serviceTier": "default"
+      },
+      {
+        "model": "gpt-6-sol",
+        "effort": "xhigh",
+        "serviceTier": "default"
+      },
+      {
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "serviceTier": "default"
+      },
+      {
+        "model": "gpt-6-astra",
+        "effort": "max",
+        "serviceTier": "default"
+      },
+      {
+        "model": "gpt-6-sol",
+        "effort": "high",
+        "serviceTier": "default"
+      }
+    ],
+    "slotOrder": [
+      {
+        "id": "stream-log-1-0",
+        "fixture": "stream-log",
+        "split": "development",
+        "repetition": 1,
+        "arm": 0
+      },
+      {
+        "id": "stream-log-1-1",
+        "fixture": "stream-log",
+        "split": "development",
+        "repetition": 1,
+        "arm": 1
+      },
+      {
+        "id": "stream-log-1-2",
+        "fixture": "stream-log",
+        "split": "development",
+        "repetition": 1,
+        "arm": 2
+      },
+      {
+        "id": "stream-log-1-3",
+        "fixture": "stream-log",
+        "split": "development",
+        "repetition": 1,
+        "arm": 3
+      },
+      {
+        "id": "stream-log-1-4",
+        "fixture": "stream-log",
+        "split": "development",
+        "repetition": 1,
+        "arm": 4
+      },
+      {
+        "id": "stream-log-2-0",
+        "fixture": "stream-log",
+        "split": "development",
+        "repetition": 2,
+        "arm": 4
+      },
+      {
+        "id": "stream-log-2-1",
+        "fixture": "stream-log",
+        "split": "development",
+        "repetition": 2,
+        "arm": 3
+      },
+      {
+        "id": "stream-log-2-2",
+        "fixture": "stream-log",
+        "split": "development",
+        "repetition": 2,
+        "arm": 2
+      },
+      {
+        "id": "stream-log-2-3",
+        "fixture": "stream-log",
+        "split": "development",
+        "repetition": 2,
+        "arm": 1
+      },
+      {
+        "id": "stream-log-2-4",
+        "fixture": "stream-log",
+        "split": "development",
+        "repetition": 2,
+        "arm": 0
+      },
+      {
+        "id": "output-retry-1-0",
+        "fixture": "output-retry",
+        "split": "development",
+        "repetition": 1,
+        "arm": 0
+      },
+      {
+        "id": "output-retry-1-1",
+        "fixture": "output-retry",
+        "split": "development",
+        "repetition": 1,
+        "arm": 1
+      },
+      {
+        "id": "output-retry-1-2",
+        "fixture": "output-retry",
+        "split": "development",
+        "repetition": 1,
+        "arm": 2
+      },
+      {
+        "id": "output-retry-1-3",
+        "fixture": "output-retry",
+        "split": "development",
+        "repetition": 1,
+        "arm": 3
+      },
+      {
+        "id": "output-retry-1-4",
+        "fixture": "output-retry",
+        "split": "development",
+        "repetition": 1,
+        "arm": 4
+      },
+      {
+        "id": "output-retry-2-0",
+        "fixture": "output-retry",
+        "split": "development",
+        "repetition": 2,
+        "arm": 4
+      },
+      {
+        "id": "output-retry-2-1",
+        "fixture": "output-retry",
+        "split": "development",
+        "repetition": 2,
+        "arm": 3
+      },
+      {
+        "id": "output-retry-2-2",
+        "fixture": "output-retry",
+        "split": "development",
+        "repetition": 2,
+        "arm": 2
+      },
+      {
+        "id": "output-retry-2-3",
+        "fixture": "output-retry",
+        "split": "development",
+        "repetition": 2,
+        "arm": 1
+      },
+      {
+        "id": "output-retry-2-4",
+        "fixture": "output-retry",
+        "split": "development",
+        "repetition": 2,
+        "arm": 0
+      },
+      {
+        "id": "merge-to-head-1-0",
+        "fixture": "merge-to-head",
+        "split": "held-out",
+        "repetition": 1,
+        "arm": 0
+      },
+      {
+        "id": "merge-to-head-1-1",
+        "fixture": "merge-to-head",
+        "split": "held-out",
+        "repetition": 1,
+        "arm": 1
+      },
+      {
+        "id": "merge-to-head-1-2",
+        "fixture": "merge-to-head",
+        "split": "held-out",
+        "repetition": 1,
+        "arm": 2
+      },
+      {
+        "id": "merge-to-head-1-3",
+        "fixture": "merge-to-head",
+        "split": "held-out",
+        "repetition": 1,
+        "arm": 3
+      },
+      {
+        "id": "merge-to-head-1-4",
+        "fixture": "merge-to-head",
+        "split": "held-out",
+        "repetition": 1,
+        "arm": 4
+      },
+      {
+        "id": "merge-to-head-2-0",
+        "fixture": "merge-to-head",
+        "split": "held-out",
+        "repetition": 2,
+        "arm": 4
+      },
+      {
+        "id": "merge-to-head-2-1",
+        "fixture": "merge-to-head",
+        "split": "held-out",
+        "repetition": 2,
+        "arm": 3
+      },
+      {
+        "id": "merge-to-head-2-2",
+        "fixture": "merge-to-head",
+        "split": "held-out",
+        "repetition": 2,
+        "arm": 2
+      },
+      {
+        "id": "merge-to-head-2-3",
+        "fixture": "merge-to-head",
+        "split": "held-out",
+        "repetition": 2,
+        "arm": 1
+      },
+      {
+        "id": "merge-to-head-2-4",
+        "fixture": "merge-to-head",
+        "split": "held-out",
+        "repetition": 2,
+        "arm": 0
+      },
+      {
+        "id": "sandbox-handle-1-0",
+        "fixture": "sandbox-handle",
+        "split": "held-out",
+        "repetition": 1,
+        "arm": 0
+      },
+      {
+        "id": "sandbox-handle-1-1",
+        "fixture": "sandbox-handle",
+        "split": "held-out",
+        "repetition": 1,
+        "arm": 1
+      },
+      {
+        "id": "sandbox-handle-1-2",
+        "fixture": "sandbox-handle",
+        "split": "held-out",
+        "repetition": 1,
+        "arm": 2
+      },
+      {
+        "id": "sandbox-handle-1-3",
+        "fixture": "sandbox-handle",
+        "split": "held-out",
+        "repetition": 1,
+        "arm": 3
+      },
+      {
+        "id": "sandbox-handle-1-4",
+        "fixture": "sandbox-handle",
+        "split": "held-out",
+        "repetition": 1,
+        "arm": 4
+      },
+      {
+        "id": "sandbox-handle-2-0",
+        "fixture": "sandbox-handle",
+        "split": "held-out",
+        "repetition": 2,
+        "arm": 4
+      },
+      {
+        "id": "sandbox-handle-2-1",
+        "fixture": "sandbox-handle",
+        "split": "held-out",
+        "repetition": 2,
+        "arm": 3
+      },
+      {
+        "id": "sandbox-handle-2-2",
+        "fixture": "sandbox-handle",
+        "split": "held-out",
+        "repetition": 2,
+        "arm": 2
+      },
+      {
+        "id": "sandbox-handle-2-3",
+        "fixture": "sandbox-handle",
+        "split": "held-out",
+        "repetition": 2,
+        "arm": 1
+      },
+      {
+        "id": "sandbox-handle-2-4",
+        "fixture": "sandbox-handle",
+        "split": "held-out",
+        "repetition": 2,
+        "arm": 0
+      }
+    ],
+    "workerCliVersion": "codex-cli 0.156.1",
+    "workerImageDigest": "sha256:fd16475df746edadc2ed06e5ae06b338f7169fb9be79f3ce0b9defcc91b93c4e",
+    "workerConfigHash": "37b9ddd9881ce80c63c33ab9684f42c75e00d547149578e325c625970d8a9ec4",
+    "workerAgentsHash": "77da3224e5e8b27700815ba7412d06fe276c8bd88c283f9267b5e560813b2fa0",
+    "observerHash": "68788003ec61400960e25ac047de5d89bbf6d7546738636828c5df8871ef0de6",
+    "workerDockerfileHash": "1ab6a75f0f9e22455e63007285c429310da6ab9c3ab1016de26b3af0ace8d2a8",
+    "runtimeIdentity": "ef9662b9edfec0e301347ceb5368497c1077b9def504f6ac9be44adc8bc633fc",
+    "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+    "quietAccountWindow": "One sequential worker evaluation at a time; other account activity cannot be excluded by this host",
+    "fixturePromptHashes": {
+      "stream-log": "fe25dce3d70e5cf3b2385010066725678f78ca4d7e341694d5663695243d8aa0",
+      "output-retry": "d258d0ceb9d89000ab432b06b0a4451798bf292e106491b4fc3615000337401c",
+      "merge-to-head": "68c7590e69ca9c73a0ce904aeb219dc6dc3f389e2f9d209490137068a95ce9e9",
+      "sandbox-handle": "513b9f519723dde1efbf13d9c8a731051c4eb23c4483c02bfd6a4d65f48b7613"
+    },
+    "toolVersions": {
+      "hostNode": "v24.19.0",
+      "workerNode": "v24.19.0",
+      "hostPnpm": "11.19.0",
+      "workerPnpm": "11.19.0",
+      "hostGit": "git version 2.55.0"
+    },
+    "cachePolicy": "Shared host pnpm download cache; fresh worktree, dependencies and Codex session per evaluation",
+    "dependencyPolicy": "Import each frozen historical package lock with pnpm, install from the derived lock with hoisting and scripts disabled, then remove derived metadata from the answer-free tree",
+    "nonImplementationRoleConfigurations": {
+      "standards-review-preview": {
+        "model": "gpt-6-sol",
+        "effort": "high",
+        "serviceTier": "default",
+        "calls": 1
+      },
+      "specification-review-preview": {
+        "model": "gpt-6-sol",
+        "effort": "high",
+        "serviceTier": "default",
+        "calls": 1
+      },
+      "standards-review": {
+        "model": "gpt-6-sol",
+        "effort": "high",
+        "serviceTier": "default",
+        "calls": 1
+      },
+      "specification-review": {
+        "model": "gpt-6-sol",
+        "effort": "high",
+        "serviceTier": "default",
+        "calls": 1
+      }
+    },
+    "implementationReworkConfiguration": {
+      "model": "same as selected arm",
+      "effort": "same as selected arm",
+      "serviceTier": "default",
+      "calls": 1,
+      "rule": "only after protected or required-preview-review failure"
+    },
+    "projectGateHashes": {
+      "stream-log": "e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1",
+      "output-retry": "e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1",
+      "merge-to-head": "e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1",
+      "sandbox-handle": "e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1"
+    },
+    "protectedGraderHashes": {
+      "runner": "e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1",
+      "stream-log": "b63cc021e62f21007ade72a42267ef74c9b998eb26bf1e43c555a0de6fad33b7",
+      "output-retry": "ab1f475ba3890b803825d3c7d13fbd95b79ae3e93bfb7ac05789bd97be16d333",
+      "merge-to-head": "0f1326e93504a642681e919db710e0d6cbf21b6cb25000ea8fab37a4f0ec9be4",
+      "sandbox-handle": "bbb5c9ea19696541f4f9f65db5afa16dac2e5f6a79228f6e9cff04d7afab768f"
+    },
+    "hostEntrySha256": "a3908adb93f539ca2a7a4a37a1936137fec887e990117e7cf4a49bc0ae71f177",
+    "accountReadingResolution": {
+      "primary": 1
+    },
+    "accountWindowDurationMs": {
+      "primary": 604800000
+    },
+    "reservations": {
+      "activeMs": 43200000,
+      "conservativeWallClockMs": 43200000,
+      "measurementMs": 900000,
+      "measurementCalls": 6,
+      "evaluationMs": 1800000,
+      "invocationMs": 900000,
+      "evaluations": 40,
+      "roles": [
+        "standards-review-preview",
+        "specification-review-preview",
+        "implementation-rework",
+        "standards-review",
+        "specification-review"
+      ]
+    },
+    "creditRates": {
+      "gpt-6-astra": {
+        "input": 250,
+        "cachedInput": 25,
+        "output": 1250
+      },
+      "gpt-6-sol": {
+        "input": 50,
+        "cachedInput": 5,
+        "output": 250
+      },
+      "gpt-6-luna": {
+        "input": 2.5,
+        "cachedInput": 0.25,
+        "output": 12.5
+      }
+    },
+    "creditRateSource": "https://learn.chatgpt.com/docs/pricing",
+    "accountRiseLimitPercentPoints": 20
+  },
+  "manifestStatus": "matched",
+  "ledgerHash": "24d08a3a78d711a90eda3e1497b39a686bf84e603b30965bb84e3db92ba05663",
+  "rows": [
+    {
+      "slotId": "stream-log-1-0",
+      "split": "development",
+      "configuration": "gpt-6-luna:max",
+      "fixture": "stream-log",
+      "repetition": 1,
+      "status": "incomplete",
+      "technicalPassed": null,
+      "projectAccepted": false,
+      "firstIterationSuccess": false,
+      "reviewPassed": false,
+      "falseAcceptance": false,
+      "taskStatus": "paused",
+      "reason": "Error: Workflow checkpoint stop requested",
+      "activeMs": 691597,
+      "humanWaitingMs": null,
+      "tokenCoverage": "Incomplete: stream-log/implementation-rework/4",
+      "verifiedTokens": null,
+      "standardCredits": null,
+      "window": "primary",
+      "lower": null,
+      "upper": null,
+      "beforeUsedPercent": null,
+      "afterUsedPercent": null,
+      "resetsAt": null,
+      "costStatus": "Unknown or incomparable"
+    }
+  ]
+}
