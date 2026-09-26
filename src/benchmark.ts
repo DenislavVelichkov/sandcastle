@@ -84,11 +84,17 @@ export interface BenchmarkSlot {
 }
 
 export interface FixedBenchmarkPlan {
+  /** Discriminator for the explicit-arm study. */
   readonly kind: "fixed";
+  /** Requested implementation arms in frozen launch order. */
   readonly arms: readonly { readonly model: string; readonly effort: string }[];
+  /** Index of the explicit Sol High reference arm. */
   readonly reference: number;
+  /** Sequential development and held-out evaluation order. */
   readonly slots: readonly BenchmarkSlot[];
+  /** Shared active-time ceiling. */
   readonly overallLimitMs: number;
+  /** Allowed account-window rise from the guard baseline. */
   readonly accountRiseLimitPercentPoints: number;
   /** Standard Codex credits per million tokens, frozen with this protocol. */
   readonly rates: Readonly<
@@ -101,6 +107,7 @@ export interface FixedBenchmarkPlan {
       }
     >
   >;
+  /** Published source of the frozen Standard rates. */
   readonly rateSource: string;
 }
 
@@ -198,11 +205,14 @@ export interface BenchmarkLedger {
   readonly version: 1;
   readonly protocolHash: string;
   readonly policyId: string;
+  /** Fixed-study design; absent on the original adaptive ledger. */
   readonly plan?: FixedBenchmarkPlan;
+  /** Development-only selection frozen before held-out work. */
   readonly fixedSelection?: {
     readonly arm: number | null;
     readonly reason: string;
   };
+  /** Recorded held-out decision for the fixed study. */
   readonly fixedDisposition?: "qualified" | "retain-fixed";
   readonly hostConditionsHash?: string;
   readonly accountResolution?: Readonly<Record<string, number>>;
@@ -223,11 +233,13 @@ export interface BenchmarkLedger {
 
 const hash = (value: unknown): string =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
+/** Standard credit rates per million tokens frozen by the fixed protocol. */
 export const standardCreditRates = {
   "gpt-6-astra": { input: 250, cachedInput: 25, output: 1250 },
   "gpt-6-sol": { input: 50, cachedInput: 5, output: 250 },
   "gpt-6-luna": { input: 2.5, cachedInput: 0.25, output: 12.5 },
 } as const;
+/** Validate explicit arms and create the counterbalanced fixed schedule. */
 export const makeFixedBenchmarkPlan = (
   arms: readonly { readonly model: string; readonly effort: string }[],
 ): FixedBenchmarkPlan => {
@@ -279,6 +291,7 @@ export const makeFixedBenchmarkPlan = (
     rateSource: "https://learn.chatgpt.com/docs/pricing",
   };
 };
+/** Bind historical cases, schedule, arms and rates to one protocol identity. */
 export const fixedBenchmarkProtocolHash = (plan: FixedBenchmarkPlan): string =>
   hash({ benchmarkFixtures, plan });
 export const benchmarkProtocolHash = hash({
@@ -286,6 +299,7 @@ export const benchmarkProtocolHash = hash({
   benchmarkSlots,
   pilotConfigurations,
 });
+/** Create or verify a host-only fixed ledger before any model call. */
 export const initializeFixedBenchmark = async (
   directory: string,
   policyId: string,
@@ -1241,9 +1255,16 @@ export const fixedBenchmarkCredits = (
   for (const invocation of Object.values(tokens.invocations)) {
     if (!invocation.coverageComplete || !invocation.counterIds.length)
       return null;
-    const model = invocation.role.startsWith("implementation")
-      ? plan.arms[slot.arm]?.model
-      : "gpt-6-sol";
+    if (
+      !["implementation", "standards-review", "specification-review"].includes(
+        invocation.role,
+      )
+    )
+      return null;
+    const model =
+      invocation.role === "implementation"
+        ? plan.arms[slot.arm]?.model
+        : "gpt-6-sol";
     if (!model || !plan.rates[model]) return null;
     for (const id of invocation.counterIds) {
       const prior = counterModels.get(id);

@@ -190,6 +190,24 @@ it("freezes five explicit arms, prices all role calls and validates a fixed chal
     expect(fixedBenchmarkCredits(priced, development[0]!)).toBe(12.5);
     expect(fixedBenchmarkCredits(priced, development[4]!)).toBe(60);
     expect(
+      fixedBenchmarkCredits(priced, {
+        ...development[0]!,
+        usage: {
+          ...development[0]!.usage!,
+          tokens: {
+            ...development[0]!.usage!.tokens,
+            invocations: {
+              unknown: {
+                role: "unpriced-role",
+                coverageComplete: true,
+                counterIds: ["implementation"],
+              },
+            },
+          },
+        } as unknown as BenchmarkEvaluation["usage"],
+      }),
+    ).toBeNull();
+    expect(
       await freezeFixedBenchmarkSelection(directory, "fixed-study"),
     ).toMatchObject({
       arm: 0,
