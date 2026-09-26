@@ -1,10 +1,10 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  lstat,
   mkdtemp,
   readFile,
   rm,
-  stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -57,10 +57,16 @@ const run = (cmd, args, cwd) => {
 export async function prepareHistoricalDependencies(candidate) {
   const lock = join(candidate, "pnpm-lock.yaml");
   const workspace = join(candidate, "pnpm-workspace.yaml");
-  if (
-    (await stat(lock).catch(() => null)) ||
-    (await stat(workspace).catch(() => null))
-  )
+  const exists = async (path) => {
+    try {
+      await lstat(path);
+      return true;
+    } catch (error) {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    }
+  };
+  if ((await exists(lock)) || (await exists(workspace)))
     return {
       passed: false,
       output: "Candidate already contains pnpm metadata",
