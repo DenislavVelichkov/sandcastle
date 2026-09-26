@@ -261,7 +261,7 @@ export const exportFixtureTree = async (
     git(path, "init", "-b", "main");
     git(path, "config", "user.name", "Sandcastle fixture");
     git(path, "config", "user.email", "fixture@example.invalid");
-    git(path, "add", ".");
+    git(path, "add", "-f", "-A");
     git(path, "commit", "-m", "Answer-free benchmark base");
   };
   makeBase(input.directory);

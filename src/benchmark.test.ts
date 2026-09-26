@@ -111,8 +111,12 @@ it("exports a synthetic base without correction history and preflights both stat
   git(source, "init", "-b", "main");
   git(source, "config", "user.name", "Test");
   git(source, "config", "user.email", "test@example.com");
+  await mkdir(join(source, ".sandcastle"));
+  await writeFile(join(source, ".gitignore"), ".env.*\n");
+  await writeFile(join(source, ".sandcastle/.env.example"), "EXAMPLE=1\n");
   await writeFile(join(source, "result.txt"), "bug\n");
   git(source, "add", ".");
+  git(source, "add", "-f", ".sandcastle/.env.example");
   git(source, "commit", "-m", "base");
   const base = git(source, "rev-parse", "HEAD");
   await writeFile(join(source, "result.txt"), "fixed\n");
@@ -145,6 +149,9 @@ it("exports a synthetic base without correction history and preflights both stat
     expect(receipt.tree).toBe(git(source, "rev-parse", `${base}^{tree}`));
     expect(git(exported, "rev-list", "--count", "HEAD")).toBe("1");
     expect(await readFile(join(exported, "result.txt"), "utf8")).toBe("bug\n");
+    expect(
+      await readFile(join(exported, ".sandcastle/.env.example"), "utf8"),
+    ).toBe("EXAMPLE=1\n");
     expect(git(exported, "status", "--porcelain")).toBe("");
     await expect(
       exportFixtureTree(
