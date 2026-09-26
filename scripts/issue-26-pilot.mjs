@@ -809,7 +809,7 @@ try {
     startObserver();
     console.log(JSON.stringify(await runNext()));
   } else if (mode === "report") {
-    await frozenManifest();
+    await json(join(owner, "manifest.json"));
     const ledgerPath = join(pilot, "benchmark.json");
     const ledger = await pkg.readBenchmark(pilot, policyId);
     try {
@@ -817,20 +817,38 @@ try {
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
     }
-    console.log(
-      command("node", [
-        join(installed, "dist/main.js"),
-        "benchmark-report",
-        "--directory",
-        pilot,
-        "--policy-id",
+    try {
+      console.log(
+        command("node", [
+          join(installed, "dist/main.js"),
+          "benchmark-report",
+          "--directory",
+          pilot,
+          "--policy-id",
+          policyId,
+          "--manifest",
+          join(owner, "manifest.json"),
+          "--output",
+          join(owner, "report"),
+        ]),
+      );
+    } catch (error) {
+      const budget = await json(join(pilot, "budget.json"));
+      if (!budget.activeInvocationId) throw error;
+      const result = await pkg.writeBenchmarkReport({
+        directory: pilot,
         policyId,
-        "--manifest",
-        join(owner, "manifest.json"),
-        "--output",
-        join(owner, "report"),
-      ]),
-    );
+        outputDirectory: join(owner, "report"),
+        manifestPath: join(owner, "manifest.json"),
+      });
+      console.log(
+        JSON.stringify({
+          ...result,
+          metered: false,
+          reason: "Unfinished pilot invocation blocks the report reservation",
+        }),
+      );
+    }
   } else
     throw new Error(
       "Use status, self-check, freeze-manifest, calibrate, preflight, run-one or report",
