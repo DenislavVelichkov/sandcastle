@@ -1,0 +1,594 @@
+{
+  "schemaVersion": 1,
+  "protocolHash": "3110986805262f2cedf1f66990421d6a2adb2e7ad2b6493718f9f260e1887239",
+  "installedPackage": {
+    "name": "@ai-hero/sandcastle",
+    "version": "0.12.0-dv8.22.0",
+    "sourceCommit": "b56bd6c26039e99946f0bafaaee1b334b4c11f5d"
+  },
+  "sourceCommit": "b56bd6c26039e99946f0bafaaee1b334b4c11f5d",
+  "historicalCases": [
+    {
+      "id": "stream-log",
+      "split": "development",
+      "kind": "regression",
+      "base": "c505d4964ce6806211259e8bff9ad1d8c319a9ef",
+      "reference": "badf657b5dc81a71c141d8cd736a67804c6a86ff"
+    },
+    {
+      "id": "output-retry",
+      "split": "development",
+      "kind": "feature",
+      "base": "2867118a575faa697b000be87d429900804786cf",
+      "reference": "9f3f6d5c5f2527d5e1d8349f80eec2d36e797540"
+    },
+    {
+      "id": "merge-to-head",
+      "split": "held-out",
+      "kind": "regression",
+      "base": "2867118a575faa697b000be87d429900804786cf",
+      "reference": "f7879c5ca6853c6afa79cb836d918de8de64db03"
+    },
+    {
+      "id": "sandbox-handle",
+      "split": "held-out",
+      "kind": "feature",
+      "base": "f1aa0809d097db0d5c674e13c9ac3374ba2a629b",
+      "reference": "0f577a42fdbfe49111b8e00694399ee0c9ddd559"
+    }
+  ],
+  "configurations": [
+    {
+      "model": "gpt-6-luna",
+      "effort": "max",
+      "serviceTier": "default"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "serviceTier": "default"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "serviceTier": "default"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "max",
+      "serviceTier": "default"
+    },
+    {
+      "model": "gpt-6-sol",
+      "effort": "medium",
+      "serviceTier": "default"
+    },
+    {
+      "model": "gpt-6-sol",
+      "effort": "high",
+      "serviceTier": "default"
+    },
+    {
+      "model": "gpt-6-sol",
+      "effort": "xhigh",
+      "serviceTier": "default"
+    }
+  ],
+  "slotOrder": [
+    {
+      "id": "stream-log-1-0",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 0
+    },
+    {
+      "id": "stream-log-1-1",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 1
+    },
+    {
+      "id": "stream-log-1-2",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 2
+    },
+    {
+      "id": "stream-log-1-3",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 3
+    },
+    {
+      "id": "stream-log-1-4",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 4
+    },
+    {
+      "id": "stream-log-1-5",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 5
+    },
+    {
+      "id": "stream-log-1-6",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": 6
+    },
+    {
+      "id": "stream-log-2-0",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 6
+    },
+    {
+      "id": "stream-log-2-1",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 5
+    },
+    {
+      "id": "stream-log-2-2",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 4
+    },
+    {
+      "id": "stream-log-2-3",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 3
+    },
+    {
+      "id": "stream-log-2-4",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 2
+    },
+    {
+      "id": "stream-log-2-5",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 1
+    },
+    {
+      "id": "stream-log-2-6",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": 0
+    },
+    {
+      "id": "output-retry-1-0",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 0
+    },
+    {
+      "id": "output-retry-1-1",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 1
+    },
+    {
+      "id": "output-retry-1-2",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 2
+    },
+    {
+      "id": "output-retry-1-3",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 3
+    },
+    {
+      "id": "output-retry-1-4",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 4
+    },
+    {
+      "id": "output-retry-1-5",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 5
+    },
+    {
+      "id": "output-retry-1-6",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": 6
+    },
+    {
+      "id": "output-retry-2-0",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 6
+    },
+    {
+      "id": "output-retry-2-1",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 5
+    },
+    {
+      "id": "output-retry-2-2",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 4
+    },
+    {
+      "id": "output-retry-2-3",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 3
+    },
+    {
+      "id": "output-retry-2-4",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 2
+    },
+    {
+      "id": "output-retry-2-5",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 1
+    },
+    {
+      "id": "output-retry-2-6",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": 0
+    },
+    {
+      "id": "merge-to-head-1-0",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 0
+    },
+    {
+      "id": "merge-to-head-1-1",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 1
+    },
+    {
+      "id": "merge-to-head-1-2",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 2
+    },
+    {
+      "id": "merge-to-head-1-3",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 3
+    },
+    {
+      "id": "merge-to-head-1-4",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 4
+    },
+    {
+      "id": "merge-to-head-1-5",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 5
+    },
+    {
+      "id": "merge-to-head-1-6",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 6
+    },
+    {
+      "id": "merge-to-head-2-0",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 6
+    },
+    {
+      "id": "merge-to-head-2-1",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 5
+    },
+    {
+      "id": "merge-to-head-2-2",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 4
+    },
+    {
+      "id": "merge-to-head-2-3",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 3
+    },
+    {
+      "id": "merge-to-head-2-4",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 2
+    },
+    {
+      "id": "merge-to-head-2-5",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 1
+    },
+    {
+      "id": "merge-to-head-2-6",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 0
+    },
+    {
+      "id": "sandbox-handle-1-0",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 0
+    },
+    {
+      "id": "sandbox-handle-1-1",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 1
+    },
+    {
+      "id": "sandbox-handle-1-2",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 2
+    },
+    {
+      "id": "sandbox-handle-1-3",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 3
+    },
+    {
+      "id": "sandbox-handle-1-4",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 4
+    },
+    {
+      "id": "sandbox-handle-1-5",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 5
+    },
+    {
+      "id": "sandbox-handle-1-6",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": 6
+    },
+    {
+      "id": "sandbox-handle-2-0",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 6
+    },
+    {
+      "id": "sandbox-handle-2-1",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 5
+    },
+    {
+      "id": "sandbox-handle-2-2",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 4
+    },
+    {
+      "id": "sandbox-handle-2-3",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 3
+    },
+    {
+      "id": "sandbox-handle-2-4",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 2
+    },
+    {
+      "id": "sandbox-handle-2-5",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 1
+    },
+    {
+      "id": "sandbox-handle-2-6",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": 0
+    },
+    {
+      "id": "stream-log-1-adaptive",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 1,
+      "arm": "adaptive"
+    },
+    {
+      "id": "stream-log-2-adaptive",
+      "fixture": "stream-log",
+      "split": "development",
+      "repetition": 2,
+      "arm": "adaptive"
+    },
+    {
+      "id": "output-retry-1-adaptive",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 1,
+      "arm": "adaptive"
+    },
+    {
+      "id": "output-retry-2-adaptive",
+      "fixture": "output-retry",
+      "split": "development",
+      "repetition": 2,
+      "arm": "adaptive"
+    },
+    {
+      "id": "merge-to-head-1-adaptive",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": "adaptive"
+    },
+    {
+      "id": "merge-to-head-2-adaptive",
+      "fixture": "merge-to-head",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": "adaptive"
+    },
+    {
+      "id": "sandbox-handle-1-adaptive",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 1,
+      "arm": "adaptive"
+    },
+    {
+      "id": "sandbox-handle-2-adaptive",
+      "fixture": "sandbox-handle",
+      "split": "held-out",
+      "repetition": 2,
+      "arm": "adaptive"
+    }
+  ],
+  "workerCliVersion": "codex-cli 0.156.1",
+  "workerImageDigest": "sha256:6669402f260401868ab26a8a17c2d591747111f9ed582ca0326ad992a1b8835d",
+  "workerConfigHash": "080717470aa17319c143ee791709bb5f293b2e7e6c88c4dcaaa58b9a7ed89607",
+  "workerAgentsHash": "9714b291cc026b381cbeb5b4ab7d9c836faba2741aff85b47c906aa79b484eff",
+  "observerHash": "68788003ec61400960e25ac047de5d89bbf6d7546738636828c5df8871ef0de6",
+  "runtimeIdentity": "442959921ed25d01b350f7838b670d8c6527527ebe15591ad1b14676d5df3c79",
+  "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+  "quietAccountWindow": "One sequential worker evaluation at a time; other account activity cannot be excluded by this host",
+  "fixturePromptHashes": {
+    "stream-log": "3bdd7bc5fcc8537ce3e952c9aa35b5e88c04c7ca4043759925c18b81b7703097",
+    "output-retry": "09715b13b1997d2238fefe3d1d3d601ff0c116acc9d832e27eb8a72a1bd44c43",
+    "merge-to-head": "a7e566504ed720a632ea17448c8c531988ec6f1f0999363f665ff4fb9296d024",
+    "sandbox-handle": "dd2a3207a3c2c7dcc6f4ace31745dd31ee9afceae766c102d7444beef27b3ce7"
+  },
+  "toolVersions": {
+    "hostNode": "v24.19.0",
+    "workerNode": "v24.19.0",
+    "workerNpm": "11.17.0",
+    "hostGit": "git version 2.55.0"
+  },
+  "cachePolicy": "Shared npm download cache; fresh worktree, dependencies and Codex session per evaluation",
+  "nonImplementationRoleConfigurations": {
+    "standards-review": {
+      "model": "gpt-6-sol",
+      "effort": "high",
+      "serviceTier": "default",
+      "calls": 1
+    },
+    "specification-review": {
+      "model": "gpt-6-sol",
+      "effort": "high",
+      "serviceTier": "default",
+      "calls": 1
+    }
+  },
+  "projectGateHashes": {
+    "stream-log": "afee0a100cc300593c2fe302d62667166182287cbec49b679ec7d43e674cbfb5",
+    "output-retry": "afee0a100cc300593c2fe302d62667166182287cbec49b679ec7d43e674cbfb5",
+    "merge-to-head": "afee0a100cc300593c2fe302d62667166182287cbec49b679ec7d43e674cbfb5",
+    "sandbox-handle": "afee0a100cc300593c2fe302d62667166182287cbec49b679ec7d43e674cbfb5"
+  },
+  "protectedGraderHashes": {
+    "runner": "afee0a100cc300593c2fe302d62667166182287cbec49b679ec7d43e674cbfb5",
+    "stream-log": "b63cc021e62f21007ade72a42267ef74c9b998eb26bf1e43c555a0de6fad33b7",
+    "output-retry": "ab1f475ba3890b803825d3c7d13fbd95b79ae3e93bfb7ac05789bd97be16d333",
+    "merge-to-head": "0f1326e93504a642681e919db710e0d6cbf21b6cb25000ea8fab37a4f0ec9be4",
+    "sandbox-handle": "bbb5c9ea19696541f4f9f65db5afa16dac2e5f6a79228f6e9cff04d7afab768f"
+  },
+  "hostEntrySha256": "96e7ba454f6d395e8475d8f2b864e55e893c94f336d8b2852ad8c853d17af8b7",
+  "accountReadingResolution": {
+    "primary": 1
+  },
+  "accountWindowDurationMs": {
+    "primary": 604800000
+  },
+  "reservations": {
+    "activeMs": 14400000,
+    "measurementMs": 900000,
+    "measurementCalls": 6,
+    "evaluationMs": 1800000,
+    "invocationMs": 900000,
+    "evaluations": 64,
+    "roles": [
+      "standards-review",
+      "specification-review"
+    ]
+  }
+}
