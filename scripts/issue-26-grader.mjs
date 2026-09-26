@@ -1,6 +1,13 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -40,9 +47,42 @@ const run = (cmd, args, cwd) => {
   });
   return {
     passed: result.status === 0,
-    output: `${result.stdout ?? ""}${result.stderr ?? ""}`.slice(-4000),
+    output:
+      `${result.error?.message ?? ""}${result.stdout ?? ""}${result.stderr ?? ""}`.slice(
+        -4000,
+      ),
   };
 };
+
+export async function prepareHistoricalDependencies(candidate) {
+  const lock = join(candidate, "pnpm-lock.yaml");
+  const workspace = join(candidate, "pnpm-workspace.yaml");
+  if (
+    (await stat(lock).catch(() => null)) ||
+    (await stat(workspace).catch(() => null))
+  )
+    return {
+      passed: false,
+      output: "Candidate already contains pnpm metadata",
+    };
+  try {
+    const imported = run("pnpm", ["import"], candidate);
+    if (!imported.passed) return imported;
+    return run(
+      "pnpm",
+      [
+        "install",
+        "--frozen-lockfile",
+        "--shamefully-hoist",
+        "--ignore-scripts",
+      ],
+      candidate,
+    );
+  } finally {
+    await rm(lock, { force: true });
+    await rm(workspace, { force: true });
+  }
+}
 
 export async function gradeHistoricalCase(source, fixtureId, candidate) {
   const selected = cases[fixtureId];
@@ -89,7 +129,7 @@ export async function gradeHistoricalCase(source, fixtureId, candidate) {
         input: pending,
       });
     await writeFile(join(shadow, selected.test), reference);
-    const install = run("npm", ["ci", "--ignore-scripts"], candidate);
+    const install = await prepareHistoricalDependencies(candidate);
     if (!install.passed)
       return {
         focusPassed: false,
@@ -103,16 +143,36 @@ export async function gradeHistoricalCase(source, fixtureId, candidate) {
       "dir",
     );
     const focus = run(
-      "npm",
-      ["test", "--", selected.test, "-t", selected.focus],
+      "pnpm",
+      [
+        "--config.verify-deps-before-run=false",
+        "exec",
+        "vitest",
+        "run",
+        selected.test,
+        "-t",
+        selected.focus,
+      ],
       shadow,
     );
-    const typecheck = run("npm", ["run", "typecheck"], candidate);
+    const typecheck = run(
+      "pnpm",
+      ["--config.verify-deps-before-run=false", "run", "typecheck"],
+      candidate,
+    );
     const build = typecheck.passed
-      ? run("npm", ["run", "build"], candidate)
+      ? run(
+          "pnpm",
+          ["--config.verify-deps-before-run=false", "run", "build"],
+          candidate,
+        )
       : { passed: false, output: "Typecheck failed" };
     const ordinary = build.passed
-      ? run("npm", ["test"], candidate)
+      ? run(
+          "pnpm",
+          ["--config.verify-deps-before-run=false", "test"],
+          candidate,
+        )
       : { passed: false, output: "Build failed" };
     const evidence = {
       fixtureId,
