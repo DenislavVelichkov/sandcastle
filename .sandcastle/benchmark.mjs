@@ -14,7 +14,7 @@ import { pathToFileURL } from "node:url";
 import {
   gradeHistoricalCase,
   prepareHistoricalDependencies,
-} from "./issue-26-grader.mjs";
+} from "../scripts/issue-26-grader.mjs";
 
 const source = resolve(import.meta.dirname, "..");
 const owner = resolve(source, "../sandcastle-issue31-run-v1");
