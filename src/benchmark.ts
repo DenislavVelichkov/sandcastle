@@ -181,10 +181,21 @@ export interface BenchmarkPreflight {
   readonly evidence: readonly string[];
 }
 export interface BenchmarkProbe {
-  readonly status: "passed" | "implementation-failure" | "environment-failure";
+  readonly status:
+    | "passed"
+    | "implementation-failure"
+    | "review-failure"
+    | "environment-failure";
   readonly reason: string;
   readonly evidence: readonly string[];
 }
+const fixedRequiredRoles = [
+  "standards-review-preview",
+  "specification-review-preview",
+  "implementation-rework",
+  "standards-review",
+  "specification-review",
+] as const;
 export interface BenchmarkPair {
   readonly start: number;
   readonly fallback: number;
@@ -693,6 +704,11 @@ export const runBenchmarkEvaluation = async (input: {
     readonly head: string;
     readonly grader: string;
   }) => Promise<BenchmarkProbe>;
+  /** Independent required-review findings for the first candidate. */
+  reviewProbe?: (candidate: {
+    readonly worktree: string;
+    readonly head: string;
+  }) => Promise<BenchmarkProbe>;
   /** Host-verified effective worker configuration; per-response identity may remain unknown. */
   effective: {
     readonly model: string;
@@ -817,18 +833,26 @@ export const runBenchmarkEvaluation = async (input: {
       throw new Error("Selected benchmark task changed");
     if (
       ledger.plan &&
-      (hash(task.requiredRoles) !==
-        hash(["standards-review", "specification-review"]) ||
+      (hash(task.requiredRoles) !== hash(fixedRequiredRoles) ||
+        !input.reviewProbe ||
+        options.policy.roles["implementation-rework"]?.sandbox !==
+          options.policy.roles.implementation?.sandbox ||
         task.requiredRoles.some((role) => {
           const config = options.policy.roles[role]?.agent.codexConfiguration;
+          const expectedRole =
+            role === "implementation-rework"
+              ? arms[slot.arm as number]
+              : { model: "gpt-6-sol", effort: "high" };
           return (
-            config?.model !== "gpt-6-sol" ||
-            config.effort !== "high" ||
-            config.serviceTier !== "default"
+            config?.model !== expectedRole?.model ||
+            config?.effort !== expectedRole?.effort ||
+            config?.serviceTier !== "default"
           );
         }))
     )
-      throw new Error("Fixed benchmark reviews must use Sol High Standard");
+      throw new Error(
+        "Fixed benchmark rework and reviews differ from the frozen role plan",
+      );
     const prompts = await Promise.all(
       ["implementation", ...task.requiredRoles].map(async (role) => {
         const value = options.project.prompt(task, role);
@@ -985,11 +1009,169 @@ export const runBenchmarkEvaluation = async (input: {
         activeAssignment.agent.buildPrintCommand(command),
       parseStreamLine: (line) => activeAssignment.agent.parseStreamLine(line),
     };
+    const fixedActionPath = join(options.directory, "benchmark-action.json");
+    const emptyRoleResult = (): WorktreeRunResult => ({
+      iterations: [],
+      commits: [],
+      stdout: "",
+      branch: worktree.branch,
+    });
+    const fixedAction = async () => {
+      try {
+        return JSON.parse(await readFile(fixedActionPath, "utf8")) as {
+          slotId: string;
+          head: string;
+          model: string;
+          effort: string;
+          finding: BenchmarkProbe;
+          status: "pending" | "complete" | "terminal";
+          sessionId?: string;
+        };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw error;
+      }
+    };
     const wrappedWorktree = {
       ...worktree,
       run: async (
         runOptions: Parameters<typeof worktree.run>[0],
       ): Promise<WorktreeRunResult> => {
+        if (ledger.plan) {
+          if (runOptions.agent === selectedAgent) {
+            const first = await worktree.run({
+              ...runOptions,
+              maxIterations: 1,
+            });
+            const head = git(worktree.worktreePath, "rev-parse", "HEAD");
+            if (git(worktree.worktreePath, "status", "--porcelain"))
+              throw new Error("First implementation left uncommitted changes");
+            const finding = await input.probe({
+              worktree: worktree.worktreePath,
+              head,
+              grader: input.protectedGrader,
+            });
+            if (
+              git(worktree.worktreePath, "rev-parse", "HEAD") !== head ||
+              git(worktree.worktreePath, "status", "--porcelain")
+            )
+              throw new Error(
+                "Protected first-candidate check changed the worktree",
+              );
+            if (finding.status === "environment-failure")
+              throw new Error(finding.reason);
+            if (finding.status === "review-failure")
+              throw new Error("Protected check returned a review finding");
+            if (finding.status === "implementation-failure") {
+              if (!finding.reason || !finding.evidence.length)
+                throw new Error("Protected finding lacks actionable evidence");
+              await save(
+                options.directory,
+                {
+                  slotId: slot.id,
+                  head,
+                  model: expected.model,
+                  effort: expected.effort,
+                  finding,
+                  status: "pending",
+                  ...(first.iterations.at(-1)?.sessionId
+                    ? { sessionId: first.iterations.at(-1)!.sessionId }
+                    : {}),
+                },
+                "benchmark-action.json",
+              );
+            }
+            return first;
+          }
+          const role = fixedRequiredRoles.find(
+            (name) => options.policy.roles[name]?.agent === runOptions.agent,
+          );
+          if (!role) throw new Error("Unknown fixed benchmark role");
+          const action = await fixedAction();
+          if (
+            action &&
+            (action.slotId !== slot.id ||
+              action.model !== expected.model ||
+              action.effort !== expected.effort)
+          )
+            throw new Error("Recorded fixed rework action changed");
+          if (role.endsWith("-preview"))
+            return action ? emptyRoleResult() : worktree.run(runOptions);
+          if (role === "implementation-rework") {
+            let selected = action;
+            if (!selected) {
+              const head = git(worktree.worktreePath, "rev-parse", "HEAD");
+              const finding = await input.reviewProbe!({
+                worktree: worktree.worktreePath,
+                head,
+              });
+              if (
+                git(worktree.worktreePath, "rev-parse", "HEAD") !== head ||
+                git(worktree.worktreePath, "status", "--porcelain")
+              )
+                throw new Error("Required reviews changed the first candidate");
+              if (finding.status === "passed") return emptyRoleResult();
+              if (finding.status === "review-failure") {
+                await save(
+                  options.directory,
+                  {
+                    slotId: slot.id,
+                    head,
+                    model: expected.model,
+                    effort: expected.effort,
+                    finding,
+                    status: "terminal",
+                  },
+                  "benchmark-action.json",
+                );
+                return emptyRoleResult();
+              }
+              if (
+                finding.status !== "implementation-failure" ||
+                !finding.reason ||
+                !finding.evidence.length
+              )
+                throw new Error(
+                  `Required-review evidence is incomplete: ${finding.reason}`,
+                );
+              selected = {
+                slotId: slot.id,
+                head,
+                model: expected.model,
+                effort: expected.effort,
+                finding,
+                status: "pending",
+              };
+              await save(options.directory, selected, "benchmark-action.json");
+            }
+            if (selected.status === "complete") return emptyRoleResult();
+            const originalPrompt =
+              prompts.find(([name]) => name === "implementation")?.[1] ?? "";
+            const diagnostic = `Original task: ${originalPrompt}\nTask ${options.selected[0]!.reference}. Verified source ${selected.head}. Independent finding: ${selected.finding.reason}. Evidence: ${selected.finding.evidence.join(", ")}. One implementation attempt remains. Commit the correction.`;
+            const second = await worktree.run({
+              ...runOptions,
+              maxIterations: 1,
+              ...(selected.sessionId
+                ? { resumeSession: selected.sessionId }
+                : {}),
+              prompt: diagnostic,
+              promptFile: undefined,
+            });
+            if (git(worktree.worktreePath, "status", "--porcelain"))
+              throw new Error("Second implementation left uncommitted changes");
+            await save(
+              options.directory,
+              { ...selected, status: "complete" },
+              "benchmark-action.json",
+            );
+            return second;
+          }
+          if (action?.status === "pending")
+            throw new Error("Second implementation has not completed");
+          return action?.status === "complete"
+            ? worktree.run(runOptions)
+            : emptyRoleResult();
+        }
         if (runOptions.maxIterations !== 2) {
           if (input.resume && runOptions.agent === selectedAgent) {
             try {
@@ -1211,7 +1393,11 @@ export const runBenchmarkEvaluation = async (input: {
         accepted &&
         isolatedSessions &&
         snapshot?.usage?.remaining[options.selected[0]!.id]?.implementation ===
-          1,
+          1 &&
+        (!ledger.plan ||
+          snapshot?.usage?.remaining[options.selected[0]!.id]?.[
+            "implementation-rework"
+          ] === 1),
       reviewPassed: input.reviewPassed,
       falseAcceptance: Boolean(input.falseAcceptance),
       cost:
@@ -1256,15 +1442,19 @@ export const fixedBenchmarkCredits = (
     if (!invocation.coverageComplete || !invocation.counterIds.length)
       return null;
     if (
-      !["implementation", "standards-review", "specification-review"].includes(
-        invocation.role,
-      )
+      ![
+        "implementation",
+        "implementation-rework",
+        "standards-review-preview",
+        "specification-review-preview",
+        "standards-review",
+        "specification-review",
+      ].includes(invocation.role)
     )
       return null;
-    const model =
-      invocation.role === "implementation"
-        ? plan.arms[slot.arm]?.model
-        : "gpt-6-sol";
+    const model = invocation.role.startsWith("implementation")
+      ? plan.arms[slot.arm]?.model
+      : "gpt-6-sol";
     if (!model || !plan.rates[model]) return null;
     for (const id of invocation.counterIds) {
       const prior = counterModels.get(id);

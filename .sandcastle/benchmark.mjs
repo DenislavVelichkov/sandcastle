@@ -209,6 +209,8 @@ const assignment = (model, effort, name) => ({
   sandbox,
 });
 const reviewRoles = ["standards-review", "specification-review"];
+const previewRoles = reviewRoles.map((role) => `${role}-preview`);
+const fixedRoles = [...previewRoles, "implementation-rework", ...reviewRoles];
 const configurations = arms.map(({ model, effort }) => [model, effort]);
 const fixturePrompt = (fixture) =>
   `Implement this bounded Sandcastle task: ${fixture.focus}. Change only the relevant source and tests. Use pnpm for every install and project check; do not add lockfile or workspace metadata. Run the project checks, commit the result, and finish. Do not read outside this answer-free repository.`;
@@ -326,7 +328,7 @@ async function freezeManifest() {
     dependencyPolicy:
       "Import each frozen historical package lock with pnpm, install from the derived lock with hoisting and scripts disabled, then remove derived metadata from the answer-free tree",
     nonImplementationRoleConfigurations: Object.fromEntries(
-      reviewRoles.map((role) => [
+      [...previewRoles, ...reviewRoles].map((role) => [
         role,
         {
           model: "gpt-6-sol",
@@ -336,6 +338,13 @@ async function freezeManifest() {
         },
       ]),
     ),
+    implementationReworkConfiguration: {
+      model: "same as selected arm",
+      effort: "same as selected arm",
+      serviceTier: "default",
+      calls: 1,
+      rule: "only after protected or required-preview-review failure",
+    },
     projectGateHashes: Object.fromEntries(
       pkg.benchmarkFixtures.map((fixture) => [fixture.id, hash(grader)]),
     ),
@@ -358,7 +367,7 @@ async function freezeManifest() {
       evaluationMs: 30 * 60_000,
       invocationMs: 15 * 60_000,
       evaluations: plan.slots.length,
-      roles: reviewRoles,
+      roles: fixedRoles,
     },
     creditRates: plan.rates,
     creditRateSource: plan.rateSource,
@@ -398,19 +407,26 @@ async function frozenManifest() {
   return manifest;
 }
 
-async function reviewEvidence(directory, taskId, head) {
+async function reviewEvidence(directory, taskId, head, roles = reviewRoles) {
   const records = await Promise.all(
-    (await readdir(join(directory, "sessions"))).map((name) =>
-      json(join(directory, "sessions", name)),
-    ),
+    (await readdir(join(directory, "sessions")))
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => json(join(directory, "sessions", name))),
   );
   const evidence = [];
-  for (const role of reviewRoles) {
-    const session = records.find(
-      (item) => item.taskId === taskId && item.role === role,
-    );
+  const failures = [];
+  let actionable = true;
+  for (const role of roles) {
+    const session = records
+      .filter((item) => item.taskId === taskId && item.role === role)
+      .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt))[0];
     if (!session?.path)
-      return { passed: false, evidence, reason: `Missing ${role} session` };
+      return {
+        passed: false,
+        evidence,
+        environmentFailure: true,
+        reason: `Missing ${role} session`,
+      };
     const bytes = await readFile(session.path);
     const messages = bytes
       .toString("utf8")
@@ -426,11 +442,19 @@ async function reviewEvidence(directory, taskId, head) {
       .flatMap((item) => item.payload.content ?? [])
       .filter((item) => item.type === "output_text")
       .map((item) => item.text);
-    if (!messages.at(-1)?.trim().endsWith("REVIEW: PASS"))
-      return { passed: false, evidence, reason: `${role} did not pass` };
     evidence.push(`${role}:${session.id}:${hash(bytes)}:${head}`);
+    const conclusion = messages.at(-1)?.trim().split("\n").at(-1)?.trim() ?? "";
+    if (conclusion === "REVIEW: PASS") continue;
+    const finding = /^REVIEW: FAIL: (.+)$/.exec(conclusion);
+    if (finding) failures.push(`${role}: ${finding[1]}`);
+    else {
+      failures.push(`${role}: no concrete review finding`);
+      actionable = false;
+    }
   }
-  return { passed: true, evidence };
+  return failures.length
+    ? { passed: false, actionable, evidence, reason: failures.join("; ") }
+    : { passed: true, evidence };
 }
 
 function makeProject(root, directory, task, grade, recordReview = () => {}) {
@@ -460,18 +484,41 @@ function makeProject(root, directory, task, grade, recordReview = () => {}) {
     prompt: (_task, role) =>
       role === "implementation"
         ? task.prompt
-        : `Read-only ${role} of the candidate for ${task.reference}. Task instructions: ${task.prompt} Check correctness and existing repository standards. Do not edit files. End with REVIEW: PASS or REVIEW: FAIL: <reason>.`,
+        : role === "implementation-rework"
+          ? "Apply one verified protected or required-review finding if the host supplies it; otherwise make no changes."
+          : `Read-only ${role} of the candidate for ${task.reference}. Task instructions: ${task.prompt} Check correctness and existing repository standards. Do not edit files. End with REVIEW: PASS, or REVIEW: FAIL: <one-line concrete fixable defect>. If you cannot conclude, end with REVIEW: INCONCLUSIVE.`,
     check: async (candidate) => {
       recordReview(false);
-      if (reviewRoles.some((role) => !candidate.completedRoles.includes(role)))
+      if (
+        task.requiredRoles.some(
+          (role) => !candidate.completedRoles.includes(role),
+        )
+      )
         return {
           status: "failed",
           evidence: [],
-          reason: "Both reviews are required",
+          reason: "Required roles are incomplete",
         };
-      const review = await reviewEvidence(directory, task.id, candidate.head);
-      if (review.reason?.startsWith("Missing "))
-        throw new Error(review.reason);
+      const action = await json(join(directory, "benchmark-action.json")).catch(
+        (error) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        },
+      );
+      if (action && action.status === "pending")
+        throw new Error("Second implementation has not completed");
+      const selectedRoles = task.requiredRoles.includes("implementation-rework")
+        ? action?.status === "complete"
+          ? reviewRoles
+          : previewRoles
+        : reviewRoles;
+      const review = await reviewEvidence(
+        directory,
+        task.id,
+        candidate.head,
+        selectedRoles,
+      );
+      if (review.environmentFailure) throw new Error(review.reason);
       if (!review.passed)
         return { status: "failed", evidence: [], reason: review.reason };
       recordReview(true);
@@ -726,7 +773,7 @@ async function runNext() {
     state: "ready",
     dependencies: [],
     scope: ["src"],
-    requiredRoles: reviewRoles,
+    requiredRoles: fixedRoles,
     requiredCapabilities: ["checks", "review", "recovery"],
     prompt: fixturePrompt(fixture),
   };
@@ -741,7 +788,11 @@ async function runNext() {
     },
   );
   const implementation = assignment(model, effort, slot.id);
-  const review = assignment("gpt-6-sol", "high", slot.id);
+  const rework = assignment(model, effort, slot.id);
+  const previewStandards = assignment("gpt-6-sol", "high", slot.id);
+  const previewSpecification = assignment("gpt-6-sol", "high", slot.id);
+  const finalStandards = assignment("gpt-6-sol", "high", slot.id);
+  const finalSpecification = assignment("gpt-6-sol", "high", slot.id);
   const options = {
     directory: state,
     projectId: `issue31-${slot.fixture}`,
@@ -756,8 +807,11 @@ async function runNext() {
       iterations: 2,
       roles: {
         implementation,
-        "standards-review": review,
-        "specification-review": review,
+        "standards-review-preview": previewStandards,
+        "specification-review-preview": previewSpecification,
+        "implementation-rework": { ...rework, sandbox: implementation.sandbox },
+        "standards-review": finalStandards,
+        "specification-review": finalSpecification,
       },
     },
     usage: {
@@ -796,6 +850,20 @@ async function runNext() {
       return reviewPassed;
     },
     effective,
+    reviewProbe: async ({ head }) => {
+      const review = await reviewEvidence(state, task.id, head, previewRoles);
+      return {
+        status: review.environmentFailure
+          ? "environment-failure"
+          : review.passed
+            ? "passed"
+            : review.actionable
+              ? "implementation-failure"
+              : "review-failure",
+        reason: review.reason ?? "Required preview reviews passed",
+        evidence: review.evidence,
+      };
+    },
     probe: async ({ worktree: path }) => {
       const checked = await gradeHistoricalCase(source, slot.fixture, path);
       return {
