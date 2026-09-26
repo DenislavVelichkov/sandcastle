@@ -242,7 +242,7 @@ export interface BenchmarkLedger {
 const hash = (value: unknown): string =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const promotionEvidenceHash = (ledger: BenchmarkLedger): string => {
-  const { promotion, promotionEvidenceHash, activities, ...evidence } = ledger;
+  const { promotionEvidenceHash, activities, ...evidence } = ledger;
   return hash(evidence);
 };
 const pairEvidenceHash = (ledger: BenchmarkLedger): string =>
@@ -1729,7 +1729,7 @@ export const assessBenchmarkPromotion = async (
     await save(directory, {
       ...ledger,
       promotion,
-      promotionEvidenceHash: promotionEvidenceHash(ledger),
+      promotionEvidenceHash: promotionEvidenceHash({ ...ledger, promotion }),
     });
     return promotion;
   });

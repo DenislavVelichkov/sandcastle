@@ -579,6 +579,21 @@ it("freezes the 28-case development decision before held-out evidence and reject
         "independently-gradable-regression",
       ),
     ).rejects.toThrow(/does not admit/);
+    const retained = await readBenchmark(directory, "bench");
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({ ...retained, promotion: "admitted" }),
+    );
+    await expect(
+      admitBenchmarkPolicy(
+        directory,
+        "bench",
+        "independently-gradable-regression",
+      ),
+    ).rejects.toThrow(/evidence/i);
+    await expect(assessBenchmarkPromotion(directory, "bench")).rejects.toThrow(
+      /evidence/i,
+    );
     for (const change of [
       { technicalPassed: false },
       { projectAccepted: false },
