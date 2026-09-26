@@ -21,6 +21,7 @@ The workflow also supports [durable owner answers, checkpoint recovery, and acce
 Guarded durable runs can also [check worker model availability, account windows, and finite invocation allowances](docs/workflow.md#guarded-codex-usage) before and during dispatch.
 The [bounded benchmark operation](docs/workflow.md#bounded-benchmark) supports a fixed study with explicitly selected model and reasoning-effort arms, alongside the original seven-configuration adaptive protocol. The [standalone benchmark report](docs/workflow-user-guide.md#open-and-interpret-the-benchmark-report) presents retained evidence as local HTML, JSON and CSV. Synthetic checks do not start the live pilot.
 For release installation and daily operation, see the [workflow user guide](docs/workflow-user-guide.md).
+The [routing decision](docs/workflow-user-guide.md#review-the-routing-decision) retains fixed Sol High. The incomplete studies support no adaptive activation or savings claim; the [capability evidence index](docs/workflow-evidence.md) records the limits and deterministic admission checks.
 Managed installations share a host installation lock with new-run admission, so a personal updater can defer changes while saved work remains unfinished.
 
 ## Prerequisites

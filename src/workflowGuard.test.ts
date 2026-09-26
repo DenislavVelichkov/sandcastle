@@ -215,6 +215,21 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
       }),
     ).rejects.toThrow(/Worker model\/effort unavailable/);
     expect(dispatched).toBe(1);
+    await expect(
+      runDurableWorkflow({
+        ...options,
+        directory: join(root, "stale-account-state"),
+        invocationId: "stale-account",
+        usage: {
+          ...usage,
+          readAccount: async () => ({
+            ...(await usage.readAccount()),
+            observedAt: Date.now() - 120_001,
+          }),
+        },
+      }),
+    ).rejects.toThrow(/stale/);
+    expect(dispatched).toBe(1);
     const changedRole = {
       ...options.policy.roles.implementation,
       agent: codex("gpt-6-sol", {
@@ -283,6 +298,19 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
     expect((await workflowStatus(second.directory)).usage?.stopReason).toMatch(
       /denied/,
     );
+    for (const change of [
+      { usage: { ...usage, policyId: "unrequested-adaptive-policy" } },
+      { runtimeIdentity: "changed-evidence-and-runtime" },
+      { policy: { ...options.policy, iterations: 3 } },
+    ]) {
+      await expect(
+        resumeDurableWorkflow({ ...second, ...change }),
+      ).rejects.toThrow(/changed/);
+      expect((await workflowStatus(second.directory)).usage?.remaining).toEqual(
+        stopped.usage?.remaining,
+      );
+      expect(dispatched).toBe(1);
+    }
     const resumed = await resumeDurableWorkflow({ ...second, usage });
     expect(resumed.tasks.one?.status, JSON.stringify(resumed.tasks.one)).toBe(
       "accepted",

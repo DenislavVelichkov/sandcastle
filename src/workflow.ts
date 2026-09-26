@@ -507,6 +507,15 @@ export const runWorkflow = async (
           throw new Error(
             `Project must supply exactly one prompt or prompt file for ${task.id}/${role}`,
           );
+        if (
+          Object.keys(invocation).some(
+            (key) =>
+              !["prompt", "promptFile", "promptArgs", "hooks"].includes(key),
+          )
+        )
+          throw new Error(
+            "Unsupported workflow prompt option; policy and retry settings belong to the controller",
+          );
         if (!options.onInvocationStart)
           await options.onRoleStarted?.(task.id, role);
         let roleStarted = false;

@@ -7,6 +7,7 @@ import { claudeCode } from "./AgentProvider.js";
 import { createWorktree } from "./createWorktree.js";
 import { createBindMountSandboxProvider } from "./SandboxProvider.js";
 import {
+  Output,
   inspectWorkflow,
   runWorkflow,
   type WorkflowProject,
@@ -273,6 +274,21 @@ describe("public workflow", () => {
       });
       expect(roleDrift.reason).toBe("Fixed policy changed during reservation");
       expect(invocations).toBe(0);
+      for (const hidden of [
+        { output: Output.string({ tag: "result", maxRetries: 1 }) },
+        { agent: claudeCode("unrequested-model") },
+      ]) {
+        await expect(
+          runWorkflow({
+            ...options,
+            project: {
+              ...project,
+              prompt: () => ({ prompt: "Task 1 <result>", ...hidden }),
+            },
+          }),
+        ).rejects.toThrow(/Unsupported workflow prompt option/);
+        expect(invocations).toBe(0);
+      }
       const result = await runWorkflow(options);
       expect(result.status).toBe("blocked");
       expect(result.reason).toBe("project check failed");

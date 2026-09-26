@@ -5,6 +5,7 @@ The role of this file is to describe common mistakes, critical rules (the correc
 Use `pnpm run typecheck` for type checking.
 Use `pnpm` for installs, scripts, and package executables in this repository; keep its pnpm lockfiles and generated worker commands aligned.
 Run the build before the full test suite, sequentially: the build clears `dist/`, which CLI tests execute.
+If Vitest fails before collecting tests with `/tmp` `ENOSPC`, check inode availability and set `TMPDIR` to a fresh directory on the project disk. Preserve retained pilot directories.
 
 - **CRITICAL**: Native proof receipts and applicability records are bound by byte hashes. Preserve exported evidence JSON exactly; formatting changes invalidate their recorded hashes.
 - **CRITICAL**: Issue #26's protected historical grader must commit its isolated shadow before focused tests that exercise Git worktrees; an archive without `.git` makes known corrections fail preflight.

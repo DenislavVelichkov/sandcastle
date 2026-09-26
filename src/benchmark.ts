@@ -198,6 +198,10 @@ export interface BenchmarkPolicyAdmission {
   readonly policyId: string;
   readonly protocolHash: string;
   readonly evidenceHash: string;
+  /** Frozen artifact, worker configuration, roles and acceptance manifest hash. */
+  readonly conditionsHash: string;
+  /** Identity of this policy, including its permitted task class and evidence. */
+  readonly policyHash: string;
   readonly taskClass: BenchmarkTaskClass;
   readonly pair: BenchmarkPair;
 }
@@ -228,11 +232,36 @@ export interface BenchmarkLedger {
     readonly reason?: string;
   }[];
   readonly pair?: BenchmarkPair;
+  /** Development inputs and selected pair frozen before any held-out outcome. */
+  readonly pairEvidenceHash?: string;
   readonly promotion?: "admitted" | "fixed-policy";
+  /** Inputs of the completed assessment; admission rejects later evidence drift. */
+  readonly promotionEvidenceHash?: string;
 }
 
 const hash = (value: unknown): string =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const promotionEvidenceHash = (ledger: BenchmarkLedger): string => {
+  const { promotion, promotionEvidenceHash, activities, ...evidence } = ledger;
+  return hash(evidence);
+};
+const pairEvidenceHash = (ledger: BenchmarkLedger): string =>
+  hash({
+    protocolHash: ledger.protocolHash,
+    policyId: ledger.policyId,
+    hostConditionsHash: ledger.hostConditionsHash,
+    accountResolution: ledger.accountResolution,
+    windowDurationMs: ledger.windowDurationMs,
+    fixtureConditions: benchmarkFixtures
+      .filter((fixture) => fixture.split === "development")
+      .map((fixture) => ledger.fixtureConditions?.[fixture.id]),
+    evaluations: ledger.evaluations.slice(0, 28),
+    pair: ledger.pair,
+  });
+const verifyFrozenPair = (ledger: BenchmarkLedger): void => {
+  if (!ledger.pair || ledger.pairEvidenceHash !== pairEvidenceHash(ledger))
+    throw new Error("Frozen development evidence changed or is unbound");
+};
 /** Standard credit rates per million tokens frozen by the fixed protocol. */
 export const standardCreditRates = {
   "gpt-6-astra": { input: 250, cachedInput: 25, output: 1250 },
@@ -806,6 +835,7 @@ export const runBenchmarkEvaluation = async (input: {
       throw new Error("Freeze development selection before held-out outcomes");
     if (slot.arm === "adaptive" && !ledger.pair)
       throw new Error("Adaptive evaluation needs a frozen routing pair");
+    if (ledger.pair) verifyFrozenPair(ledger);
     if (slot.arm !== "adaptive" && slot.split === "development" && ledger.pair)
       throw new Error("Development configuration was frozen");
     if (options.policy.iterations !== 2 || options.selected.length !== 1)
@@ -1013,6 +1043,11 @@ export const runBenchmarkEvaluation = async (input: {
           }
           return worktree.run(runOptions);
         }
+        const initialTree = git(
+          worktree.worktreePath,
+          "rev-parse",
+          "HEAD^{tree}",
+        );
         const first = await worktree.run({ ...runOptions, maxIterations: 1 });
         const head = git(worktree.worktreePath, "rev-parse", "HEAD");
         if (git(worktree.worktreePath, "status", "--porcelain"))
@@ -1037,6 +1072,12 @@ export const runBenchmarkEvaluation = async (input: {
         )
           throw new Error(
             `Independent check did not authorize another implementation: ${finding.reason}`,
+          );
+        if (
+          git(worktree.worktreePath, "rev-parse", "HEAD^{tree}") === initialTree
+        )
+          throw new Error(
+            "Unchanged patch does not authorize implementation escalation",
           );
         const sessionId = first.iterations.at(-1)?.sessionId;
         activeAssignment = fallbackAssignment;
@@ -1505,6 +1546,47 @@ const costOrder = (
   return 0;
 };
 
+const acceptedEvaluation = (item: BenchmarkEvaluation): boolean =>
+  item.status === "accepted" &&
+  item.technicalPassed === true &&
+  item.projectAccepted === true &&
+  item.reviewPassed === true &&
+  item.falseAcceptance === false;
+
+const completeEvaluationCost = (
+  ledger: BenchmarkLedger,
+  item: BenchmarkEvaluation,
+): boolean => {
+  const tokens = item.usage?.tokens;
+  const roles = Object.keys(item.usage?.requested ?? {}).filter(
+    (role) => role !== "implementation-fallback",
+  );
+  const invocations = Object.values(tokens?.invocations ?? {});
+  const windows = Object.keys(ledger.accountResolution ?? {});
+  return Boolean(
+    tokens?.attributableTotal &&
+    tokens.unknown.length === 0 &&
+    roles.includes("implementation") &&
+    roles.every((role) => invocations.some((call) => call.role === role)) &&
+    invocations.every(
+      (call) => call.coverageComplete && call.counterIds.length > 0,
+    ) &&
+    windows.length > 0 &&
+    Object.keys(item.cost ?? {}).length === windows.length &&
+    windows.every((name) => {
+      const cost = item.cost?.[name];
+      return (
+        cost &&
+        Number.isFinite(cost.lower) &&
+        cost.lower >= 0 &&
+        Number.isFinite(cost.upper) &&
+        cost.upper >= cost.lower &&
+        cost.durationMs === ledger.windowDurationMs?.[name]
+      );
+    }),
+  );
+};
+
 export const freezeBenchmarkPair = async (
   directory: string,
   policyId: string,
@@ -1513,7 +1595,10 @@ export const freezeBenchmarkPair = async (
     const ledger = await readBenchmark(directory, policyId);
     if (!ledger.accountResolution || !ledger.windowDurationMs)
       throw new Error("Account measurement policy was not frozen");
-    if (ledger.pair) return ledger.pair;
+    if (ledger.pair) {
+      verifyFrozenPair(ledger);
+      return ledger.pair;
+    }
     if (ledger.promotion) return null;
     if (
       ledger.evaluations.some(
@@ -1526,28 +1611,23 @@ export const freezeBenchmarkPair = async (
     const arms = pilotConfigurations.map((_, index) =>
       resultsFor(ledger, "development", index),
     );
-    if (arms.some((items) => items.length !== 4))
+    if (
+      ledger.plan ||
+      ledger.evaluations.length !== 28 ||
+      ledger.evaluations.some(
+        (item, index) => item.slotId !== benchmarkSlots[index]?.id,
+      ) ||
+      arms.some((items) => items.length !== 4)
+    )
       throw new Error(
         "All 28 fixed development evaluations must be attempted before routing freezes",
       );
-    const qualified = arms.map((items) =>
-      items.every(
-        (item) =>
-          item.status === "accepted" &&
-          item.reviewPassed &&
-          !item.falseAcceptance,
-      ),
-    );
+    const qualified = arms.map((items) => items.every(acceptedEvaluation));
     const reference = arms[5]!;
     let pair: BenchmarkPair | undefined;
     if (
       qualified[5] &&
-      reference.every(
-        (item) =>
-          item.cost &&
-          item.usage?.tokens.attributableTotal &&
-          !item.usage.tokens.unknown.length,
-      )
+      reference.every((item) => completeEvaluationCost(ledger, item))
     ) {
       const eligible = arms
         .map((items, index) => index)
@@ -1555,10 +1635,8 @@ export const freezeBenchmarkPair = async (
           (index) =>
             index !== 5 &&
             qualified[index] &&
-            arms[index]!.every(
-              (item) =>
-                item.usage?.tokens.attributableTotal &&
-                !item.usage.tokens.unknown.length,
+            arms[index]!.every((item) =>
+              completeEvaluationCost(ledger, item),
             ) &&
             comparableUpper(arms[index]!, reference)?.every(
               (ratio) => ratio <= 0.8,
@@ -1573,11 +1651,8 @@ export const freezeBenchmarkPair = async (
             (index) =>
               index !== start &&
               qualified[index] &&
-              arms[index]!.every(
-                (item) =>
-                  item.cost &&
-                  item.usage?.tokens.attributableTotal &&
-                  !item.usage.tokens.unknown.length,
+              arms[index]!.every((item) =>
+                completeEvaluationCost(ledger, item),
               ),
           );
         fallback.sort(
@@ -1597,7 +1672,13 @@ export const freezeBenchmarkPair = async (
     }
     await save(
       directory,
-      pair ? { ...ledger, pair } : { ...ledger, promotion: "fixed-policy" },
+      pair
+        ? {
+            ...ledger,
+            pair,
+            pairEvidenceHash: pairEvidenceHash({ ...ledger, pair }),
+          }
+        : { ...ledger, promotion: "fixed-policy" },
     );
     return pair ?? null;
   });
@@ -1611,29 +1692,33 @@ export const assessBenchmarkPromotion = async (
     const ledger = await readBenchmark(directory, policyId);
     if (!ledger.accountResolution || !ledger.windowDurationMs)
       throw new Error("Account measurement policy was not frozen");
-    if (ledger.promotion) return ledger.promotion;
+    if (ledger.promotion) {
+      if (
+        ledger.promotion === "admitted" &&
+        ledger.promotionEvidenceHash !== promotionEvidenceHash(ledger)
+      )
+        throw new Error("Benchmark promotion evidence changed or is unbound");
+      return ledger.promotion;
+    }
     if (!ledger.pair) throw new Error("No frozen adaptive policy");
+    verifyFrozenPair(ledger);
     const adaptive = resultsFor(ledger, "held-out", "adaptive");
     const reference = resultsFor(ledger, "held-out", 5);
     if (
       ledger.evaluations.length !== 64 ||
+      ledger.plan ||
+      ledger.evaluations.some(
+        (item, index) => item.slotId !== benchmarkSlots[index]?.id,
+      ) ||
       adaptive.length !== 4 ||
       reference.length !== 4
     )
       throw new Error(
         "All 64 scheduled evaluations are required for promotion assessment",
       );
-    const quality = adaptive.every(
-      (item) =>
-        item.status === "accepted" &&
-        item.reviewPassed &&
-        !item.falseAcceptance,
-    );
-    const completeCost = [...adaptive, ...reference].every(
-      (item) =>
-        item.usage?.tokens.attributableTotal &&
-        !item.usage.tokens.unknown.length &&
-        item.cost,
+    const quality = adaptive.every(acceptedEvaluation);
+    const completeCost = [...adaptive, ...reference].every((item) =>
+      completeEvaluationCost(ledger, item),
     );
     const savings =
       (comparableUpper(adaptive, reference)?.every((ratio) => ratio <= 0.8) ??
@@ -1641,7 +1726,11 @@ export const assessBenchmarkPromotion = async (
       savingsEachRepetition(adaptive, reference);
     const promotion =
       quality && completeCost && savings ? "admitted" : "fixed-policy";
-    await save(directory, { ...ledger, promotion });
+    await save(directory, {
+      ...ledger,
+      promotion,
+      promotionEvidenceHash: promotionEvidenceHash(ledger),
+    });
     return promotion;
   });
 
@@ -1654,6 +1743,13 @@ export const admitBenchmarkPolicy = async (
   const ledger = await readBenchmark(directory, policyId);
   if (
     ledger.promotion !== "admitted" ||
+    ledger.plan ||
+    !ledger.hostConditionsHash ||
+    benchmarkFixtures.some(
+      (fixture) => !ledger.fixtureConditions?.[fixture.id],
+    ) ||
+    ledger.promotionEvidenceHash !== promotionEvidenceHash(ledger) ||
+    ledger.pairEvidenceHash !== pairEvidenceHash(ledger) ||
     !ledger.pair ||
     ![
       "independently-gradable-regression",
@@ -1661,12 +1757,14 @@ export const admitBenchmarkPolicy = async (
     ].includes(taskClass)
   )
     throw new Error("Benchmark evidence does not admit this task class");
-  return {
-    version: 1,
+  const admission = {
+    version: 1 as const,
     policyId,
     protocolHash: ledger.protocolHash,
-    evidenceHash: hash(ledger.evaluations),
+    evidenceHash: promotionEvidenceHash(ledger),
+    conditionsHash: ledger.hostConditionsHash,
     taskClass,
     pair: ledger.pair,
   };
+  return { ...admission, policyHash: hash(admission) };
 };
