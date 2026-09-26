@@ -17,7 +17,7 @@ import {
 } from "../scripts/issue-26-grader.mjs";
 
 const source = resolve(import.meta.dirname, "..");
-const owner = resolve(source, "../sandcastle-issue31-run-v1");
+const owner = resolve(source, "../sandcastle-issue31-run-v2");
 const installed = source;
 const pkg = await import(pathToFileURL(join(installed, "dist/index.js")));
 const { docker: dockerSandbox } = await import(
@@ -26,7 +26,7 @@ const { docker: dockerSandbox } = await import(
 const image = "sandcastle:issue26-pnpm";
 const observerScript =
   "/home/dv8/Projects/codex-plugins/dv8-codex/custom/skills/quality/sandcastle-personal-setup/scripts";
-const policyId = "issue31-fixed-v1";
+const policyId = "issue31-fixed-v2";
 const pilot = join(owner, "pilot");
 const args = process.argv.slice(2);
 const armValues = args.flatMap((value, index) =>
@@ -209,6 +209,7 @@ const assignment = (model, effort, name) => ({
   sandbox,
 });
 const reviewRoles = ["standards-review", "specification-review"];
+const candidateScope = ["src", ".changeset"];
 const configurations = arms.map(({ model, effort }) => [model, effort]);
 const fixturePrompt = (fixture) =>
   `Implement this bounded Sandcastle task: ${fixture.focus}. Change only the relevant source and tests. Use pnpm for every install and project check; do not add lockfile or workspace metadata. Run the project checks, commit the result, and finish. Do not read outside this answer-free repository.`;
@@ -300,6 +301,7 @@ async function freezeManifest() {
     quietAccountWindow:
       "One sequential worker evaluation at a time; other account activity cannot be excluded by this host",
     fixturePromptHashes: prompts,
+    candidateScope,
     toolVersions: {
       hostNode: command("node", ["--version"]),
       workerNode: docker(
@@ -470,8 +472,7 @@ function makeProject(root, directory, task, grade, recordReview = () => {}) {
           reason: "Both reviews are required",
         };
       const review = await reviewEvidence(directory, task.id, candidate.head);
-      if (review.reason?.startsWith("Missing "))
-        throw new Error(review.reason);
+      if (review.reason?.startsWith("Missing ")) throw new Error(review.reason);
       if (!review.passed)
         return { status: "failed", evidence: [], reason: review.reason };
       recordReview(true);
@@ -558,7 +559,7 @@ async function calibration() {
       policyId,
       activity: "measurement",
       pilot: {
-        id: "issue31-fixed-v1",
+        id: "issue31-fixed-v2",
         directory: pilot,
         overallLimitMs: plan.overallLimitMs,
         evaluationLimit: plan.slots.length,
@@ -725,7 +726,7 @@ async function runNext() {
     reference: `fixture:${slot.fixture}`,
     state: "ready",
     dependencies: [],
-    scope: ["src"],
+    scope: candidateScope,
     requiredRoles: reviewRoles,
     requiredCapabilities: ["checks", "review", "recovery"],
     prompt: fixturePrompt(fixture),
@@ -764,7 +765,7 @@ async function runNext() {
       policyId,
       activity: "pilot",
       pilot: {
-        id: "issue31-fixed-v1",
+        id: "issue31-fixed-v2",
         directory: pilot,
         overallLimitMs: plan.overallLimitMs,
         evaluationLimit: plan.slots.length,
