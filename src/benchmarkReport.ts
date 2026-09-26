@@ -60,9 +60,9 @@ export interface BenchmarkReportRow {
   readonly status: string;
   readonly technicalPassed: boolean | null;
   readonly projectAccepted: boolean | null;
-  readonly firstIterationSuccess: boolean;
-  readonly reviewPassed: boolean;
-  readonly falseAcceptance: boolean;
+  readonly firstIterationSuccess: boolean | null;
+  readonly reviewPassed: boolean | null;
+  readonly falseAcceptance: boolean | null;
   readonly taskStatus: string | null;
   readonly reason: string | null;
   readonly activeMs: number | null;
@@ -79,38 +79,44 @@ export interface BenchmarkReportRow {
   readonly costStatus: string;
 }
 
-const rowsFor = (ledger: BenchmarkLedger): BenchmarkReportRow[] =>
-  ledger.evaluations.flatMap((item) => {
-    const slot = (ledger.plan?.slots ?? benchmarkSlots).find(
-      (entry) => entry.id === item.slotId,
-    );
-    if (!slot)
+const rowsFor = (ledger: BenchmarkLedger): BenchmarkReportRow[] => {
+  const slots = ledger.plan?.slots ?? benchmarkSlots;
+  const slotIds = new Set(slots.map((slot) => slot.id));
+  const bySlot = new Map(ledger.evaluations.map((item) => [item.slotId, item]));
+  for (const item of ledger.evaluations)
+    if (!slotIds.has(item.slotId))
       throw new Error(`Unknown benchmark slot in ledger: ${item.slotId}`);
-    const total = item.usage?.tokens?.attributableTotal;
-    const tokenCoverage = !item.usage
-      ? "Unavailable"
-      : item.usage.tokens.unknown.length || !total
-        ? `Incomplete: ${item.usage.tokens.unknown.join(", ") || "attributable total missing"}`
-        : "Complete";
+  return slots.flatMap((slot) => {
+    const item = bySlot.get(slot.id);
+    const total = item?.usage?.tokens?.attributableTotal;
+    const tokenCoverage = !item
+      ? "Unrun"
+      : !item.usage
+        ? "Unavailable"
+        : item.usage.tokens.unknown.length || !total
+          ? `Incomplete: ${item.usage.tokens.unknown.join(", ") || "attributable total missing"}`
+          : "Complete";
     const verifiedTokens = total
       ? total.inputTokens +
         total.cacheCreationInputTokens +
         total.cacheReadInputTokens +
         total.outputTokens
       : null;
-    const activeMs = item.usage?.taskMs
+    const activeMs = item?.usage?.taskMs
       ? (Object.values(item.usage.taskMs)[0] ?? null)
       : null;
-    const windows = Object.keys(ledger.accountResolution ?? item.cost ?? {});
-    const costStatus = item.cost
-      ? "Observed interval"
-      : item.usage?.resetContinuations?.length
-        ? "Reset or changed window"
-        : "Unknown or incomparable";
+    const windows = Object.keys(ledger.accountResolution ?? item?.cost ?? {});
+    const costStatus = !item
+      ? "Unrun"
+      : item.cost
+        ? "Observed interval"
+        : item.usage?.resetContinuations?.length
+          ? "Reset or changed window"
+          : "Unknown or incomparable";
     return (windows.length ? windows : ["Unspecified"]).map((window) => {
-      const cost = item.cost?.[window];
+      const cost = item?.cost?.[window];
       return {
-        slotId: item.slotId,
+        slotId: slot.id,
         split: slot.split,
         configuration:
           ledger.plan && slot.arm !== "adaptive"
@@ -118,21 +124,20 @@ const rowsFor = (ledger: BenchmarkLedger): BenchmarkReportRow[] =>
             : names[slot.arm === "adaptive" ? 7 : slot.arm]!,
         fixture: slot.fixture,
         repetition: slot.repetition,
-        status: item.status,
-        technicalPassed: item.technicalPassed ?? null,
-        projectAccepted: item.projectAccepted ?? null,
-        firstIterationSuccess: item.firstIterationSuccess,
-        reviewPassed: item.reviewPassed,
-        falseAcceptance: item.falseAcceptance,
-        taskStatus: item.taskStatus ?? null,
-        reason: item.reason ?? null,
+        status: item?.status ?? "unrun",
+        technicalPassed: item?.technicalPassed ?? null,
+        projectAccepted: item?.projectAccepted ?? null,
+        firstIterationSuccess: item?.firstIterationSuccess ?? null,
+        reviewPassed: item?.reviewPassed ?? null,
+        falseAcceptance: item?.falseAcceptance ?? null,
+        taskStatus: item?.taskStatus ?? null,
+        reason: item?.reason ?? null,
         activeMs,
         humanWaitingMs: null,
         tokenCoverage,
         verifiedTokens,
-        standardCredits: ledger.plan
-          ? fixedBenchmarkCredits(ledger, item)
-          : null,
+        standardCredits:
+          ledger.plan && item ? fixedBenchmarkCredits(ledger, item) : null,
         window,
         lower: cost?.lower ?? null,
         upper: cost?.upper ?? null,
@@ -147,6 +152,7 @@ const rowsFor = (ledger: BenchmarkLedger): BenchmarkReportRow[] =>
       };
     });
   });
+};
 
 const badge = (label: string, kind: "good" | "warn" | "neutral" = "neutral") =>
   `<span class="badge ${kind}">${escapeHtml(label)}</span>`;
@@ -166,6 +172,7 @@ const htmlFor = (
 ) => {
   const bySlot = new Map(ledger.evaluations.map((item) => [item.slotId, item]));
   const slots = ledger.plan?.slots ?? benchmarkSlots;
+  const unrun = slots.filter((slot) => !bySlot.has(slot.id));
   const armNames = ledger.plan
     ? ledger.plan.arms.map((arm) => `${arm.model}:${arm.effort}`)
     : names;
@@ -322,7 +329,7 @@ ${ledger.plan ? `<section><p class="eyebrow">Standard credit-equivalent estimate
 <section><p class="eyebrow">Subscription account windows</p><h2>Observed usage intervals</h2><p>Ranges are sums of retained lower and upper percentage-point bounds, not credits, dollars or token estimates. Coverage counts account readings, including failed evaluations; acceptance is shown above. Partial rows cannot establish comparative savings. Window readings and reset times appear in each evaluation and in the exports.</p>${windowNames.length ? `<div class="table-wrap"><table><thead><tr><th>Configuration</th><th>Split</th><th>Window</th><th>Observed range</th><th>Coverage</th></tr></thead><tbody>${usageRows}</tbody></table></div>` : `<p>${badge("Unknown", "warn")} No account windows were declared in the ledger.</p>`}${ledger.plan ? `<p>Whole-study account movement per active hour: ${hourlyUsage.length ? escapeHtml(hourlyUsage.join("; ")) : "Unavailable"}. This is account-wide movement, including possible outside activity, and is not attributed to individual models.</p>` : ""}<p class="sub">Declared reading resolution: ${escapeHtml(JSON.stringify(ledger.accountResolution ?? null))}. Window durations (ms): ${escapeHtml(JSON.stringify(ledger.windowDurationMs ?? null))}.</p></section>
 <section><p class="eyebrow">Unresolved outcomes</p><h2>Rejected, failed, capped or blocked</h2>${exceptions.length ? `<ul>${exceptions.map((item) => `<li><strong>${escapeHtml(item.slotId)}</strong>: ${escapeHtml(item.reason ?? (item.status === "incomplete" ? "Incomplete; no reason recorded" : "Review or protected acceptance failed"))}${item.usage?.stopReason ? ` · guard: ${escapeHtml(item.usage.stopReason)}` : ""}</li>`).join("")}</ul>` : "<p>No recorded exceptions. Unattempted slots are not successes.</p>"}<p>Human waiting duration is not measured by the benchmark ledger. Active evaluation time and raw provider coverage are shown per evaluation; pilot active time includes shared measurement and host activities when the budget is available.</p></section>
 <section><p class="eyebrow">Reproducibility</p><h2>Artifacts and conditions</h2><dl class="facts"><div><dt>Policy</dt><dd>${escapeHtml(ledger.policyId)}</dd></div><div><dt>Protocol SHA-256</dt><dd class="mono">${escapeHtml(ledger.protocolHash)}</dd></div><div><dt>Ledger SHA-256</dt><dd class="mono">${escapeHtml(ledgerHash)}</dd></div><div><dt>Host conditions SHA-256</dt><dd class="mono">${escapeHtml(plain(ledger.hostConditionsHash))}</dd></div><div><dt>Pilot runtime</dt><dd class="mono">${escapeHtml(plain(budget?.runtimeIdentity))}</dd></div><div><dt>Fixture conditions</dt><dd class="mono">${escapeHtml(JSON.stringify(ledger.fixtureConditions ?? null))}</dd></div></dl><h3>Historical case identities</h3><ul>${benchmarkFixtures.map((fixture) => `<li><strong>${escapeHtml(fixture.id)}</strong> (${escapeHtml(fixture.split)}): base <span class="mono">${fixture.base}</span>, reference <span class="mono">${fixture.reference}</span>. ${escapeHtml(fixture.focus)}</li>`).join("")}</ul><h3>Host manifest</h3><p>${escapeHtml(manifestStatus)}</p>${manifest ? `<dl class="facts">${manifestEntries.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd class="mono">${escapeHtml(plain(typeof value === "object" ? JSON.stringify(value) : value))}</dd></div>`).join("")}</dl>` : "<p>Exact worker, artifact and environment identities are unavailable for this report.</p>"}<p>Limitations: source observations are the ledger's account readings, counter paths and protected preflight records. Missing, overlapping, delayed, reset or confounded measurements remain uncertain. A synthetic fixture does not establish live savings. The report does not recalculate qualification or promotion.</p></section>
-<section><p class="eyebrow">Audit trail</p><h2>Evaluation evidence</h2><p>Open a row to inspect its recorded candidate, sessions, preflight, review, account readings, token sources and reason. ${ledger.evaluations.length} of ${slots.length} slots have records.</p>${evidence || "<p>No evaluations recorded yet.</p>"}</section>
+<section><p class="eyebrow">Audit trail</p><h2>Evaluation evidence</h2><p>Open a row to inspect its recorded candidate, sessions, preflight, review, account readings, token sources and reason. ${ledger.evaluations.length} of ${slots.length} slots have records.</p>${evidence || "<p>No evaluations recorded yet.</p>"}${unrun.length ? `<details><summary>Unrun slots (${unrun.length})</summary><ul>${unrun.map((slot) => `<li>${escapeHtml(slot.id)} · ${escapeHtml(slot.split)} · ${escapeHtml(slot.fixture)}</li>`).join("")}</ul></details>` : ""}</section>
 </main></body></html>`;
 };
 

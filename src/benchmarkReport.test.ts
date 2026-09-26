@@ -97,6 +97,28 @@ it("reports the explicit 40-slot fixed study with verified credits and separate 
     expect(html).toContain("percentage points per active hour");
     expect(json.rows).toHaveLength(40);
     expect(json.rows[0].standardCredits).toBe(2.5);
+
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({
+        ...ledger,
+        evaluations: ledger.evaluations.slice(0, 1),
+        fixedSelection: undefined,
+        fixedDisposition: undefined,
+      }),
+    );
+    const partial = await writeBenchmarkReport({
+      directory,
+      policyId: ledger.policyId,
+      outputDirectory: join(directory, "report"),
+    });
+    const partialJson = JSON.parse(await readFile(partial.json, "utf8"));
+    expect(partialJson.rows).toHaveLength(40);
+    expect(partialJson.rows[1]).toMatchObject({ status: "unrun" });
+    expect(await readFile(partial.html, "utf8")).toContain("Unrun slots (39)");
+    expect(
+      (await readFile(partial.csv, "utf8")).trim().split("\n"),
+    ).toHaveLength(41);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -294,7 +316,14 @@ it("renders complete and partial ledgers with exports matching the displayed evi
     const partialHtml = await readFile(partialFiles.html, "utf8");
     const partialJson = JSON.parse(
       await readFile(partialFiles.json, "utf8"),
-    ) as { rows: { lower: number | null; costStatus: string }[] };
+    ) as {
+      rows: {
+        slotId: string;
+        status: string;
+        lower: number | null;
+        costStatus: string;
+      }[];
+    };
     const partialCsv = await readFile(partialFiles.csv, "utf8");
     expect(partialHtml).toContain("Fixed policy retained");
     expect(partialHtml).toContain("4/64");
@@ -305,6 +334,15 @@ it("renders complete and partial ledgers with exports matching the displayed evi
     expect(partialHtml).toContain("&lt;script&gt;");
     expect(partialHtml).not.toContain("<script>alert");
     expect(partialJson.rows[0]!.lower).toBeNull();
+    expect(partialJson.rows).toHaveLength(64);
+    expect(partialJson.rows[4]).toMatchObject({
+      slotId: benchmarkSlots[4]!.id,
+      status: "unrun",
+      lower: null,
+      costStatus: "Unrun",
+    });
+    expect(partialHtml).toContain("Unrun slots (60)");
+    expect(partialCsv.trim().split("\n")).toHaveLength(65);
     expect(partialCsv).toContain(
       '"\'=HYPERLINK(""x""), <script>alert(""x"")</script>"',
     );
@@ -322,9 +360,12 @@ it("renders complete and partial ledgers with exports matching the displayed evi
     expect(await readFile(emptyFiles.html, "utf8")).toContain(
       "No evaluations recorded yet.",
     );
+    expect(await readFile(emptyFiles.html, "utf8")).toContain(
+      "Unrun slots (64)",
+    );
     expect(
       (await readFile(emptyFiles.csv, "utf8")).trim().split("\n"),
-    ).toHaveLength(1);
+    ).toHaveLength(65);
     await writeFile(
       join(directory, "benchmark.json"),
       JSON.stringify({
