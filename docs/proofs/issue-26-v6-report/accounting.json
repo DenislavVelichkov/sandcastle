@@ -1,0 +1,6 @@
+{
+  "startedAt": 1790424187266,
+  "policyId": "issue26-seven-arm-v6",
+  "pilot": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue26-run-v6/pilot",
+  "limitMs": 14400000
+}
