@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sandcastle benchmark report</title>
+<style>
+:root{color-scheme:light;--ink:#17252b;--muted:#4b6268;--paper:#f6f3ec;--panel:#fffdf9;--line:#c9d2ce;--accent:#087c72;--good:#075e52;--warn:#954a17;--focus:#a14808}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 "Source Sans 3","Segoe UI",sans-serif}main{max-width:1200px;margin:auto;padding:32px 24px 80px}header{border-bottom:4px solid var(--ink);padding:0 0 28px;margin-bottom:34px}.eyebrow{font:700 .8rem/1.2 "Consolas",monospace;text-transform:uppercase;letter-spacing:.13em;color:var(--accent)}h1,h2,h3{font-family:Georgia,serif;line-height:1.1}h1{font-size:clamp(2.5rem,6vw,5.5rem);letter-spacing:-.045em;margin:.3em 0}h2{font-size:clamp(1.8rem,3vw,2.6rem);margin:0 0 16px}h3{font-size:1.25rem}.lead{max-width:75ch;font-size:1.15rem}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card,section{background:var(--panel);border:1px solid var(--line)}.card{padding:18px}.card b{display:block;font:700 2rem/1 Georgia,serif;margin:8px 0}.card span,.sub,small{color:var(--muted)}section{padding:26px;margin:24px 0}p{max-width:85ch}.badge{display:inline-block;border:1px solid var(--line);padding:2px 8px;border-radius:99px;font:700 .72rem/1.4 "Consolas",monospace;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap}.badge.good{background:#e0f2ea;color:var(--good);border-color:#9bc9b5}.badge.warn{background:#fff0df;color:var(--warn);border-color:#dfb184}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:650px}th,td{text-align:left;vertical-align:top;padding:14px 12px;border-bottom:1px solid var(--line)}thead th{font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}tbody th{font-weight:700}.sub{display:block;font-size:.8rem;font-weight:400}.metric{font:700 1.35rem/1.2 Georgia,serif}.track{display:block;height:6px;background:#e3e9e5;margin-top:8px}.track span{display:block;height:100%;background:var(--accent)}.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}.facts div{border-top:1px solid var(--line);padding-top:8px;min-width:0}dt{font-size:.8rem;color:var(--muted)}dd{margin:3px 0;overflow-wrap:anywhere}details{border-top:1px solid var(--line);padding:12px 0}summary{cursor:pointer;display:flex;align-items:center;gap:12px;flex-wrap:wrap}summary span:nth-child(2){color:var(--muted);flex:1}details pre{max-height:360px;overflow:auto;background:#edf1ee;padding:16px;font-size:.75rem;white-space:pre-wrap;overflow-wrap:anywhere}a{color:#075e74;text-decoration-thickness:2px;text-underline-offset:3px}a:focus-visible,summary:focus-visible{outline:3px solid var(--focus);outline-offset:3px}.notice{border-left:4px solid var(--accent);padding-left:18px}.warning{border-left-color:var(--warn)}.mono{font-family:"Consolas",monospace;overflow-wrap:anywhere}ul{padding-left:22px}@media(max-width:760px){main{padding:20px 14px 50px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}section{padding:18px}.facts{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:440px){.grid,.facts{grid-template-columns:1fr}summary{align-items:flex-start}}
+</style></head><body><main>
+<header><p class="eyebrow">Sandcastle / controlled comparison</p><h1>Benchmark evidence</h1><p class="lead">A local record of 5 explicitly selected fixed configurations. All figures below come from the retained ledger; this report does not run an evaluation or grant project acceptance.</p><p><a href="report.json">Download JSON evidence</a> · <a href="evaluations.csv">Download CSV rows</a></p></header>
+<div class="grid"><div class="card"><span>Evaluations recorded</span><b>1/40</b><small>39 scheduled slots remain</small></div><div class="card"><span>Accepted</span><b>0</b><small>Includes review and isolated session checks</small></div><div class="card"><span>First iteration</span><b>0</b><small>Across recorded evaluations</small></div><div class="card"><span>Pilot active time</span><b>20.4 min</b><small>At report start; report generation is charged afterward</small></div></div>
+<section><p class="eyebrow">Executive summary</p><h2>Evidence still accumulating</h2><p class="lead notice ">Keep fixed Sol High while the fixed study or its assessment is incomplete.</p><p>Development selection has not been frozen. No final assessment has been recorded.</p><p>Qualification requires all four accepted results per split for the selected challenger and Sol High reference, passed technical and project checks, passed reviews, complete verified token coverage, at least 20% Standard credit-equivalent savings, and cheaper results in both repetitions. Subscription usage is observed separately and cannot be converted from credits.</p></section>
+<section><p class="eyebrow">Outcome by configuration</p><h2>Development and held-out</h2><p>Bars show accepted evaluations out of scheduled evaluations. The development challenger is frozen before held-out results.</p><div class="table-wrap"><table><thead><tr><th scope="col">Configuration</th><th scope="col">Development</th><th scope="col">Held-out</th></tr></thead><tbody><tr><th scope="row">gpt-6-luna:max<span class="sub">Standard service tier</span></th><td><span class="metric">0/4</span><span class="sub">1 attempted · 0 technical passed · 1 technical unknown · 0 first pass</span><span class="track"><span style="width:0%"></span></span></td><td><span class="metric">0/4</span><span class="sub">0 attempted · 0 technical passed · 0 first pass</span><span class="track"><span style="width:0%"></span></span></td></tr><tr><th scope="row">gpt-6-sol:xhigh<span class="sub">Standard service tier</span></th><td><span class="metric">0/4</span><span class="sub">0 attempted · 0 technical passed · 0 first pass</span><span class="track"><span style="width:0%"></span></span></td><td><span class="metric">0/4</span><span class="sub">0 attempted · 0 technical passed · 0 first pass</span><span class="track"><span style="width:0%"></span></span></td></tr><tr><th scope="row">gpt-6-astra:medium<span class="sub">Standard service tier</span></th><td><span class="metric">0/4</span><span class="sub">0 attempted · 0 technical passed · 0 first pass</span><span class="track"><span style="width:0%"></span></span></td><td><span class="metric">0/4</span><span class="sub">0 attempted · 0 technical passed · 0 first pass</span><span class="track"><span style="width:0%"></span></span></td></tr><tr><th scope="row">gpt-6-astra:max<span class="sub">Standard service tier</span></th><td><span class="metric">0/4</span><span class="sub">0 attempted · 0 technical passed · 0 first pass</span><span class="track"><span style="width:0%"></span></span></td><td><span class="metric">0/4</span><span class="sub">0 attempted · 0 technical passed · 0 first pass</span><span class="track"><span style="width:0%"></span></span></td></tr><tr><th scope="row">gpt-6-sol:high <span class="badge neutral">Reference</span><span class="sub">Standard service tier</span></th><td><span class="metric">0/4</span><span class="sub">0 attempted · 0 technical passed · 0 first pass</span><span class="track"><span style="width:0%"></span></span></td><td><span class="metric">0/4</span><span class="sub">0 attempted · 0 technical passed · 0 first pass</span><span class="track"><span style="width:0%"></span></span></td></tr></tbody></table></div></section>
+<section><p class="eyebrow">Standard credit-equivalent estimate</p><h2>Verified workflow cost</h2><p>Credits price verified implementation and required review token counters using the frozen Standard rates. A complete row contains four evaluations; this estimate does not translate to subscription percentage usage.</p><div class="table-wrap"><table><thead><tr><th>Configuration</th><th>Split</th><th>Credits</th><th>Coverage</th></tr></thead><tbody><tr><th scope="row">gpt-6-luna:max</th><td>development</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-luna:max</th><td>held-out</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-sol:xhigh</th><td>development</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-sol:xhigh</th><td>held-out</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-astra:medium</th><td>development</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-astra:medium</th><td>held-out</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-astra:max</th><td>development</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-astra:max</th><td>held-out</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-sol:high</th><td>development</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-sol:high</th><td>held-out</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr></tbody></table></div><p class="sub">Rate source: <a href="https://learn.chatgpt.com/docs/pricing">frozen Standard credit rates</a>. Rates per million tokens: {&quot;gpt-6-astra&quot;:{&quot;input&quot;:250,&quot;cachedInput&quot;:25,&quot;output&quot;:1250},&quot;gpt-6-sol&quot;:{&quot;input&quot;:50,&quot;cachedInput&quot;:5,&quot;output&quot;:250},&quot;gpt-6-luna&quot;:{&quot;input&quot;:2.5,&quot;cachedInput&quot;:0.25,&quot;output&quot;:12.5}}.</p></section>
+<section><p class="eyebrow">Subscription account windows</p><h2>Observed usage intervals</h2><p>Ranges are sums of retained lower and upper percentage-point bounds, not credits, dollars or token estimates. Coverage counts account readings, including failed evaluations; acceptance is shown above. Partial rows cannot establish comparative savings. Window readings and reset times appear in each evaluation and in the exports.</p><div class="table-wrap"><table><thead><tr><th>Configuration</th><th>Split</th><th>Window</th><th>Observed range</th><th>Coverage</th></tr></thead><tbody><tr><th scope="row">gpt-6-luna:max</th><td>development</td><td>primary</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-luna:max</th><td>held-out</td><td>primary</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-sol:xhigh</th><td>development</td><td>primary</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-sol:xhigh</th><td>held-out</td><td>primary</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-astra:medium</th><td>development</td><td>primary</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-astra:medium</th><td>held-out</td><td>primary</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-astra:max</th><td>development</td><td>primary</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-astra:max</th><td>held-out</td><td>primary</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-sol:high</th><td>development</td><td>primary</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr><tr><th scope="row">gpt-6-sol:high</th><td>held-out</td><td>primary</td><td>Unknown</td><td><span class="badge warn">Partial 0/4</span></td></tr></tbody></table></div><p>Whole-study account movement per active hour: primary: 0.00–5.88 percentage points per active hour. This is account-wide movement, including possible outside activity, and is not attributed to individual models.</p><p class="sub">Declared reading resolution: {&quot;primary&quot;:1}. Window durations (ms): {&quot;primary&quot;:604800000}.</p></section>
+<section><p class="eyebrow">Unresolved outcomes</p><h2>Rejected, failed, capped or blocked</h2><ul><li><strong>stream-log-1-0</strong>: Error: Workflow checkpoint stop requested</li></ul><p>Human waiting duration is not measured by the benchmark ledger. Active evaluation time and raw provider coverage are shown per evaluation; pilot active time includes shared measurement and host activities when the budget is available.</p></section>
+<section><p class="eyebrow">Reproducibility</p><h2>Artifacts and conditions</h2><dl class="facts"><div><dt>Policy</dt><dd>issue31-fixed-v1</dd></div><div><dt>Protocol SHA-256</dt><dd class="mono">4d5ada6e98b6edc2021f3babdad1294e180efc6a27a9024daf931127b70b2167</dd></div><div><dt>Ledger SHA-256</dt><dd class="mono">24d08a3a78d711a90eda3e1497b39a686bf84e603b30965bb84e3db92ba05663</dd></div><div><dt>Host conditions SHA-256</dt><dd class="mono">fc24da865683c2b2fe3a8a469142683d8d3ebb96f698ae67c9e0028e31c87fcb</dd></div><div><dt>Pilot runtime</dt><dd class="mono">ef9662b9edfec0e301347ceb5368497c1077b9def504f6ac9be44adc8bc633fc</dd></div><div><dt>Fixture conditions</dt><dd class="mono">{&quot;stream-log&quot;:&quot;9de5da44acff6448f67bd00f5511515df1c79fde26c63315cf092fdf81e2a7ed&quot;}</dd></div></dl><h3>Historical case identities</h3><ul><li><strong>stream-log</strong> (development): base <span class="mono">c505d4964ce6806211259e8bff9ad1d8c319a9ef</span>, reference <span class="mono">badf657b5dc81a71c141d8cd736a67804c6a86ff</span>. Keep raw streamed chunks contiguous and start later structured file-log entries on a new line</li><li><strong>output-retry</strong> (development): base <span class="mono">2867118a575faa697b000be87d429900804786cf</span>, reference <span class="mono">9f3f6d5c5f2527d5e1d8349f80eec2d36e797540</span>. Bound structured-output retries with default zero, session checks, exhaustion errors and caps</li><li><strong>merge-to-head</strong> (held-out): base <span class="mono">2867118a575faa697b000be87d429900804786cf</span>, reference <span class="mono">f7879c5ca6853c6afa79cb836d918de8de64db03</span>. Reach the disposable target from affected entry points while preserving the reusable source branch</li><li><strong>sandbox-handle</strong> (held-out): base <span class="mono">f1aa0809d097db0d5c674e13c9ac3374ba2a629b</span>, reference <span class="mono">0f577a42fdbfe49111b8e00694399ee0c9ddd559</span>. Public execution on reusable sandbox handles with working-directory and nonzero-exit behavior</li></ul><h3>Host manifest</h3><p>Matched to frozen host conditions</p><dl class="facts"><div><dt>schemaVersion</dt><dd class="mono">1</dd></div><div><dt>protocolHash</dt><dd class="mono">4d5ada6e98b6edc2021f3babdad1294e180efc6a27a9024daf931127b70b2167</dd></div><div><dt>installedPackage</dt><dd class="mono">{&quot;name&quot;:&quot;@ai-hero/sandcastle&quot;,&quot;version&quot;:&quot;0.12.0-dv8.23.0&quot;,&quot;sourceCommit&quot;:&quot;a1c5f0165ebbaa549e38a5b6193502f84cc9bdaf&quot;,&quot;distHash&quot;:&quot;e632904717de89c9315b4704a469dd300031acd6ecfa54a66f6a04c1c8148e74&quot;}</dd></div><div><dt>sourceCommit</dt><dd class="mono">a1c5f0165ebbaa549e38a5b6193502f84cc9bdaf</dd></div><div><dt>historicalCases</dt><dd class="mono">[{&quot;id&quot;:&quot;stream-log&quot;,&quot;split&quot;:&quot;development&quot;,&quot;kind&quot;:&quot;regression&quot;,&quot;base&quot;:&quot;c505d4964ce6806211259e8bff9ad1d8c319a9ef&quot;,&quot;reference&quot;:&quot;badf657b5dc81a71c141d8cd736a67804c6a86ff&quot;},{&quot;id&quot;:&quot;output-retry&quot;,&quot;split&quot;:&quot;development&quot;,&quot;kind&quot;:&quot;feature&quot;,&quot;base&quot;:&quot;2867118a575faa697b000be87d429900804786cf&quot;,&quot;reference&quot;:&quot;9f3f6d5c5f2527d5e1d8349f80eec2d36e797540&quot;},{&quot;id&quot;:&quot;merge-to-head&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;kind&quot;:&quot;regression&quot;,&quot;base&quot;:&quot;2867118a575faa697b000be87d429900804786cf&quot;,&quot;reference&quot;:&quot;f7879c5ca6853c6afa79cb836d918de8de64db03&quot;},{&quot;id&quot;:&quot;sandbox-handle&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;kind&quot;:&quot;feature&quot;,&quot;base&quot;:&quot;f1aa0809d097db0d5c674e13c9ac3374ba2a629b&quot;,&quot;reference&quot;:&quot;0f577a42fdbfe49111b8e00694399ee0c9ddd559&quot;}]</dd></div><div><dt>configurations</dt><dd class="mono">[{&quot;model&quot;:&quot;gpt-6-luna&quot;,&quot;effort&quot;:&quot;max&quot;,&quot;serviceTier&quot;:&quot;default&quot;},{&quot;model&quot;:&quot;gpt-6-sol&quot;,&quot;effort&quot;:&quot;xhigh&quot;,&quot;serviceTier&quot;:&quot;default&quot;},{&quot;model&quot;:&quot;gpt-6-astra&quot;,&quot;effort&quot;:&quot;medium&quot;,&quot;serviceTier&quot;:&quot;default&quot;},{&quot;model&quot;:&quot;gpt-6-astra&quot;,&quot;effort&quot;:&quot;max&quot;,&quot;serviceTier&quot;:&quot;default&quot;},{&quot;model&quot;:&quot;gpt-6-sol&quot;,&quot;effort&quot;:&quot;high&quot;,&quot;serviceTier&quot;:&quot;default&quot;}]</dd></div><div><dt>slotOrder</dt><dd class="mono">[{&quot;id&quot;:&quot;stream-log-1-0&quot;,&quot;fixture&quot;:&quot;stream-log&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:0},{&quot;id&quot;:&quot;stream-log-1-1&quot;,&quot;fixture&quot;:&quot;stream-log&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:1},{&quot;id&quot;:&quot;stream-log-1-2&quot;,&quot;fixture&quot;:&quot;stream-log&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:2},{&quot;id&quot;:&quot;stream-log-1-3&quot;,&quot;fixture&quot;:&quot;stream-log&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:3},{&quot;id&quot;:&quot;stream-log-1-4&quot;,&quot;fixture&quot;:&quot;stream-log&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:4},{&quot;id&quot;:&quot;stream-log-2-0&quot;,&quot;fixture&quot;:&quot;stream-log&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:4},{&quot;id&quot;:&quot;stream-log-2-1&quot;,&quot;fixture&quot;:&quot;stream-log&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:3},{&quot;id&quot;:&quot;stream-log-2-2&quot;,&quot;fixture&quot;:&quot;stream-log&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:2},{&quot;id&quot;:&quot;stream-log-2-3&quot;,&quot;fixture&quot;:&quot;stream-log&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:1},{&quot;id&quot;:&quot;stream-log-2-4&quot;,&quot;fixture&quot;:&quot;stream-log&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:0},{&quot;id&quot;:&quot;output-retry-1-0&quot;,&quot;fixture&quot;:&quot;output-retry&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:0},{&quot;id&quot;:&quot;output-retry-1-1&quot;,&quot;fixture&quot;:&quot;output-retry&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:1},{&quot;id&quot;:&quot;output-retry-1-2&quot;,&quot;fixture&quot;:&quot;output-retry&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:2},{&quot;id&quot;:&quot;output-retry-1-3&quot;,&quot;fixture&quot;:&quot;output-retry&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:3},{&quot;id&quot;:&quot;output-retry-1-4&quot;,&quot;fixture&quot;:&quot;output-retry&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:4},{&quot;id&quot;:&quot;output-retry-2-0&quot;,&quot;fixture&quot;:&quot;output-retry&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:4},{&quot;id&quot;:&quot;output-retry-2-1&quot;,&quot;fixture&quot;:&quot;output-retry&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:3},{&quot;id&quot;:&quot;output-retry-2-2&quot;,&quot;fixture&quot;:&quot;output-retry&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:2},{&quot;id&quot;:&quot;output-retry-2-3&quot;,&quot;fixture&quot;:&quot;output-retry&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:1},{&quot;id&quot;:&quot;output-retry-2-4&quot;,&quot;fixture&quot;:&quot;output-retry&quot;,&quot;split&quot;:&quot;development&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:0},{&quot;id&quot;:&quot;merge-to-head-1-0&quot;,&quot;fixture&quot;:&quot;merge-to-head&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:0},{&quot;id&quot;:&quot;merge-to-head-1-1&quot;,&quot;fixture&quot;:&quot;merge-to-head&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:1},{&quot;id&quot;:&quot;merge-to-head-1-2&quot;,&quot;fixture&quot;:&quot;merge-to-head&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:2},{&quot;id&quot;:&quot;merge-to-head-1-3&quot;,&quot;fixture&quot;:&quot;merge-to-head&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:3},{&quot;id&quot;:&quot;merge-to-head-1-4&quot;,&quot;fixture&quot;:&quot;merge-to-head&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:4},{&quot;id&quot;:&quot;merge-to-head-2-0&quot;,&quot;fixture&quot;:&quot;merge-to-head&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:4},{&quot;id&quot;:&quot;merge-to-head-2-1&quot;,&quot;fixture&quot;:&quot;merge-to-head&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:3},{&quot;id&quot;:&quot;merge-to-head-2-2&quot;,&quot;fixture&quot;:&quot;merge-to-head&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:2},{&quot;id&quot;:&quot;merge-to-head-2-3&quot;,&quot;fixture&quot;:&quot;merge-to-head&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:1},{&quot;id&quot;:&quot;merge-to-head-2-4&quot;,&quot;fixture&quot;:&quot;merge-to-head&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:0},{&quot;id&quot;:&quot;sandbox-handle-1-0&quot;,&quot;fixture&quot;:&quot;sandbox-handle&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:0},{&quot;id&quot;:&quot;sandbox-handle-1-1&quot;,&quot;fixture&quot;:&quot;sandbox-handle&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:1},{&quot;id&quot;:&quot;sandbox-handle-1-2&quot;,&quot;fixture&quot;:&quot;sandbox-handle&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:2},{&quot;id&quot;:&quot;sandbox-handle-1-3&quot;,&quot;fixture&quot;:&quot;sandbox-handle&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:3},{&quot;id&quot;:&quot;sandbox-handle-1-4&quot;,&quot;fixture&quot;:&quot;sandbox-handle&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:1,&quot;arm&quot;:4},{&quot;id&quot;:&quot;sandbox-handle-2-0&quot;,&quot;fixture&quot;:&quot;sandbox-handle&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:4},{&quot;id&quot;:&quot;sandbox-handle-2-1&quot;,&quot;fixture&quot;:&quot;sandbox-handle&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:3},{&quot;id&quot;:&quot;sandbox-handle-2-2&quot;,&quot;fixture&quot;:&quot;sandbox-handle&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:2},{&quot;id&quot;:&quot;sandbox-handle-2-3&quot;,&quot;fixture&quot;:&quot;sandbox-handle&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:1},{&quot;id&quot;:&quot;sandbox-handle-2-4&quot;,&quot;fixture&quot;:&quot;sandbox-handle&quot;,&quot;split&quot;:&quot;held-out&quot;,&quot;repetition&quot;:2,&quot;arm&quot;:0}]</dd></div><div><dt>workerCliVersion</dt><dd class="mono">codex-cli 0.156.1</dd></div><div><dt>workerImageDigest</dt><dd class="mono">sha256:fd16475df746edadc2ed06e5ae06b338f7169fb9be79f3ce0b9defcc91b93c4e</dd></div><div><dt>workerConfigHash</dt><dd class="mono">37b9ddd9881ce80c63c33ab9684f42c75e00d547149578e325c625970d8a9ec4</dd></div><div><dt>workerAgentsHash</dt><dd class="mono">77da3224e5e8b27700815ba7412d06fe276c8bd88c283f9267b5e560813b2fa0</dd></div><div><dt>observerHash</dt><dd class="mono">68788003ec61400960e25ac047de5d89bbf6d7546738636828c5df8871ef0de6</dd></div><div><dt>workerDockerfileHash</dt><dd class="mono">1ab6a75f0f9e22455e63007285c429310da6ab9c3ab1016de26b3af0ace8d2a8</dd></div><div><dt>runtimeIdentity</dt><dd class="mono">ef9662b9edfec0e301347ceb5368497c1077b9def504f6ac9be44adc8bc633fc</dd></div><div><dt>accountId</dt><dd class="mono">a89662db-edbc-4274-b9a1-04f5692d2d80</dd></div><div><dt>quietAccountWindow</dt><dd class="mono">One sequential worker evaluation at a time; other account activity cannot be excluded by this host</dd></div><div><dt>fixturePromptHashes</dt><dd class="mono">{&quot;stream-log&quot;:&quot;fe25dce3d70e5cf3b2385010066725678f78ca4d7e341694d5663695243d8aa0&quot;,&quot;output-retry&quot;:&quot;d258d0ceb9d89000ab432b06b0a4451798bf292e106491b4fc3615000337401c&quot;,&quot;merge-to-head&quot;:&quot;68c7590e69ca9c73a0ce904aeb219dc6dc3f389e2f9d209490137068a95ce9e9&quot;,&quot;sandbox-handle&quot;:&quot;513b9f519723dde1efbf13d9c8a731051c4eb23c4483c02bfd6a4d65f48b7613&quot;}</dd></div><div><dt>toolVersions</dt><dd class="mono">{&quot;hostNode&quot;:&quot;v24.19.0&quot;,&quot;workerNode&quot;:&quot;v24.19.0&quot;,&quot;hostPnpm&quot;:&quot;11.19.0&quot;,&quot;workerPnpm&quot;:&quot;11.19.0&quot;,&quot;hostGit&quot;:&quot;git version 2.55.0&quot;}</dd></div><div><dt>cachePolicy</dt><dd class="mono">Shared host pnpm download cache; fresh worktree, dependencies and Codex session per evaluation</dd></div><div><dt>dependencyPolicy</dt><dd class="mono">Import each frozen historical package lock with pnpm, install from the derived lock with hoisting and scripts disabled, then remove derived metadata from the answer-free tree</dd></div><div><dt>nonImplementationRoleConfigurations</dt><dd class="mono">{&quot;standards-review-preview&quot;:{&quot;model&quot;:&quot;gpt-6-sol&quot;,&quot;effort&quot;:&quot;high&quot;,&quot;serviceTier&quot;:&quot;default&quot;,&quot;calls&quot;:1},&quot;specification-review-preview&quot;:{&quot;model&quot;:&quot;gpt-6-sol&quot;,&quot;effort&quot;:&quot;high&quot;,&quot;serviceTier&quot;:&quot;default&quot;,&quot;calls&quot;:1},&quot;standards-review&quot;:{&quot;model&quot;:&quot;gpt-6-sol&quot;,&quot;effort&quot;:&quot;high&quot;,&quot;serviceTier&quot;:&quot;default&quot;,&quot;calls&quot;:1},&quot;specification-review&quot;:{&quot;model&quot;:&quot;gpt-6-sol&quot;,&quot;effort&quot;:&quot;high&quot;,&quot;serviceTier&quot;:&quot;default&quot;,&quot;calls&quot;:1}}</dd></div><div><dt>implementationReworkConfiguration</dt><dd class="mono">{&quot;model&quot;:&quot;same as selected arm&quot;,&quot;effort&quot;:&quot;same as selected arm&quot;,&quot;serviceTier&quot;:&quot;default&quot;,&quot;calls&quot;:1,&quot;rule&quot;:&quot;only after protected or required-preview-review failure&quot;}</dd></div><div><dt>projectGateHashes</dt><dd class="mono">{&quot;stream-log&quot;:&quot;e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1&quot;,&quot;output-retry&quot;:&quot;e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1&quot;,&quot;merge-to-head&quot;:&quot;e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1&quot;,&quot;sandbox-handle&quot;:&quot;e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1&quot;}</dd></div><div><dt>protectedGraderHashes</dt><dd class="mono">{&quot;runner&quot;:&quot;e9022e0abc1714b2dbbedb6918ecab8534a3ae4ba4696b7ef390f9de764995e1&quot;,&quot;stream-log&quot;:&quot;b63cc021e62f21007ade72a42267ef74c9b998eb26bf1e43c555a0de6fad33b7&quot;,&quot;output-retry&quot;:&quot;ab1f475ba3890b803825d3c7d13fbd95b79ae3e93bfb7ac05789bd97be16d333&quot;,&quot;merge-to-head&quot;:&quot;0f1326e93504a642681e919db710e0d6cbf21b6cb25000ea8fab37a4f0ec9be4&quot;,&quot;sandbox-handle&quot;:&quot;bbb5c9ea19696541f4f9f65db5afa16dac2e5f6a79228f6e9cff04d7afab768f&quot;}</dd></div><div><dt>hostEntrySha256</dt><dd class="mono">a3908adb93f539ca2a7a4a37a1936137fec887e990117e7cf4a49bc0ae71f177</dd></div><div><dt>accountReadingResolution</dt><dd class="mono">{&quot;primary&quot;:1}</dd></div><div><dt>accountWindowDurationMs</dt><dd class="mono">{&quot;primary&quot;:604800000}</dd></div><div><dt>reservations</dt><dd class="mono">{&quot;activeMs&quot;:43200000,&quot;conservativeWallClockMs&quot;:43200000,&quot;measurementMs&quot;:900000,&quot;measurementCalls&quot;:6,&quot;evaluationMs&quot;:1800000,&quot;invocationMs&quot;:900000,&quot;evaluations&quot;:40,&quot;roles&quot;:[&quot;standards-review-preview&quot;,&quot;specification-review-preview&quot;,&quot;implementation-rework&quot;,&quot;standards-review&quot;,&quot;specification-review&quot;]}</dd></div><div><dt>creditRates</dt><dd class="mono">{&quot;gpt-6-astra&quot;:{&quot;input&quot;:250,&quot;cachedInput&quot;:25,&quot;output&quot;:1250},&quot;gpt-6-sol&quot;:{&quot;input&quot;:50,&quot;cachedInput&quot;:5,&quot;output&quot;:250},&quot;gpt-6-luna&quot;:{&quot;input&quot;:2.5,&quot;cachedInput&quot;:0.25,&quot;output&quot;:12.5}}</dd></div><div><dt>creditRateSource</dt><dd class="mono">https://learn.chatgpt.com/docs/pricing</dd></div><div><dt>accountRiseLimitPercentPoints</dt><dd class="mono">20</dd></div></dl><p>Limitations: source observations are the ledger's account readings, counter paths and protected preflight records. Missing, overlapping, delayed, reset or confounded measurements remain uncertain. A synthetic fixture does not establish live savings. The report does not recalculate qualification or promotion.</p></section>
+<section><p class="eyebrow">Audit trail</p><h2>Evaluation evidence</h2><p>Open a row to inspect its recorded candidate, sessions, preflight, review, account readings, token sources and reason. 1 of 40 slots have records.</p><details><summary><strong>gpt-6-luna:max</strong><span>development · stream-log · repetition 1</span><span class="badge warn">incomplete</span></summary><dl class="facts"><div><dt>Technical check</dt><dd><span class="badge neutral">Unknown</span></dd></div><div><dt>Project acceptance</dt><dd><span class="badge warn">Did not pass</span></dd></div><div><dt>First iteration</dt><dd><span class="badge warn">Did not pass</span></dd></div><div><dt>Review</dt><dd><span class="badge warn">Did not pass</span></dd></div><div><dt>Active evaluation time</dt><dd>11.5 min</dd></div><div><dt>Human waiting</dt><dd>Not measured in ledger</dd></div><div><dt>Account cost</dt><dd>Unknown or incomparable</dd></div><div><dt>Token coverage</dt><dd>Incomplete: stream-log/implementation-rework/4</dd></div><div><dt>Standard credits</dt><dd>Unknown</dd></div></dl><p>Error: Workflow checkpoint stop requested</p><pre>{
+  &quot;slotId&quot;: &quot;stream-log-1-0&quot;,
+  &quot;invocationId&quot;: &quot;stream-log-1-0&quot;,
+  &quot;fixture&quot;: {
+    &quot;fixtureId&quot;: &quot;stream-log&quot;,
+    &quot;base&quot;: &quot;c505d4964ce6806211259e8bff9ad1d8c319a9ef&quot;,
+    &quot;reference&quot;: &quot;badf657b5dc81a71c141d8cd736a67804c6a86ff&quot;,
+    &quot;exportHead&quot;: &quot;65ffc6f3e8906a937601b7c22b013b2a656c4f64&quot;,
+    &quot;tree&quot;: &quot;652edcbe281c6d10841f2bebc41e342660afe2d0&quot;,
+    &quot;preflight&quot;: {
+      &quot;base&quot;: {
+        &quot;focusPassed&quot;: false,
+        &quot;otherGatesPassed&quot;: true,
+        &quot;environmentFailure&quot;: false,
+        &quot;evidence&quot;: [
+          &quot;{\&quot;fixtureId\&quot;:\&quot;stream-log\&quot;,\&quot;candidate\&quot;:\&quot;65ffc6f3e8906a937601b7c22b013b2a656c4f64\&quot;,\&quot;protectedTestSha256\&quot;:\&quot;b63cc021e62f21007ade72a42267ef74c9b998eb26bf1e43c555a0de6fad33b7\&quot;,\&quot;candidateTestSha256\&quot;:\&quot;49cf2e96cec3a0fbfb13146890365532ee7056325dcb4144f54cc197fa7b0081\&quot;,\&quot;focus\&quot;:{\&quot;passed\&quot;:false,\&quot;output\&quot;:\&quot;\\n RUN  v3.2.4 /tmp/sandcastle-stream-log-grade-9MYpkz\\n\\n ❯ src/Display.test.ts (34 tests | 1 failed | 32 skipped) 16ms\\n   ↓ SilentDisplay &gt; status &gt; captures status messages with severity\\n   ↓ SilentDisplay &gt; status &gt; captures multiple status messages in order\\n   ↓ SilentDisplay &gt; status &gt; captures all severity levels\\n   ↓ SilentDisplay &gt; spinner &gt; passes through the wrapped effect result\\n   ↓ SilentDisplay &gt; spinner &gt; captures spinner entry with message\\n   ↓ SilentDisplay &gt; spinner &gt; passes through the wrapped effect failure\\n   ↓ SilentDisplay &gt; summary &gt; captures summary with title and rows\\n   ↓ SilentDisplay &gt; textChunk &gt; captures streaming chunks as textChunk entries\\n   ↓ SilentDisplay &gt; mixed calls &gt; captures all entry types in order\\n   ↓ FileDisplay &gt; intro is a no-op (only delimiter in log)\\n   ↓ FileDisplay &gt; writes status messages to file\\n   ↓ FileDisplay &gt; writes spinner messages to file and passes through result\\n   ↓ FileDisplay &gt; spinner done line includes elapsed time in seconds\\n   ↓ FileDisplay &gt; writes summary to file\\n   ↓ FileDisplay &gt; writes taskLog messages to file\\n   ↓ FileDisplay &gt; taskLog done line includes elapsed time in seconds\\n   ↓ FileDisplay &gt; writes text messages to file\\n   ↓ FileDisplay &gt; text() writes each message on its own line\\n   ↓ FileDisplay &gt; textChunk() writes raw chunks with no appended newline\\n   × FileDisplay &gt; starts a following line entry on a fresh line after a mid-line chunk 13ms\\n     → expected &#39;\\\\n--- Run started: 2026-09-26T15:56:2…&#39; to contain &#39;Let me read the file.\\\\nRead(src/hello…&#39;\\n   ✓ FileDisplay &gt; does not insert an extra newline when the chunk already ends with one 2ms\\n   ↓ FileDisplay &gt; creates log file with run delimiter on initialization\\n   ↓ FileDisplay &gt; strips [Name] prefix from status messages\\n   ↓ FileDisplay &gt; writes status messages without ANSI escape codes\\n   ↓ FileDisplay &gt; appends a run delimiter on initialization instead of truncating\\n   ↓ FileDisplay &gt; writes run delimiter with ISO 8601 UTC timestamp\\n   ↓ FileDisplay &gt; writes summary without ANSI escape codes\\n   ↓ SilentDisplay - toolCall &gt; stores toolCall entries for test assertions\\n   ↓ SilentDisplay - toolCall &gt; stores multiple toolCall entries in order\\n   ↓ FileDisplay - toolCall &gt; writes tool call as Name(args) line in log file\\n   ↓ FileDisplay - toolCall &gt; writes different tool types correctly\\n   ↓ terminalStyle &gt; wraps status messages with bold ANSI codes\\n   ↓ terminalStyle &gt; wraps summary title with bold ANSI codes\\n   ↓ terminalStyle &gt; formats summary row with bold key and dim value\\n\\n Test Files  1 failed (1)\\n      Tests  1 failed | 1 passed | 32 skipped (34)\\n   Start at  18:56:29\\n   Duration  995ms (transform 52ms, setup 13ms, collect 656ms, tests 16ms, environment 0ms, prepare 66ms)\\n\\n\\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\\n\\n FAIL  src/Display.test.ts &gt; FileDisplay &gt; starts a following line entry on a fresh line after a mid-line chunk\\nAssertionError: expected &#39;\\\\n--- Run started: 2026-09-26T15:56:2…&#39; to contain &#39;Let me read the file.\\\\nRead(src/hello…&#39;\\n\\n- Expected\\n+ Received\\n\\n- Let me read the file.\\n- Read(src/hello.ts)\\n+\\n+ --- Run started: 2026-09-26T15:56:29.985Z ---\\n+ Let me read the file.Read(src/hello.ts)\\n\\n\\n ❯ src/Display.test.ts:394:17\\n    392| \\n    393|     const log = readLog(logPath);\\n    394|     expect(log).toContain(\\\&quot;Let me read the file.\\\\nRead(src/hello.ts)\\\\n…\\n       |                 ^\\n    395|   });\\n    396| \\n\\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\\n\\n\&quot;},\&quot;install\&quot;:{\&quot;passed\&quot;:true,\&quot;output\&quot;:\&quot;✓ Lockfile passes supply-chain policies (verified 396ms ago)\\nLockfile is up to date, resolution step is skipped\\nProgress: resolved 1, reused 0, downloaded 0, added 0\\nPackages: +504\\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\\nPackages are copied from the content-addressable store to the virtual store.\\n  Content-addressable store is at: /tmp/.pnpm-store/v11\\n  Virtual store is at:             node_modules/.pnpm\\nProgress: resolved 504, reused 504, downloaded 0, added 124\\nProgress: resolved 504, reused 504, downloaded 0, added 503\\nProgress: resolved 504, reused 504, downloaded 0, added 504, done\\n\\ndependencies:\\n+ @clack/prompts 1.1.0\\n+ @vercel/sandbox 3.5.0\\n\\ndevDependencies:\\n+ @changesets/cli 2.30.0\\n+ @daytona/sdk 0.164.0\\n+ @effect/cli 0.74.0\\n+ @effect/platform 0.95.0\\n+ @effect/platform-node 0.105.0\\n+ @effect/printer 0.48.0\\n+ @effect/printer-ansi 0.48.0\\n+ @types/node 25.5.0\\n+ @typescript/native-preview 7.0.0-dev.20260317.1\\n+ effect 3.20.0\\n+ husky 9.1.7\\n+ lint-staged 15.5.2\\n+ prettier 3.8.1\\n+ tsup 8.5.1\\n+ tsx 4.21.0\\n+ typescript 6.0.3\\n+ vitest 3.2.4\\n+ zod 4.4.3\\n\\nDone in 2.8s using pnpm v11.19.0\\n\&quot;},\&quot;ordinary\&quot;:{\&quot;passed\&quot;:true,\&quot;output\&quot;:\&quot;ilure with dirty worktree\\n\\nWorktree preserved at /tmp/sandcastle-test-zfJLjg/.sandcastle/worktrees/sandcastle-20260926-185642-27d55e\\n  To review: cd /tmp/sandcastle-test-zfJLjg/.sandcastle/worktrees/sandcastle-20260926-185642-27d55e\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-zfJLjg/.sandcastle/worktrees/sandcastle-20260926-185642-27d55e\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory &gt; logs copy-to-sandbox as a spinner when copyToWorktree paths are provided\\n\\nRun succeeded but worktree has uncommitted changes at /tmp/sandcastle-test-HPHrNo/.sandcastle/worktrees/sandcastle-20260926-185642-06de72\\n  To review: cd /tmp/sandcastle-test-HPHrNo/.sandcastle/worktrees/sandcastle-20260926-185642-06de72\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-HPHrNo/.sandcastle/worktrees/sandcastle-20260926-185642-06de72\\n\\nstderr | src/createWorktree.test.ts &gt; createWorktree &gt; reuses dirty worktree with a warning\\nReusing worktree at /tmp/ws-test-I0rNbT/.sandcastle/worktrees/dirty-branch (branch &#39;dirty-branch&#39;) — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory &gt; preserves worktree and returns preservedWorktreePath on success with dirty worktree\\n\\nRun succeeded but worktree has uncommitted changes at /tmp/sandcastle-test-2ub81F/.sandcastle/worktrees/sandcastle-20260926-185642-167ef5\\n  To review: cd /tmp/sandcastle-test-2ub81F/.sandcastle/worktrees/sandcastle-20260926-185642-167ef5\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-2ub81F/.sandcastle/worktrees/sandcastle-20260926-185642-167ef5\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory &gt; removes worktree on failure with clean worktree\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/WorktreeManager.test.ts &gt; WorktreeManager.create &gt; reuses dirty worktree with a warning\\nReusing worktree at /tmp/wt-repo-hsJH40/.sandcastle/worktrees/my-branch (branch &#39;my-branch&#39;) — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory &gt; removes worktree when sandbox start fails (e.g. missing image)\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory &gt; does not attach preservedWorktreePath to AgentIdleTimeoutError when worktree is clean on failure\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/WorktreeManager.test.ts &gt; WorktreeManager.create &gt; does not refresh a dirty reused worktree\\nReusing worktree at /tmp/wt-repo-ZP0z3M/.sandcastle/worktrees/my-branch (branch &#39;my-branch&#39;) — worktree has uncommitted changes\\n\\nstderr | src/createSandbox.test.ts &gt; createSandbox &gt; reuses dirty worktree with warning (ADR 0003)\\nReusing worktree at /tmp/sandbox-test-SO5Y5m/.sandcastle/worktrees/dirty-collision (branch &#39;dirty-collision&#39;) — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory — isolated providers &gt; preserves worktree on failure with dirty worktree\\n\\nWorktree preserved at /tmp/sandcastle-test-AzRx41/.sandcastle/worktrees/sandcastle-20260926-185646-ab09db\\n  To review: cd /tmp/sandcastle-test-AzRx41/.sandcastle/worktrees/sandcastle-20260926-185646-ab09db\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-AzRx41/.sandcastle/worktrees/sandcastle-20260926-185646-ab09db\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory — isolated providers &gt; removes worktree when isolated sandbox start fails\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/WorktreeManager.test.ts &gt; WorktreeManager.create &gt; reuses preserved worktree when branch is mid-rebase (detached HEAD)\\nReusing worktree at /tmp/wt-repo-xl7Zyr/.sandcastle/worktrees/feat-rebase-test (branch &#39;feat/rebase-test&#39;) — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory — no-sandbox provider &gt; worktree mode: removes worktree when sandbox start fails\\n\\nWorktree removed (no uncommitted changes)\\n\\n\&quot;},\&quot;typecheck\&quot;:{\&quot;passed\&quot;:true,\&quot;output\&quot;:\&quot;$ tsgo --noEmit\\n\&quot;},\&quot;build\&quot;:{\&quot;passed\&quot;:true,\&quot;output\&quot;:\&quot;CLI Building entry: {\\\&quot;index\\\&quot;:\\\&quot;src/index.ts\\\&quot;,\\\&quot;main\\\&quot;:\\\&quot;src/main.ts\\\&quot;,\\\&quot;sandboxes/docker\\\&quot;:\\\&quot;src/sandboxes/docker.ts\\\&quot;,\\\&quot;sandboxes/podman\\\&quot;:\\\&quot;src/sandboxes/podman.ts\\\&quot;,\\\&quot;sandboxes/vercel\\\&quot;:\\\&quot;src/sandboxes/vercel.ts\\\&quot;,\\\&quot;sandboxes/daytona\\\&quot;:\\\&quot;src/sandboxes/daytona.ts\\\&quot;,\\\&quot;sandboxes/no-sandbox\\\&quot;:\\\&quot;src/sandboxes/no-sandbox.ts\\\&quot;}\\nCLI Using tsconfig: tsconfig.json\\nCLI tsup v8.5.1\\nCLI Using tsup config: /home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/fixtures/stream-log/tsup.config.ts\\nCLI Target: node18\\nCLI Cleaning output folder\\nESM Build start\\nDTS Build start\\nESM dist/sandboxes/vercel.js         5.26 KB\\nESM dist/chunk-NGBM7T3E.js           3.40 KB\\nESM dist/chunk-BIWNFKGV.js           597.00 B\\nESM dist/chunk-62WN33RK.js           3.49 KB\\nESM dist/index.js                    123.22 KB\\nESM dist/chunk-Q4PORSIP.js           11.57 KB\\nESM dist/sandboxes/no-sandbox.js     236.00 B\\nESM dist/sandboxes/docker.js         313.00 B\\nESM dist/main.js                     681.13 KB\\nESM dist/chunk-XUN2PKMZ.js           906.47 KB\\nESM dist/sandboxes/podman.js         9.95 KB\\nESM dist/sandboxes/daytona.js        4.22 KB\\nESM dist/chunk-W3ZDBVVW.js           1.01 MB\\nESM dist/chunk-NGBM7T3E.js.map       3.90 KB\\nESM dist/chunk-62WN33RK.js.map       9.65 KB\\nESM dist/sandboxes/vercel.js.map     14.65 KB\\nESM dist/index.js.map                350.14 KB\\nESM dist/sandboxes/no-sandbox.js.map 74.00 B\\nESM dist/chunk-Q4PORSIP.js.map       31.81 KB\\nESM dist/chunk-BIWNFKGV.js.map       12.26 KB\\nESM dist/sandboxes/docker.js.map     70.00 B\\nESM dist/sandboxes/daytona.js.map    10.92 KB\\nESM dist/sandboxes/podman.js.map     26.42 KB\\nESM dist/main.js.map                 1.83 MB\\nESM dist/chunk-W3ZDBVVW.js.map       2.04 MB\\nESM dist/chunk-XUN2PKMZ.js.map       6.77 MB\\nESM ⚡️ Build success in 2914ms\\nDTS ⚡️ Build success in 5510ms\\nDTS dist/main.d.ts                     20.00 B\\nDTS dist/sandboxes/docker.d.ts         4.32 KB\\nDTS dist/sandboxes/podman.d.ts         4.92 KB\\nDTS dist/sandboxes/vercel.d.ts         3.36 KB\\nDTS dist/sandboxes/daytona.d.ts        2.15 KB\\nDTS dist/sandboxes/no-sandbox.d.ts     1.49 KB\\nDTS dist/index.d.ts                    48.51 KB\\nDTS dist/mountUtils-CCA-bbpK.d.ts      860.00 B\\nDTS dist/MountConfig-CmXclHA5.d.ts     998.00 B\\nDTS dist/SandboxProvider-EkSMuBp8.d.ts 11.19 KB\\n✓ No Effect references in public .d.ts files\\n$ tsup\\n\\\&quot;createRequire\\\&quot; is imported from external module \\\&quot;module\\\&quot; but never used in \\\&quot;dist/main.js\\\&quot;.\\n\\\&quot;Readable\\\&quot; is imported from external module \\\&quot;stream\\\&quot; but never used in \\\&quot;dist/chunk-W3ZDBVVW.js\\\&quot;.\\n$ rm -rf dist/templates &amp;&amp; cp -r src/templates dist/templates &amp;&amp; node scripts/check-public-types-effect-free.mjs\\n\&quot;}}&quot;
+        ]
+      },
+      &quot;correction&quot;: {
+        &quot;focusPassed&quot;: true,
+        &quot;otherGatesPassed&quot;: true,
+        &quot;environmentFailure&quot;: false,
+        &quot;evidence&quot;: [
+          &quot;{\&quot;fixtureId\&quot;:\&quot;stream-log\&quot;,\&quot;candidate\&quot;:\&quot;46cf4515ce42e8432b33d3321e5b448c54fdfbbf\&quot;,\&quot;protectedTestSha256\&quot;:\&quot;b63cc021e62f21007ade72a42267ef74c9b998eb26bf1e43c555a0de6fad33b7\&quot;,\&quot;candidateTestSha256\&quot;:\&quot;b63cc021e62f21007ade72a42267ef74c9b998eb26bf1e43c555a0de6fad33b7\&quot;,\&quot;focus\&quot;:{\&quot;passed\&quot;:true,\&quot;output\&quot;:\&quot;\\n RUN  v3.2.4 /tmp/sandcastle-stream-log-grade-yxVSQk\\n\\n ✓ src/Display.test.ts (34 tests | 32 skipped) 11ms\\n\\n Test Files  1 passed (1)\\n      Tests  2 passed | 32 skipped (34)\\n   Start at  18:56:58\\n   Duration  1.01s (transform 50ms, setup 14ms, collect 624ms, tests 11ms, environment 0ms, prepare 75ms)\\n\\n\&quot;},\&quot;install\&quot;:{\&quot;passed\&quot;:true,\&quot;output\&quot;:\&quot;✓ Lockfile passes supply-chain policies (verified 409ms ago)\\nLockfile is up to date, resolution step is skipped\\nProgress: resolved 1, reused 0, downloaded 0, added 0\\nPackages: +504\\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\\nPackages are copied from the content-addressable store to the virtual store.\\n  Content-addressable store is at: /tmp/.pnpm-store/v11\\n  Virtual store is at:             node_modules/.pnpm\\nProgress: resolved 504, reused 504, downloaded 0, added 504, done\\n\\ndependencies:\\n+ @clack/prompts 1.1.0\\n+ @vercel/sandbox 3.5.0\\n\\ndevDependencies:\\n+ @changesets/cli 2.30.0\\n+ @daytona/sdk 0.164.0\\n+ @effect/cli 0.74.0\\n+ @effect/platform 0.95.0\\n+ @effect/platform-node 0.105.0\\n+ @effect/printer 0.48.0\\n+ @effect/printer-ansi 0.48.0\\n+ @types/node 25.5.0\\n+ @typescript/native-preview 7.0.0-dev.20260317.1\\n+ effect 3.20.0\\n+ husky 9.1.7\\n+ lint-staged 15.5.2\\n+ prettier 3.8.1\\n+ tsup 8.5.1\\n+ tsx 4.21.0\\n+ typescript 6.0.3\\n+ vitest 3.2.4\\n+ zod 4.4.3\\n\\nDone in 1.4s using pnpm v11.19.0\\n\&quot;},\&quot;ordinary\&quot;:{\&quot;passed\&quot;:true,\&quot;output\&quot;:\&quot;ilure with dirty worktree\\n\\nWorktree preserved at /tmp/sandcastle-test-ipGJZy/.sandcastle/worktrees/sandcastle-20260926-185711-02b525\\n  To review: cd /tmp/sandcastle-test-ipGJZy/.sandcastle/worktrees/sandcastle-20260926-185711-02b525\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-ipGJZy/.sandcastle/worktrees/sandcastle-20260926-185711-02b525\\n\\nstderr | src/createWorktree.test.ts &gt; createWorktree &gt; reuses dirty worktree with a warning\\nReusing worktree at /tmp/ws-test-1ny32t/.sandcastle/worktrees/dirty-branch (branch &#39;dirty-branch&#39;) — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory &gt; logs copy-to-sandbox as a spinner when copyToWorktree paths are provided\\n\\nRun succeeded but worktree has uncommitted changes at /tmp/sandcastle-test-QMdYi2/.sandcastle/worktrees/sandcastle-20260926-185712-f91f62\\n  To review: cd /tmp/sandcastle-test-QMdYi2/.sandcastle/worktrees/sandcastle-20260926-185712-f91f62\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-QMdYi2/.sandcastle/worktrees/sandcastle-20260926-185712-f91f62\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory &gt; preserves worktree and returns preservedWorktreePath on success with dirty worktree\\n\\nRun succeeded but worktree has uncommitted changes at /tmp/sandcastle-test-QW8d2s/.sandcastle/worktrees/sandcastle-20260926-185712-f307cb\\n  To review: cd /tmp/sandcastle-test-QW8d2s/.sandcastle/worktrees/sandcastle-20260926-185712-f307cb\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-QW8d2s/.sandcastle/worktrees/sandcastle-20260926-185712-f307cb\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory &gt; removes worktree on failure with clean worktree\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory &gt; removes worktree when sandbox start fails (e.g. missing image)\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/WorktreeManager.test.ts &gt; WorktreeManager.create &gt; reuses dirty worktree with a warning\\nReusing worktree at /tmp/wt-repo-vS8Iao/.sandcastle/worktrees/my-branch (branch &#39;my-branch&#39;) — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory &gt; does not attach preservedWorktreePath to AgentIdleTimeoutError when worktree is clean on failure\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/WorktreeManager.test.ts &gt; WorktreeManager.create &gt; does not refresh a dirty reused worktree\\nReusing worktree at /tmp/wt-repo-WAN5YD/.sandcastle/worktrees/my-branch (branch &#39;my-branch&#39;) — worktree has uncommitted changes\\n\\nstderr | src/createSandbox.test.ts &gt; createSandbox &gt; reuses dirty worktree with warning (ADR 0003)\\nReusing worktree at /tmp/sandbox-test-x0GORE/.sandcastle/worktrees/dirty-collision (branch &#39;dirty-collision&#39;) — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory — isolated providers &gt; preserves worktree on failure with dirty worktree\\n\\nWorktree preserved at /tmp/sandcastle-test-wXKNwl/.sandcastle/worktrees/sandcastle-20260926-185716-6f96cf\\n  To review: cd /tmp/sandcastle-test-wXKNwl/.sandcastle/worktrees/sandcastle-20260926-185716-6f96cf\\n  To clean up: git worktree remove --force /tmp/sandcastle-test-wXKNwl/.sandcastle/worktrees/sandcastle-20260926-185716-6f96cf\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory — isolated providers &gt; removes worktree when isolated sandbox start fails\\n\\nWorktree removed (no uncommitted changes)\\n\\nstderr | src/WorktreeManager.test.ts &gt; WorktreeManager.create &gt; reuses preserved worktree when branch is mid-rebase (detached HEAD)\\nReusing worktree at /tmp/wt-repo-CmhEmb/.sandcastle/worktrees/feat-rebase-test (branch &#39;feat/rebase-test&#39;) — worktree has uncommitted changes\\n\\nstderr | src/SandboxFactory.test.ts &gt; WorktreeDockerSandboxFactory — no-sandbox provider &gt; worktree mode: removes worktree when sandbox start fails\\n\\nWorktree removed (no uncommitted changes)\\n\\n\&quot;},\&quot;typecheck\&quot;:{\&quot;passed\&quot;:true,\&quot;output\&quot;:\&quot;$ tsgo --noEmit\\n\&quot;},\&quot;build\&quot;:{\&quot;passed\&quot;:true,\&quot;output\&quot;:\&quot;CLI Building entry: {\\\&quot;index\\\&quot;:\\\&quot;src/index.ts\\\&quot;,\\\&quot;main\\\&quot;:\\\&quot;src/main.ts\\\&quot;,\\\&quot;sandboxes/docker\\\&quot;:\\\&quot;src/sandboxes/docker.ts\\\&quot;,\\\&quot;sandboxes/podman\\\&quot;:\\\&quot;src/sandboxes/podman.ts\\\&quot;,\\\&quot;sandboxes/vercel\\\&quot;:\\\&quot;src/sandboxes/vercel.ts\\\&quot;,\\\&quot;sandboxes/daytona\\\&quot;:\\\&quot;src/sandboxes/daytona.ts\\\&quot;,\\\&quot;sandboxes/no-sandbox\\\&quot;:\\\&quot;src/sandboxes/no-sandbox.ts\\\&quot;}\\nCLI Using tsconfig: tsconfig.json\\nCLI tsup v8.5.1\\nCLI Using tsup config: /home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/fixtures/benchmark-correction-FCQmu0/tsup.config.ts\\nCLI Target: node18\\nCLI Cleaning output folder\\nESM Build start\\nDTS Build start\\nESM dist/index.js                    123.22 KB\\nESM dist/sandboxes/daytona.js        4.22 KB\\nESM dist/chunk-BIWNFKGV.js           597.00 B\\nESM dist/chunk-TFM2DOWF.js           11.57 KB\\nESM dist/chunk-62WN33RK.js           3.49 KB\\nESM dist/chunk-NGBM7T3E.js           3.40 KB\\nESM dist/sandboxes/no-sandbox.js     236.00 B\\nESM dist/main.js                     681.13 KB\\nESM dist/sandboxes/docker.js         313.00 B\\nESM dist/chunk-5GERLSUJ.js           906.78 KB\\nESM dist/sandboxes/vercel.js         5.26 KB\\nESM dist/sandboxes/podman.js         9.95 KB\\nESM dist/chunk-LWK6HTXR.js           1.01 MB\\nESM dist/sandboxes/daytona.js.map    10.92 KB\\nESM dist/chunk-BIWNFKGV.js.map       12.26 KB\\nESM dist/index.js.map                350.14 KB\\nESM dist/chunk-62WN33RK.js.map       9.65 KB\\nESM dist/chunk-TFM2DOWF.js.map       31.81 KB\\nESM dist/chunk-NGBM7T3E.js.map       3.90 KB\\nESM dist/sandboxes/no-sandbox.js.map 74.00 B\\nESM dist/sandboxes/docker.js.map     70.00 B\\nESM dist/sandboxes/vercel.js.map     14.65 KB\\nESM dist/sandboxes/podman.js.map     26.42 KB\\nESM dist/main.js.map                 1.83 MB\\nESM dist/chunk-LWK6HTXR.js.map       2.04 MB\\nESM dist/chunk-5GERLSUJ.js.map       6.77 MB\\nESM ⚡️ Build success in 2950ms\\nDTS ⚡️ Build success in 5353ms\\nDTS dist/main.d.ts                     20.00 B\\nDTS dist/sandboxes/docker.d.ts         4.32 KB\\nDTS dist/sandboxes/podman.d.ts         4.92 KB\\nDTS dist/sandboxes/vercel.d.ts         3.36 KB\\nDTS dist/sandboxes/daytona.d.ts        2.15 KB\\nDTS dist/sandboxes/no-sandbox.d.ts     1.49 KB\\nDTS dist/index.d.ts                    48.51 KB\\nDTS dist/mountUtils-CCA-bbpK.d.ts      860.00 B\\nDTS dist/MountConfig-CmXclHA5.d.ts     998.00 B\\nDTS dist/SandboxProvider-EkSMuBp8.d.ts 11.19 KB\\n✓ No Effect references in public .d.ts files\\n$ tsup\\n\\\&quot;createRequire\\\&quot; is imported from external module \\\&quot;module\\\&quot; but never used in \\\&quot;dist/main.js\\\&quot;.\\n\\\&quot;Readable\\\&quot; is imported from external module \\\&quot;stream\\\&quot; but never used in \\\&quot;dist/chunk-LWK6HTXR.js\\\&quot;.\\n$ rm -rf dist/templates &amp;&amp; cp -r src/templates dist/templates &amp;&amp; node scripts/check-public-types-effect-free.mjs\\n\&quot;}}&quot;
+        ]
+      }
+    }
+  },
+  &quot;worktree&quot;: &quot;/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/runs/stream-log-1-0/.sandcastle/worktrees/stream-log-1-0&quot;,
+  &quot;sessionIds&quot;: [
+    &quot;01a0de72-87d1-76d1-9681-6c8d6deff62e&quot;,
+    &quot;01a0de77-ecc5-7e52-8eb0-6e016ead4fb8&quot;,
+    &quot;01a0de7a-14d3-70f2-b96d-ad56c8ef64ee&quot;,
+    &quot;01a0de7c-361e-7191-920a-62edb9493aa3&quot;
+  ],
+  &quot;requested&quot;: &quot;gpt-6-luna/max/default&quot;,
+  &quot;effective&quot;: &quot;gpt-6-luna/max/default (worker catalog and explicit Codex command; response identity unverified)&quot;,
+  &quot;status&quot;: &quot;incomplete&quot;,
+  &quot;technicalPassed&quot;: null,
+  &quot;projectAccepted&quot;: false,
+  &quot;taskStatus&quot;: &quot;paused&quot;,
+  &quot;firstIterationSuccess&quot;: false,
+  &quot;reviewPassed&quot;: false,
+  &quot;falseAcceptance&quot;: false,
+  &quot;cost&quot;: null,
+  &quot;usage&quot;: {
+    &quot;policyId&quot;: &quot;issue31-fixed-v1&quot;,
+    &quot;activity&quot;: &quot;pilot&quot;,
+    &quot;pilotLimits&quot;: {
+      &quot;overallMs&quot;: 43200000,
+      &quot;evaluations&quot;: 40,
+      &quot;accountRisePercentPoints&quot;: 20
+    },
+    &quot;runtimeIdentity&quot;: &quot;ef9662b9edfec0e301347ceb5368497c1077b9def504f6ac9be44adc8bc633fc&quot;,
+    &quot;requested&quot;: {
+      &quot;implementation&quot;: {
+        &quot;model&quot;: &quot;gpt-6-luna&quot;,
+        &quot;effort&quot;: &quot;max&quot;,
+        &quot;serviceTier&quot;: &quot;default&quot;
+      },
+      &quot;standards-review-preview&quot;: {
+        &quot;model&quot;: &quot;gpt-6-sol&quot;,
+        &quot;effort&quot;: &quot;high&quot;,
+        &quot;serviceTier&quot;: &quot;default&quot;
+      },
+      &quot;specification-review-preview&quot;: {
+        &quot;model&quot;: &quot;gpt-6-sol&quot;,
+        &quot;effort&quot;: &quot;high&quot;,
+        &quot;serviceTier&quot;: &quot;default&quot;
+      },
+      &quot;implementation-rework&quot;: {
+        &quot;model&quot;: &quot;gpt-6-luna&quot;,
+        &quot;effort&quot;: &quot;max&quot;,
+        &quot;serviceTier&quot;: &quot;default&quot;
+      },
+      &quot;standards-review&quot;: {
+        &quot;model&quot;: &quot;gpt-6-sol&quot;,
+        &quot;effort&quot;: &quot;high&quot;,
+        &quot;serviceTier&quot;: &quot;default&quot;
+      },
+      &quot;specification-review&quot;: {
+        &quot;model&quot;: &quot;gpt-6-sol&quot;,
+        &quot;effort&quot;: &quot;high&quot;,
+        &quot;serviceTier&quot;: &quot;default&quot;
+      }
+    },
+    &quot;effective&quot;: null,
+    &quot;observed&quot;: null,
+    &quot;baseline&quot;: {
+      &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+      &quot;observedAt&quot;: 1790437901657,
+      &quot;denied&quot;: false,
+      &quot;windows&quot;: {
+        &quot;primary&quot;: {
+          &quot;usedPercent&quot;: 49,
+          &quot;resetsAt&quot;: 1790844222000
+        }
+      }
+    },
+    &quot;guardBaseline&quot;: {
+      &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+      &quot;observedAt&quot;: 1790437901657,
+      &quot;denied&quot;: false,
+      &quot;windows&quot;: {
+        &quot;primary&quot;: {
+          &quot;usedPercent&quot;: 49,
+          &quot;resetsAt&quot;: 1790844222000
+        }
+      }
+    },
+    &quot;latest&quot;: {
+      &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+      &quot;observedAt&quot;: 1790439130042,
+      &quot;denied&quot;: false,
+      &quot;windows&quot;: {
+        &quot;primary&quot;: {
+          &quot;usedPercent&quot;: 50,
+          &quot;resetsAt&quot;: 1790844222000
+        }
+      }
+    },
+    &quot;accountHistory&quot;: [
+      {
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790437901657,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 49,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438437497,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 49,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438441733,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 49,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438472857,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 49,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438503951,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438535162,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438566385,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438597948,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438629325,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438660473,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438691916,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438723480,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438754753,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438793087,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438795343,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438826692,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438857833,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438889463,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438922351,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438936401,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438967653,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790438998756,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790439030007,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790439061460,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790439076268,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790439107390,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      },
+      {
+        &quot;taskId&quot;: &quot;stream-log&quot;,
+        &quot;reading&quot;: {
+          &quot;accountId&quot;: &quot;a89662db-edbc-4274-b9a1-04f5692d2d80&quot;,
+          &quot;observedAt&quot;: 1790439130042,
+          &quot;denied&quot;: false,
+          &quot;windows&quot;: {
+            &quot;primary&quot;: {
+              &quot;usedPercent&quot;: 50,
+              &quot;resetsAt&quot;: 1790844222000
+            }
+          }
+        }
+      }
+    ],
+    &quot;resetContinuations&quot;: [],
+    &quot;remaining&quot;: {
+      &quot;stream-log&quot;: {
+        &quot;standards-review-preview&quot;: 0,
+        &quot;specification-review-preview&quot;: 0,
+        &quot;implementation-rework&quot;: 0,
+        &quot;standards-review&quot;: 1,
+        &quot;specification-review&quot;: 1,
+        &quot;implementation&quot;: 1
+      }
+    },
+    &quot;activeMs&quot;: 1223870,
+    &quot;activeUpdatedAt&quot;: 1790439130220,
+    &quot;taskMs&quot;: {
+      &quot;stream-log&quot;: 691597
+    },
+    &quot;roleMs&quot;: {
+      &quot;stream-log/implementation&quot;: 307727,
+      &quot;stream-log/standards-review-preview&quot;: 127474,
+      &quot;stream-log/specification-review-preview&quot;: 125714,
+      &quot;stream-log/implementation-rework&quot;: 53850
+    },
+    &quot;invocations&quot;: 4,
+    &quot;tokens&quot;: {
+      &quot;counters&quot;: {
+        &quot;01a0de72-87d1-76d1-9681-6c8d6deff62e&quot;: {
+          &quot;counterId&quot;: &quot;01a0de72-87d1-76d1-9681-6c8d6deff62e&quot;,
+          &quot;coverageId&quot;: &quot;01a0de72-87d1-76d1-9681-6c8d6deff62e&quot;,
+          &quot;sessionId&quot;: &quot;01a0de72-87d1-76d1-9681-6c8d6deff62e&quot;,
+          &quot;rawSource&quot;: &quot;/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/stream-log-1-0/2026/09/26/rollout-2026-09-26T16-00-42-01a0de72-87d1-76d1-9681-6c8d6deff62e.jsonl&quot;,
+          &quot;usage&quot;: {
+            &quot;inputTokens&quot;: 75375,
+            &quot;cacheCreationInputTokens&quot;: 0,
+            &quot;cacheReadInputTokens&quot;: 994560,
+            &quot;outputTokens&quot;: 13146
+          }
+        },
+        &quot;01a0de77-ecc5-7e52-8eb0-6e016ead4fb8&quot;: {
+          &quot;counterId&quot;: &quot;01a0de77-ecc5-7e52-8eb0-6e016ead4fb8&quot;,
+          &quot;coverageId&quot;: &quot;01a0de77-ecc5-7e52-8eb0-6e016ead4fb8&quot;,
+          &quot;sessionId&quot;: &quot;01a0de77-ecc5-7e52-8eb0-6e016ead4fb8&quot;,
+          &quot;rawSource&quot;: &quot;/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/stream-log-1-0/2026/09/26/rollout-2026-09-26T16-06-36-01a0de77-ecc5-7e52-8eb0-6e016ead4fb8.jsonl&quot;,
+          &quot;usage&quot;: {
+            &quot;inputTokens&quot;: 50797,
+            &quot;cacheCreationInputTokens&quot;: 0,
+            &quot;cacheReadInputTokens&quot;: 376704,
+            &quot;outputTokens&quot;: 4364
+          }
+        },
+        &quot;01a0de7a-14d3-70f2-b96d-ad56c8ef64ee&quot;: {
+          &quot;counterId&quot;: &quot;01a0de7a-14d3-70f2-b96d-ad56c8ef64ee&quot;,
+          &quot;coverageId&quot;: &quot;01a0de7a-14d3-70f2-b96d-ad56c8ef64ee&quot;,
+          &quot;sessionId&quot;: &quot;01a0de7a-14d3-70f2-b96d-ad56c8ef64ee&quot;,
+          &quot;rawSource&quot;: &quot;/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/stream-log-1-0/2026/09/26/rollout-2026-09-26T16-08-57-01a0de7a-14d3-70f2-b96d-ad56c8ef64ee.jsonl&quot;,
+          &quot;usage&quot;: {
+            &quot;inputTokens&quot;: 49245,
+            &quot;cacheCreationInputTokens&quot;: 0,
+            &quot;cacheReadInputTokens&quot;: 214528,
+            &quot;outputTokens&quot;: 4302
+          }
+        },
+        &quot;01a0de7c-361e-7191-920a-62edb9493aa3&quot;: {
+          &quot;counterId&quot;: &quot;01a0de7c-361e-7191-920a-62edb9493aa3&quot;,
+          &quot;coverageId&quot;: &quot;01a0de7c-361e-7191-920a-62edb9493aa3&quot;,
+          &quot;sessionId&quot;: &quot;01a0de7c-361e-7191-920a-62edb9493aa3&quot;,
+          &quot;rawSource&quot;: &quot;/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v1/sessions/stream-log-1-0/2026/09/26/rollout-2026-09-26T16-11-17-01a0de7c-361e-7191-920a-62edb9493aa3.jsonl&quot;,
+          &quot;usage&quot;: {
+            &quot;inputTokens&quot;: 22575,
+            &quot;cacheCreationInputTokens&quot;: 0,
+            &quot;cacheReadInputTokens&quot;: 14080,
+            &quot;outputTokens&quot;: 459
+          }
+        }
+      },
+      &quot;deltas&quot;: {
+        &quot;01a0de72-87d1-76d1-9681-6c8d6deff62e&quot;: {
+          &quot;inputTokens&quot;: 75375,
+          &quot;cacheCreationInputTokens&quot;: 0,
+          &quot;cacheReadInputTokens&quot;: 994560,
+          &quot;outputTokens&quot;: 13146
+        },
+        &quot;01a0de77-ecc5-7e52-8eb0-6e016ead4fb8&quot;: {
+          &quot;inputTokens&quot;: 50797,
+          &quot;cacheCreationInputTokens&quot;: 0,
+          &quot;cacheReadInputTokens&quot;: 376704,
+          &quot;outputTokens&quot;: 4364
+        },
+        &quot;01a0de7a-14d3-70f2-b96d-ad56c8ef64ee&quot;: {
+          &quot;inputTokens&quot;: 49245,
+          &quot;cacheCreationInputTokens&quot;: 0,
+          &quot;cacheReadInputTokens&quot;: 214528,
+          &quot;outputTokens&quot;: 4302
+        },
+        &quot;01a0de7c-361e-7191-920a-62edb9493aa3&quot;: {
+          &quot;inputTokens&quot;: 22575,
+          &quot;cacheCreationInputTokens&quot;: 0,
+          &quot;cacheReadInputTokens&quot;: 14080,
+          &quot;outputTokens&quot;: 459
+        }
+      },
+      &quot;estimates&quot;: {
+        &quot;stream-log/implementation/1&quot;: {
+          &quot;inputTokens&quot;: 75375,
+          &quot;cacheCreationInputTokens&quot;: 0,
+          &quot;cacheReadInputTokens&quot;: 994560,
+          &quot;outputTokens&quot;: 13146
+        },
+        &quot;stream-log/standards-review-preview/2&quot;: {
+          &quot;inputTokens&quot;: 50797,
+          &quot;cacheCreationInputTokens&quot;: 0,
+          &quot;cacheReadInputTokens&quot;: 376704,
+          &quot;outputTokens&quot;: 4364
+        },
+        &quot;stream-log/specification-review-preview/3&quot;: {
+          &quot;inputTokens&quot;: 49245,
+          &quot;cacheCreationInputTokens&quot;: 0,
+          &quot;cacheReadInputTokens&quot;: 214528,
+          &quot;outputTokens&quot;: 4302
+        },
+        &quot;stream-log/implementation-rework/4&quot;: null
+      },
+      &quot;unknown&quot;: [
+        &quot;stream-log/implementation-rework/4&quot;
+      ],
+      &quot;invocations&quot;: {
+        &quot;stream-log/implementation/1&quot;: {
+          &quot;taskId&quot;: &quot;stream-log&quot;,
+          &quot;role&quot;: &quot;implementation&quot;,
+          &quot;sessionId&quot;: &quot;01a0de72-87d1-76d1-9681-6c8d6deff62e&quot;,
+          &quot;startedAt&quot;: 1790438441764,
+          &quot;settledAt&quot;: 1790438749491,
+          &quot;outcome&quot;: &quot;completed&quot;,
+          &quot;requiredSessionIds&quot;: [
+            &quot;01a0de72-87d1-76d1-9681-6c8d6deff62e&quot;
+          ],
+          &quot;counterIds&quot;: [
+            &quot;01a0de72-87d1-76d1-9681-6c8d6deff62e&quot;
+          ],
+          &quot;coverageComplete&quot;: true
+        },
+        &quot;stream-log/standards-review-preview/2&quot;: {
+          &quot;taskId&quot;: &quot;stream-log&quot;,
+          &quot;role&quot;: &quot;standards-review-preview&quot;,
+          &quot;sessionId&quot;: &quot;01a0de77-ecc5-7e52-8eb0-6e016ead4fb8&quot;,
+          &quot;startedAt&quot;: 1790438795373,
+          &quot;settledAt&quot;: 1790438922847,
+          &quot;outcome&quot;: &quot;completed&quot;,
+          &quot;requiredSessionIds&quot;: [
+            &quot;01a0de77-ecc5-7e52-8eb0-6e016ead4fb8&quot;
+          ],
+          &quot;counterIds&quot;: [
+            &quot;01a0de77-ecc5-7e52-8eb0-6e016ead4fb8&quot;
+          ],
+          &quot;coverageComplete&quot;: true
+        },
+        &quot;stream-log/specification-review-preview/3&quot;: {
+          &quot;taskId&quot;: &quot;stream-log&quot;,
+          &quot;role&quot;: &quot;specification-review-preview&quot;,
+          &quot;sessionId&quot;: &quot;01a0de7a-14d3-70f2-b96d-ad56c8ef64ee&quot;,
+          &quot;startedAt&quot;: 1790438936427,
+          &quot;settledAt&quot;: 1790439062141,
+          &quot;outcome&quot;: &quot;completed&quot;,
+          &quot;requiredSessionIds&quot;: [
+            &quot;01a0de7a-14d3-70f2-b96d-ad56c8ef64ee&quot;
+          ],
+          &quot;counterIds&quot;: [
+            &quot;01a0de7a-14d3-70f2-b96d-ad56c8ef64ee&quot;
+          ],
+          &quot;coverageComplete&quot;: true
+        },
+        &quot;stream-log/implementation-rework/4&quot;: {
+          &quot;taskId&quot;: &quot;stream-log&quot;,
+          &quot;role&quot;: &quot;implementation-rework&quot;,
+          &quot;sessionId&quot;: &quot;01a0de7c-361e-7191-920a-62edb9493aa3&quot;,
+          &quot;startedAt&quot;: 1790439076292,
+          &quot;settledAt&quot;: 1790439130142,
+          &quot;outcome&quot;: &quot;failed&quot;,
+          &quot;requiredSessionIds&quot;: [
+            &quot;01a0de7c-361e-7191-920a-62edb9493aa3&quot;
+          ],
+          &quot;counterIds&quot;: [
+            &quot;01a0de7c-361e-7191-920a-62edb9493aa3&quot;
+          ],
+          &quot;coverageComplete&quot;: false
+        }
+      },
+      &quot;attributableTotal&quot;: null
+    }
+  },
+  &quot;reason&quot;: &quot;Error: Workflow checkpoint stop requested&quot;
+}</pre></details></section>
+</main></body></html>
