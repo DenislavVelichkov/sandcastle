@@ -47,6 +47,19 @@ describe("sandcastle CLI", () => {
     expect(stdout).not.toContain("sync-out");
   });
 
+  it("requires an explicit Sol High arm before starting a benchmark", async () => {
+    const { stdout } = await runCli("benchmark --help", process.cwd());
+    expect(stdout).toContain("--arm");
+    await expect(
+      runCli(
+        "benchmark --arm gpt-6-luna:max --arm gpt-6-astra:max",
+        process.cwd(),
+      ),
+    ).rejects.toMatchObject({
+      stdout: expect.stringContaining("explicit gpt-6-sol:high reference"),
+    });
+  });
+
   it("docker --help shows build-image and remove-image subcommands", async () => {
     const { stdout } = await runCli("docker --help", process.cwd());
     expect(stdout).toContain("build-image");

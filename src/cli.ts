@@ -695,7 +695,7 @@ const benchmarkCommand = Command.make(
   },
   ({ arm }) =>
     Effect.gen(function* () {
-      const entry = resolve(process.cwd(), "scripts/issue-31-pilot.mjs");
+      const entry = resolve(process.cwd(), ".sandcastle/benchmark.mjs");
       yield* Effect.try({
         try: () => {
           makeFixedBenchmarkPlan(

@@ -102,7 +102,7 @@ The [issue #18 release adoption report](proofs/issue-18-release-adoption.md) rec
 
 ## Run the bounded benchmark
 
-For the fixed follow-up to [issue #26](https://github.com/DenislavVelichkov/sandcastle/issues/26), run this command from a clean committed Sandcastle checkout after `pnpm run build`. It uses the repository-owned protected host entry at `scripts/issue-31-pilot.mjs`. Every arm, including the Sol High reference, is explicit:
+For the fixed follow-up to [issue #26](https://github.com/DenislavVelichkov/sandcastle/issues/26), run this command from a clean committed Sandcastle checkout after `pnpm run build`. It uses the repository-owned protected host entry at `.sandcastle/benchmark.mjs`; other projects may provide their own entry at that path. Every arm, including the Sol High reference, is explicit:
 
 ```sh
 pnpm exec tsx src/main.ts benchmark \
