@@ -114,10 +114,12 @@ it("renders complete and partial ledgers with exports matching the displayed evi
     const html = await readFile(files.html, "utf8");
     const json = JSON.parse(await readFile(files.json, "utf8")) as {
       ledger: BenchmarkLedger;
+      manifestStatus: string;
       rows: { slotId: string; window: string; lower: number }[];
     };
     const csv = await readFile(files.csv, "utf8");
     expect(json.ledger.evaluations).toHaveLength(64);
+    expect(json.manifestStatus).toBe("matched");
     expect(json.rows).toHaveLength(64);
     expect(csv.trim().split("\n")).toHaveLength(json.rows.length + 1);
     expect(csv).toContain(`"${json.rows[0]!.slotId}"`);
@@ -218,6 +220,33 @@ it("renders complete and partial ledgers with exports matching the displayed evi
     expect(
       (await readFile(emptyFiles.csv, "utf8")).trim().split("\n"),
     ).toHaveLength(1);
+    await writeFile(
+      join(directory, "benchmark.json"),
+      JSON.stringify({
+        ...partial,
+        evaluations: [],
+        hostConditionsHash: undefined,
+      }),
+    );
+    const unverifiedFiles = await writeBenchmarkReport({
+      directory,
+      policyId: base.policyId,
+      outputDirectory,
+      manifestPath,
+    });
+    expect(await readFile(unverifiedFiles.html, "utf8")).toContain(
+      "Supplied; no frozen host conditions hash is recorded",
+    );
+    await writeFile(manifestPath, "null");
+    await expect(
+      writeBenchmarkReport({
+        directory,
+        policyId: base.policyId,
+        outputDirectory,
+        manifestPath,
+      }),
+    ).rejects.toThrow(/manifest must be a JSON object/);
+    await writeFile(join(directory, "benchmark.json"), JSON.stringify(partial));
     await writeFile(manifestPath, manifest + "\n");
     await expect(
       writeBenchmarkReport({

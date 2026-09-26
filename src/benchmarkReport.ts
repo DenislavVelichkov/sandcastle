@@ -230,6 +230,11 @@ const htmlFor = (
         ? "The recorded assessment retains fixed Sol High. The evidence did not meet the adaptive admission rule."
         : "Keep fixed Sol High while the pilot or promotion assessment is incomplete.";
   const manifestEntries = manifest ? Object.entries(manifest) : [];
+  const manifestStatus = !manifest
+    ? "Not supplied"
+    : ledger.hostConditionsHash
+      ? "Matched to frozen host conditions"
+      : "Supplied; no frozen host conditions hash is recorded";
   const evidence = ledger.evaluations
     .map((item) => {
       const slot = benchmarkSlots.find((entry) => entry.id === item.slotId)!;
@@ -247,7 +252,7 @@ const htmlFor = (
 <section><p class="eyebrow">Outcome by configuration</p><h2>Development and held-out</h2><p>Bars show accepted evaluations out of scheduled evaluations. Adaptive development results are shown as evidence only; the frozen pair is selected before held-out results.</p><div class="table-wrap"><table><thead><tr><th scope="col">Configuration</th><th scope="col">Development</th><th scope="col">Held-out</th></tr></thead><tbody>${armRows}</tbody></table></div></section>
 <section><p class="eyebrow">Subscription account windows</p><h2>Observed usage intervals</h2><p>Ranges are sums of retained lower and upper percentage-point bounds, not credits, dollars or token estimates. Partial rows cannot establish comparative savings. Window readings and reset times appear in each evaluation and in the exports.</p>${windowNames.length ? `<div class="table-wrap"><table><thead><tr><th>Configuration</th><th>Split</th><th>Window</th><th>Observed range</th><th>Coverage</th></tr></thead><tbody>${usageRows}</tbody></table></div>` : `<p>${badge("Unknown", "warn")} No account windows were declared in the ledger.</p>`}<p class="sub">Declared reading resolution: ${escapeHtml(JSON.stringify(ledger.accountResolution ?? null))}. Window durations (ms): ${escapeHtml(JSON.stringify(ledger.windowDurationMs ?? null))}.</p></section>
 <section><p class="eyebrow">Unresolved outcomes</p><h2>Rejected, failed, capped or blocked</h2>${exceptions.length ? `<ul>${exceptions.map((item) => `<li><strong>${escapeHtml(item.slotId)}</strong>: ${escapeHtml(item.reason ?? (item.status === "incomplete" ? "Incomplete; no reason recorded" : "Review or protected acceptance failed"))}${item.usage?.stopReason ? ` · guard: ${escapeHtml(item.usage.stopReason)}` : ""}</li>`).join("")}</ul>` : "<p>No recorded exceptions. Unattempted slots are not successes.</p>"}<p>Human waiting duration is not measured by the benchmark ledger. Active evaluation time and raw provider coverage are shown per evaluation; pilot active time includes shared measurement and host activities when the budget is available.</p></section>
-<section><p class="eyebrow">Reproducibility</p><h2>Artifacts and conditions</h2><dl class="facts"><div><dt>Policy</dt><dd>${escapeHtml(ledger.policyId)}</dd></div><div><dt>Protocol SHA-256</dt><dd class="mono">${escapeHtml(ledger.protocolHash)}</dd></div><div><dt>Ledger SHA-256</dt><dd class="mono">${escapeHtml(ledgerHash)}</dd></div><div><dt>Host conditions SHA-256</dt><dd class="mono">${escapeHtml(plain(ledger.hostConditionsHash))}</dd></div><div><dt>Pilot runtime</dt><dd class="mono">${escapeHtml(plain(budget?.runtimeIdentity))}</dd></div><div><dt>Fixture conditions</dt><dd class="mono">${escapeHtml(JSON.stringify(ledger.fixtureConditions ?? null))}</dd></div></dl><h3>Historical case identities</h3><ul>${benchmarkFixtures.map((fixture) => `<li><strong>${escapeHtml(fixture.id)}</strong> (${escapeHtml(fixture.split)}): base <span class="mono">${fixture.base}</span>, reference <span class="mono">${fixture.reference}</span>. ${escapeHtml(fixture.focus)}</li>`).join("")}</ul><h3>Host manifest</h3>${manifest ? `<dl class="facts">${manifestEntries.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd class="mono">${escapeHtml(plain(typeof value === "object" ? JSON.stringify(value) : value))}</dd></div>`).join("")}</dl>` : "<p>Not supplied. Exact worker, artifact and environment identities are unavailable for this report.</p>"}<p>Limitations: source observations are the ledger's account readings, counter paths and protected preflight records. Missing, overlapping, delayed, reset or confounded measurements remain uncertain. A synthetic fixture does not establish live savings. The report does not recalculate qualification or promotion.</p></section>
+<section><p class="eyebrow">Reproducibility</p><h2>Artifacts and conditions</h2><dl class="facts"><div><dt>Policy</dt><dd>${escapeHtml(ledger.policyId)}</dd></div><div><dt>Protocol SHA-256</dt><dd class="mono">${escapeHtml(ledger.protocolHash)}</dd></div><div><dt>Ledger SHA-256</dt><dd class="mono">${escapeHtml(ledgerHash)}</dd></div><div><dt>Host conditions SHA-256</dt><dd class="mono">${escapeHtml(plain(ledger.hostConditionsHash))}</dd></div><div><dt>Pilot runtime</dt><dd class="mono">${escapeHtml(plain(budget?.runtimeIdentity))}</dd></div><div><dt>Fixture conditions</dt><dd class="mono">${escapeHtml(JSON.stringify(ledger.fixtureConditions ?? null))}</dd></div></dl><h3>Historical case identities</h3><ul>${benchmarkFixtures.map((fixture) => `<li><strong>${escapeHtml(fixture.id)}</strong> (${escapeHtml(fixture.split)}): base <span class="mono">${fixture.base}</span>, reference <span class="mono">${fixture.reference}</span>. ${escapeHtml(fixture.focus)}</li>`).join("")}</ul><h3>Host manifest</h3><p>${escapeHtml(manifestStatus)}</p>${manifest ? `<dl class="facts">${manifestEntries.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd class="mono">${escapeHtml(plain(typeof value === "object" ? JSON.stringify(value) : value))}</dd></div>`).join("")}</dl>` : "<p>Exact worker, artifact and environment identities are unavailable for this report.</p>"}<p>Limitations: source observations are the ledger's account readings, counter paths and protected preflight records. Missing, overlapping, delayed, reset or confounded measurements remain uncertain. A synthetic fixture does not establish live savings. The report does not recalculate qualification or promotion.</p></section>
 <section><p class="eyebrow">Audit trail</p><h2>Evaluation evidence</h2><p>Open a row to inspect its recorded candidate, sessions, preflight, review, account readings, token sources and reason. ${ledger.evaluations.length} of 64 slots have records.</p>${evidence || "<p>No evaluations recorded yet.</p>"}</section>
 </main></body></html>`;
 };
@@ -261,11 +266,13 @@ export const writeBenchmarkReport = async (input: {
 }): Promise<{ html: string; json: string; csv: string }> => {
   if (!input.outputDirectory)
     throw new Error("Report output directory is required");
+  const ledger = await readBenchmark(input.directory, input.policyId);
   const ledgerText = await readFile(
     join(input.directory, "benchmark.json"),
     "utf8",
   );
-  const ledger = await readBenchmark(input.directory, input.policyId);
+  if (JSON.stringify(ledger) !== JSON.stringify(JSON.parse(ledgerText)))
+    throw new Error("Benchmark ledger changed during report generation");
   let budget: PilotBudgetState | null = null;
   try {
     budget = JSON.parse(
@@ -282,7 +289,9 @@ export const writeBenchmarkReport = async (input: {
     if (ledger.hostConditionsHash && sha256(raw) !== ledger.hostConditionsHash)
       throw new Error("Host manifest differs from frozen benchmark conditions");
     manifest = JSON.parse(raw) as Record<string, unknown>;
-    if (manifest.protocolHash && manifest.protocolHash !== ledger.protocolHash)
+    if (!manifest || typeof manifest !== "object" || Array.isArray(manifest))
+      throw new Error("Host manifest must be a JSON object");
+    if (manifest.protocolHash !== ledger.protocolHash)
       throw new Error("Host manifest protocol identity changed");
   }
   const rows = rowsFor(ledger);
@@ -321,13 +330,24 @@ export const writeBenchmarkReport = async (input: {
     ].join("\n") + "\n";
   const jsonText =
     JSON.stringify(
-      { ledger, budget, manifest, ledgerHash: sha256(ledgerText), rows },
+      {
+        ledger,
+        budget,
+        manifest,
+        manifestStatus: !manifest
+          ? "not-supplied"
+          : ledger.hostConditionsHash
+            ? "matched"
+            : "unverified",
+        ledgerHash: sha256(ledgerText),
+        rows,
+      },
       null,
       2,
     ) + "\n";
   const htmlText = htmlFor(ledger, budget, manifest, sha256(ledgerText), rows);
   const outputDirectory = resolve(input.outputDirectory);
-  await mkdir(outputDirectory, { recursive: true });
+  await mkdir(outputDirectory, { recursive: true, mode: 0o700 });
   const output = async (name: string, value: string) => {
     const path = join(outputDirectory, name);
     const temp = `${path}.${process.pid}.tmp`;
