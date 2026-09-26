@@ -1,5 +1,5 @@
 import { exec } from "node:child_process";
-import { mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -58,6 +58,29 @@ describe("sandcastle CLI", () => {
     ).rejects.toMatchObject({
       stdout: expect.stringContaining("explicit gpt-6-sol:high reference"),
     });
+  });
+
+  it("passes every selected model and effort to the project benchmark entry", async () => {
+    const hostDir = await mkdtemp(join(tmpdir(), "cli-benchmark-"));
+    await mkdir(join(hostDir, ".sandcastle"));
+    await writeFile(
+      join(hostDir, ".sandcastle", "benchmark.mjs"),
+      "console.log(JSON.stringify(process.argv.slice(2)))\n",
+    );
+    const arms = [
+      "gpt-6-luna:max",
+      "gpt-6-sol:xhigh",
+      "gpt-6-astra:medium",
+      "gpt-6-astra:max",
+      "gpt-6-sol:high",
+    ];
+    const { stdout } = await runCli(
+      `benchmark ${arms.map((arm) => `--arm ${arm}`).join(" ")}`,
+      hostDir,
+    );
+    expect(stdout).toContain(
+      JSON.stringify(arms.flatMap((arm) => ["--arm", arm])),
+    );
   });
 
   it("docker --help shows build-image and remove-image subcommands", async () => {
