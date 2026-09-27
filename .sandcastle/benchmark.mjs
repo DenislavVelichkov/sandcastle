@@ -17,7 +17,7 @@ import {
 } from "../scripts/issue-26-grader.mjs";
 
 const source = resolve(import.meta.dirname, "..");
-const owner = resolve(source, "../sandcastle-issue31-run-v3");
+const owner = resolve(source, "../sandcastle-issue31-run-v4");
 const installed = source;
 const pkg = await import(pathToFileURL(join(installed, "dist/index.js")));
 const { docker: dockerSandbox } = await import(
@@ -26,7 +26,7 @@ const { docker: dockerSandbox } = await import(
 const image = "sandcastle:issue26-pnpm";
 const observerScript =
   "/home/dv8/Projects/codex-plugins/dv8-codex/custom/skills/quality/sandcastle-personal-setup/scripts";
-const policyId = "issue31-fixed-v3";
+const policyId = "issue31-fixed-v4";
 const pilot = join(owner, "pilot");
 const args = process.argv.slice(2);
 const armValues = args.flatMap((value, index) =>
@@ -564,7 +564,7 @@ async function calibration() {
       policyId,
       activity: "measurement",
       pilot: {
-        id: "issue31-fixed-v3",
+        id: "issue31-fixed-v4",
         directory: pilot,
         overallLimitMs: plan.overallLimitMs,
         evaluationLimit: plan.slots.length,
@@ -770,7 +770,7 @@ async function runNext() {
       policyId,
       activity: "pilot",
       pilot: {
-        id: "issue31-fixed-v3",
+        id: "issue31-fixed-v4",
         directory: pilot,
         overallLimitMs: plan.overallLimitMs,
         evaluationLimit: plan.slots.length,
