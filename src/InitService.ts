@@ -1,8 +1,10 @@
 import { FileSystem } from "@effect/platform";
+import type { PlatformError } from "@effect/platform/Error";
 import { Effect } from "effect";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SANDBOX_REPO_DIR } from "./SandboxFactory.js";
+import { InitError } from "./errors.js";
 
 const GITIGNORE = `.env
 logs/
@@ -729,16 +731,27 @@ function getTemplatesDir(): string {
 
 const getTemplateDir = (
   templateName: string,
-): Effect.Effect<string, Error, never> =>
+): Effect.Effect<string, InitError, never> =>
   Effect.gen(function* () {
     const template = TEMPLATES.find((t) => t.name === templateName);
     if (!template) {
       const names = TEMPLATES.map((t) => t.name).join(", ");
       yield* Effect.fail(
-        new Error(`Unknown template: "${templateName}". Available: ${names}`),
+        new InitError({
+          message: `Unknown template: "${templateName}". Available: ${names}`,
+        }),
       );
     }
     return join(getTemplatesDir(), templateName);
+  });
+
+const initFileError = (
+  operation: string,
+  path: string,
+  error: PlatformError,
+): InitError =>
+  new InitError({
+    message: `Failed to ${operation} ${path}: ${error.message}`,
   });
 
 const COMPILED_FILE_EXTENSIONS = [
@@ -756,12 +769,14 @@ const copyTemplateFiles = (
   templateDir: string,
   destDir: string,
   mainFilename: string,
-): Effect.Effect<void, Error, FileSystem.FileSystem> =>
+): Effect.Effect<void, InitError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const files = yield* fs
       .readDirectory(templateDir)
-      .pipe(Effect.mapError((e) => new Error(e.message)));
+      .pipe(
+        Effect.mapError((e) => initFileError("read directory", templateDir, e)),
+      );
     yield* Effect.all(
       files
         .filter(
@@ -772,9 +787,15 @@ const copyTemplateFiles = (
         )
         .map((f) => {
           const destName = f === "main.mts" ? mainFilename : f;
+          const source = join(templateDir, f);
+          const destination = join(destDir, destName);
           return fs
-            .copyFile(join(templateDir, f), join(destDir, destName))
-            .pipe(Effect.mapError((e) => new Error(e.message)));
+            .copyFile(source, destination)
+            .pipe(
+              Effect.mapError((e) =>
+                initFileError("copy file", `${source} to ${destination}`, e),
+              ),
+            );
         }),
       { concurrency: "unbounded" },
     );
@@ -783,14 +804,16 @@ const copyTemplateFiles = (
 const rewriteTemplatePackageCommands = (
   configDir: string,
   packageManager: PackageManager,
-): Effect.Effect<void, Error, FileSystem.FileSystem> =>
+): Effect.Effect<void, InitError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     if (packageManager === "pnpm") return;
     const fs = yield* FileSystem.FileSystem;
     const commands = packageCommands(packageManager);
     const files = yield* fs
       .readDirectory(configDir)
-      .pipe(Effect.mapError((e) => new Error(e.message)));
+      .pipe(
+        Effect.mapError((e) => initFileError("read directory", configDir, e)),
+      );
     yield* Effect.all(
       files
         .filter((file) => /\.(md|mts|ts)$/.test(file))
@@ -799,7 +822,9 @@ const rewriteTemplatePackageCommands = (
             const path = join(configDir, file);
             const content = yield* fs
               .readFileString(path)
-              .pipe(Effect.mapError((e) => new Error(e.message)));
+              .pipe(
+                Effect.mapError((e) => initFileError("read file", path, e)),
+              );
             const updated = content
               .replaceAll("pnpm exec", commands.exec)
               .replaceAll("pnpm install", commands.install)
@@ -807,7 +832,9 @@ const rewriteTemplatePackageCommands = (
             if (updated !== content) {
               yield* fs
                 .writeFileString(path, updated)
-                .pipe(Effect.mapError((e) => new Error(e.message)));
+                .pipe(
+                  Effect.mapError((e) => initFileError("write file", path, e)),
+                );
             }
           }),
         ),
@@ -828,19 +855,19 @@ const rewriteMainTs = (
   model: string,
   sandboxProvider: SandboxProviderEntry,
   mainFilename: string,
-): Effect.Effect<void, Error, FileSystem.FileSystem> =>
+): Effect.Effect<void, InitError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const mainTsPath = join(configDir, mainFilename);
 
     const exists = yield* fs
       .exists(mainTsPath)
-      .pipe(Effect.mapError((e) => new Error(e.message)));
+      .pipe(Effect.mapError((e) => initFileError("check file", mainTsPath, e)));
     if (!exists) return;
 
     let content = yield* fs
       .readFileString(mainTsPath)
-      .pipe(Effect.mapError((e) => new Error(e.message)));
+      .pipe(Effect.mapError((e) => initFileError("read file", mainTsPath, e)));
 
     // Templates use main.mts as the canonical filename in comments.
     // When the target is main.ts, rewrite those references.
@@ -872,7 +899,7 @@ const rewriteMainTs = (
 
     yield* fs
       .writeFileString(mainTsPath, content)
-      .pipe(Effect.mapError((e) => new Error(e.message)));
+      .pipe(Effect.mapError((e) => initFileError("write file", mainTsPath, e)));
   });
 
 /**
@@ -882,12 +909,14 @@ const rewriteMainTs = (
  */
 const rewritePromptFiles = (
   configDir: string,
-): Effect.Effect<void, Error, FileSystem.FileSystem> =>
+): Effect.Effect<void, InitError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const files = yield* fs
       .readDirectory(configDir)
-      .pipe(Effect.mapError((e) => new Error(e.message)));
+      .pipe(
+        Effect.mapError((e) => initFileError("read directory", configDir, e)),
+      );
     const mdFiles = files.filter((f) => f.endsWith(".md"));
     yield* Effect.all(
       mdFiles.map((f) =>
@@ -895,12 +924,18 @@ const rewritePromptFiles = (
           const filePath = join(configDir, f);
           const content = yield* fs
             .readFileString(filePath)
-            .pipe(Effect.mapError((e) => new Error(e.message)));
+            .pipe(
+              Effect.mapError((e) => initFileError("read file", filePath, e)),
+            );
           const updated = content.replace(/ --label Sandcastle/g, "");
           if (updated !== content) {
             yield* fs
               .writeFileString(filePath, updated)
-              .pipe(Effect.mapError((e) => new Error(e.message)));
+              .pipe(
+                Effect.mapError((e) =>
+                  initFileError("write file", filePath, e),
+                ),
+              );
           }
         }),
       ),
@@ -936,12 +971,14 @@ const isTextFile = (filename: string): boolean => {
 const substituteTemplateArgs = (
   configDir: string,
   issueTracker: IssueTrackerEntry,
-): Effect.Effect<void, Error, FileSystem.FileSystem> =>
+): Effect.Effect<void, InitError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const files = yield* fs
       .readDirectory(configDir)
-      .pipe(Effect.mapError((e) => new Error(e.message)));
+      .pipe(
+        Effect.mapError((e) => initFileError("read directory", configDir, e)),
+      );
     const textFiles = files.filter(isTextFile);
     yield* Effect.all(
       textFiles.map((f) =>
@@ -949,7 +986,9 @@ const substituteTemplateArgs = (
           const filePath = join(configDir, f);
           let content = yield* fs
             .readFileString(filePath)
-            .pipe(Effect.mapError((e) => new Error(e.message)));
+            .pipe(
+              Effect.mapError((e) => initFileError("read file", filePath, e)),
+            );
           const original = content;
           for (const [key, value] of Object.entries(
             issueTracker.templateArgs,
@@ -962,7 +1001,11 @@ const substituteTemplateArgs = (
           if (content !== original) {
             yield* fs
               .writeFileString(filePath, content)
-              .pipe(Effect.mapError((e) => new Error(e.message)));
+              .pipe(
+                Effect.mapError((e) =>
+                  initFileError("write file", filePath, e),
+                ),
+              );
           }
         }),
       ),
@@ -1078,7 +1121,7 @@ const detectMainFilename = (
 export const scaffold = (
   repoDir: string,
   options: ScaffoldOptions,
-): Effect.Effect<ScaffoldResult, Error, FileSystem.FileSystem> =>
+): Effect.Effect<ScaffoldResult, InitError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const {
       agent,
@@ -1093,12 +1136,15 @@ export const scaffold = (
 
     const exists = yield* fs
       .exists(configDir)
-      .pipe(Effect.mapError((e) => new Error(e.message)));
+      .pipe(
+        Effect.mapError((e) => initFileError("check directory", configDir, e)),
+      );
     if (exists) {
       yield* Effect.fail(
-        new Error(
-          ".sandcastle/ directory already exists. Remove it first if you want to re-initialize.",
-        ),
+        new InitError({
+          message:
+            ".sandcastle/ directory already exists. Remove it first if you want to re-initialize.",
+        }),
       );
     }
 
@@ -1107,7 +1153,9 @@ export const scaffold = (
 
     yield* fs
       .makeDirectory(configDir, { recursive: false })
-      .pipe(Effect.mapError((e) => new Error(e.message)));
+      .pipe(
+        Effect.mapError((e) => initFileError("create directory", configDir, e)),
+      );
 
     const templateDir = yield* getTemplateDir(templateName);
 
@@ -1125,13 +1173,29 @@ export const scaffold = (
             join(configDir, sandboxProvider.containerfileName),
             agent.dockerfileTemplate,
           )
-          .pipe(Effect.mapError((e) => new Error(e.message))),
+          .pipe(
+            Effect.mapError((e) =>
+              initFileError(
+                "write file",
+                join(configDir, sandboxProvider.containerfileName),
+                e,
+              ),
+            ),
+          ),
         fs
           .writeFileString(join(configDir, ".gitignore"), GITIGNORE)
-          .pipe(Effect.mapError((e) => new Error(e.message))),
+          .pipe(
+            Effect.mapError((e) =>
+              initFileError("write file", join(configDir, ".gitignore"), e),
+            ),
+          ),
         fs
           .writeFileString(join(configDir, ".env.example"), envExampleContent)
-          .pipe(Effect.mapError((e) => new Error(e.message))),
+          .pipe(
+            Effect.mapError((e) =>
+              initFileError("write file", join(configDir, ".env.example"), e),
+            ),
+          ),
         copyTemplateFiles(templateDir, configDir, mainFilename),
       ],
       { concurrency: "unbounded" },
@@ -1166,7 +1230,15 @@ export const scaffold = (
           join(configDir, SETUP_ISSUE_TRACKER_DOC),
           buildSetupIssueTrackerDoc(sandboxProvider.cliNamespace),
         )
-        .pipe(Effect.mapError((e) => new Error(e.message)));
+        .pipe(
+          Effect.mapError((e) =>
+            initFileError(
+              "write file",
+              join(configDir, SETUP_ISSUE_TRACKER_DOC),
+              e,
+            ),
+          ),
+        );
     }
 
     return { mainFilename };

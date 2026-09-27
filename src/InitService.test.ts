@@ -1,3 +1,5 @@
+import { FileSystem } from "@effect/platform";
+import { SystemError } from "@effect/platform/Error";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect } from "effect";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -40,6 +42,45 @@ const runScaffold = (repoDir: string, options?: Partial<ScaffoldOptions>) =>
     scaffold(repoDir, { ...defaultOptions, ...options }).pipe(
       Effect.provide(NodeFileSystem.layer),
     ),
+  );
+
+const runScaffoldWithFileFailure = (
+  repoDir: string,
+  method: "readDirectory" | "readFileString" | "writeFileString",
+  target: string,
+) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const fail = (path: string) =>
+        new SystemError({
+          module: "FileSystem",
+          method,
+          reason: "PermissionDenied",
+          pathOrDescriptor: path,
+        });
+      return yield* scaffold(repoDir, {
+        ...defaultOptions,
+        templateName: "simple-loop",
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          readDirectory: (path, options) =>
+            method === "readDirectory" && path === target
+              ? Effect.fail(fail(path))
+              : fs.readDirectory(path, options),
+          readFileString: (path, encoding) =>
+            method === "readFileString" && path === target
+              ? Effect.fail(fail(path))
+              : fs.readFileString(path, encoding),
+          writeFileString: (path, data, options) =>
+            method === "writeFileString" && path === target
+              ? Effect.fail(fail(path))
+              : fs.writeFileString(path, data, options),
+        }),
+        Effect.flip,
+      );
+    }).pipe(Effect.provide(NodeFileSystem.layer)),
   );
 
 // ---------------------------------------------------------------------------
@@ -2203,6 +2244,91 @@ describe("InitService scaffold", () => {
       expect(npmMain).toContain('command: "npm install"');
       expect(npmMain).toContain("npx tsx");
     });
+
+    it.each([
+      {
+        packageManager: "npm",
+        exec: "npx",
+        install: "npm install",
+        run: "npm run",
+      },
+      {
+        packageManager: "pnpm",
+        exec: "pnpm exec",
+        install: "pnpm install",
+        run: "pnpm run",
+      },
+      {
+        packageManager: "yarn",
+        exec: "yarn",
+        install: "yarn install",
+        run: "yarn run",
+      },
+      {
+        packageManager: "bun",
+        exec: "bunx",
+        install: "bun install",
+        run: "bun run",
+      },
+    ])(
+      "scaffolds $packageManager commands through init",
+      async ({ packageManager, exec, install, run }) => {
+        const dir = await makeDir();
+        await writeFile(
+          join(dir, "package.json"),
+          JSON.stringify({ packageManager: `${packageManager}@1.0.0` }),
+        );
+        await runScaffold(dir, { templateName: "simple-loop" });
+
+        const main = await readFile(
+          join(dir, ".sandcastle", "main.mts"),
+          "utf-8",
+        );
+        const prompt = await readFile(
+          join(dir, ".sandcastle", "prompt.md"),
+          "utf-8",
+        );
+        expect(main).toContain(`command: "${install}"`);
+        expect(main).toContain(`${exec} tsx .sandcastle/main.mts`);
+        expect(prompt).toContain(`${run} typecheck`);
+        expect(prompt).toContain(`${run} test`);
+      },
+    );
+
+    it.each([
+      {
+        method: "readDirectory" as const,
+        operation: "read directory",
+        path: ".sandcastle",
+      },
+      {
+        method: "readFileString" as const,
+        operation: "read file",
+        path: ".sandcastle/main.mts",
+      },
+      {
+        method: "writeFileString" as const,
+        operation: "write file",
+        path: ".sandcastle/main.mts",
+      },
+    ])(
+      "keeps $method failure tagged with the operation and destination",
+      async ({ method, operation, path }) => {
+        const dir = await makeDir();
+        await writeFile(
+          join(dir, "package.json"),
+          JSON.stringify({ packageManager: "npm@10.0.0" }),
+        );
+        const target = join(dir, path);
+
+        expect(
+          await runScaffoldWithFileFailure(dir, method, target),
+        ).toMatchObject({
+          _tag: "InitError",
+          message: expect.stringContaining(`Failed to ${operation} ${target}`),
+        });
+      },
+    );
 
     it("scaffolds main.mts when no package.json exists", async () => {
       const dir = await makeDir();

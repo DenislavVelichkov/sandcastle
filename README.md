@@ -779,6 +779,8 @@ Init detects your host package manager (npm, pnpm, yarn, or bun) from a `package
 
 Every interactive prompt has a paired `--flag` so the entire init can run non-interactively (e.g. in CI or a scripted setup). When stdin is not a TTY and a required flag is missing, init fails fast with a clear error rather than wedging on a prompt.
 
+If initialization cannot read a template or write a scaffolded file, the error names the failed operation and path so you can fix the missing file or permissions.
+
 | Option                    | Required | Default                      | Description                                                                                                    |
 | ------------------------- | -------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `--image-name`            | No       | `sandcastle:<repo-dir-name>` | Docker image name                                                                                              |
