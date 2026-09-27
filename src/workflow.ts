@@ -114,10 +114,11 @@ export interface WorkflowProject {
         retain(): Promise<void> | void;
       }
   >;
-  /** Supply exactly one prompt source for this task and role. */
+  /** Supply exactly one prompt source; include rejectionFeedback for a repair. */
   prompt(
     task: WorkflowTask,
     role: string,
+    context?: { readonly rejectionFeedback?: string },
   ):
     | string
     | Pick<
@@ -225,6 +226,8 @@ export interface WorkflowOptions {
     readonly baselineHead: string;
     /** Roles already completed for the retained candidate. */
     readonly completedRoles: readonly string[];
+    /** Applied owner rejection passed to the project's repair prompt. */
+    readonly rejectionFeedback?: string;
   };
 }
 
@@ -670,7 +673,14 @@ export const runWorkflow = (
                 signal?.throwIfAborted();
                 const provided = yield* workflowSync(
                   `Read prompt for ${task.id}/${role}`,
-                  () => project.prompt(task, role),
+                  () =>
+                    project.prompt(
+                      task,
+                      role,
+                      role === "implementation" && resumed?.rejectionFeedback
+                        ? { rejectionFeedback: resumed.rejectionFeedback }
+                        : undefined,
+                    ),
                 );
                 const invocation =
                   typeof provided === "string"
