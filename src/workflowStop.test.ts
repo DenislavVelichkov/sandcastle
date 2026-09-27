@@ -56,7 +56,7 @@ it("stops an active workflow after session capture and restores its exact saved 
     state: "ready" as const,
     dependencies: [],
     scope: ["README.md", "new.txt"],
-    requiredRoles: [],
+    requiredRoles: ["review"],
     requiredCapabilities: ["recovery"],
   };
   let finishPending: (() => void) | undefined;
@@ -78,18 +78,29 @@ it("stops an active workflow after session capture and restores its exact saved 
           };
         }
         calls++;
+        const sessionId = calls === 3 ? "review-session" : "session-1";
         const init = JSON.stringify({
           type: "system",
           subtype: "init",
-          session_id: "session-1",
+          session_id: sessionId,
         });
         args?.onLine?.(init);
-        if (calls === 2) {
-          resumedSession = command.includes("--resume")
-            ? "session-1"
-            : undefined;
-          git(worktreePath, "add", "README.md", "new.txt");
-          git(worktreePath, "commit", "-m", "finish");
+        if (calls > 1) {
+          if (calls === 2) {
+            resumedSession = command.includes("--resume")
+              ? "session-1"
+              : undefined;
+            git(worktreePath, "add", "README.md", "new.txt");
+            git(worktreePath, "commit", "-m", "finish");
+          } else {
+            const sessionFile = claudeSandboxSessionPath(
+              worktreePath,
+              sessionId,
+              sandboxProjectsDir,
+            );
+            await mkdir(dirname(sessionFile), { recursive: true });
+            await writeFile(sessionFile, '{"session":true}\n');
+          }
           const result = JSON.stringify({
             type: "result",
             result: "<promise>COMPLETE</promise>",
@@ -160,6 +171,12 @@ it("stops an active workflow after session capture and restores its exact saved 
           }),
           sandbox,
         },
+        review: {
+          agent: claudeCode("test", {
+            sessionStorage: { hostProjectsDir, sandboxProjectsDir },
+          }),
+          sandbox,
+        },
       },
     },
   };
@@ -220,7 +237,12 @@ it("stops an active workflow after session capture and restores its exact saved 
     const resumed = await resumeDurableWorkflow(options);
     expect(resumedSession).toBe("session-1");
     expect(resumed.tasks.a).toMatchObject({ status: "accepted", remaining: 0 });
-    expect(calls).toBe(2);
+    expect(resumed.sessions?.a).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: "review", id: "review-session" }),
+      ]),
+    );
+    expect(calls).toBe(3);
     const checkpointDir = join(
       directory,
       "checkpoints",
