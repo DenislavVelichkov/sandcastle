@@ -8,7 +8,7 @@ describe("makeTerminalCleanupHandler", () => {
 
     const handler = makeTerminalCleanupHandler(
       { isTTY: true, setRawMode },
-      { write },
+      { isTTY: true, write },
     );
     handler();
 
@@ -28,7 +28,7 @@ describe("makeTerminalCleanupHandler", () => {
     handler();
 
     expect(setRawMode).not.toHaveBeenCalled();
-    expect(write).toHaveBeenCalledWith(SHOW_CURSOR);
+    expect(write).not.toHaveBeenCalled();
   });
 
   it("skips setRawMode when stdin has no setRawMode (non-TTY pipe)", () => {
@@ -36,7 +36,7 @@ describe("makeTerminalCleanupHandler", () => {
 
     const handler = makeTerminalCleanupHandler(
       { isTTY: true }, // isTTY true but no setRawMode
-      { write },
+      { isTTY: true, write },
     );
     handler();
 
@@ -52,7 +52,7 @@ describe("makeTerminalCleanupHandler", () => {
 
     const handler = makeTerminalCleanupHandler(
       { isTTY: true, setRawMode },
-      { write },
+      { isTTY: true, write },
     );
 
     expect(() => handler()).not.toThrow();

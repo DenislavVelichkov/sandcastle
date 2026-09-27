@@ -1,0 +1,4 @@
+slotId,ticket,model,effort,status,durationMs,inputTokens,cachedInputTokens,outputTokens,tokenCoverage,checkExitCode,candidateHead,reason
+"ticket-1-arm-1","/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-three-model-pilot/ticket.md","gpt-6-sol","xhigh","passed","255266","52524","532352","9055","captured","0","a5715c3c45f036c3df280b6f648e029fd6601ca9",""
+"ticket-1-arm-2","/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-three-model-pilot/ticket.md","gpt-6-astra","medium","passed","162142","45873","189696","2035","captured","0","9688f154d2b4e0a8d2814bdd47514d6c8c1ddf78",""
+"ticket-1-arm-3","/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-three-model-pilot/ticket.md","gpt-6-luna","max","passed","326263","60043","1013760","12137","captured","0","f540f0cdd8103f67e5de71002ff5aea84a8fb90b",""

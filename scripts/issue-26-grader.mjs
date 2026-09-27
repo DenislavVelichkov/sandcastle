@@ -81,6 +81,7 @@ export async function prepareHistoricalDependencies(candidate) {
         "--frozen-lockfile",
         "--shamefully-hoist",
         "--ignore-scripts",
+        "--config.confirmModulesPurge=false",
       ],
       candidate,
     );

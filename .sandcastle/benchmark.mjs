@@ -17,7 +17,7 @@ import {
 } from "../scripts/issue-26-grader.mjs";
 
 const source = resolve(import.meta.dirname, "..");
-const owner = resolve(source, "../sandcastle-issue31-run-v2");
+const owner = resolve(source, "../sandcastle-issue31-run-v5");
 const installed = source;
 const pkg = await import(pathToFileURL(join(installed, "dist/index.js")));
 const { docker: dockerSandbox } = await import(
@@ -26,7 +26,7 @@ const { docker: dockerSandbox } = await import(
 const image = "sandcastle:issue26-pnpm";
 const observerScript =
   "/home/dv8/Projects/codex-plugins/dv8-codex/custom/skills/quality/sandcastle-personal-setup/scripts";
-const policyId = "issue31-fixed-v2";
+const policyId = "issue31-fixed-v5";
 const pilot = join(owner, "pilot");
 const args = process.argv.slice(2);
 const armValues = args.flatMap((value, index) =>
@@ -70,6 +70,9 @@ const putStable = async (path, value) => {
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 
 await mkdir(owner, { recursive: true, mode: 0o700 });
+const tempDirectory = join(owner, "tmp");
+await mkdir(tempDirectory, { recursive: true, mode: 0o700 });
+process.env.TMPDIR = tempDirectory;
 const workerConfig = join(owner, "worker-config.toml");
 if (!(await stat(workerConfig).catch(() => null)))
   await writeFile(
@@ -212,7 +215,7 @@ const reviewRoles = ["standards-review", "specification-review"];
 const candidateScope = ["src", ".changeset"];
 const configurations = arms.map(({ model, effort }) => [model, effort]);
 const fixturePrompt = (fixture) =>
-  `Implement this bounded Sandcastle task: ${fixture.focus}. Change only the relevant source and tests. Use pnpm for every install and project check; do not add lockfile or workspace metadata. Run the project checks, commit the result, and finish. Do not read outside this answer-free repository.`;
+  `Implement this bounded Sandcastle task: ${fixture.focus}. Change only the relevant source and tests; add the required changeset for user-facing behavior. Use pnpm for installs and checks; do not add lockfile or workspace metadata. Run focused tests and typecheck, then commit and finish within the 15-minute worker limit. The independent host grader builds and runs the full test suite, so do not duplicate that work. Do not read outside this answer-free repository.`;
 
 async function freezeManifest() {
   const models = worker("models");
@@ -327,6 +330,7 @@ async function freezeManifest() {
       "Shared host pnpm download cache; fresh worktree, dependencies and Codex session per evaluation",
     dependencyPolicy:
       "Import each frozen historical package lock with pnpm, install from the derived lock with hoisting and scripts disabled, then remove derived metadata from the answer-free tree",
+    tempDirectory,
     nonImplementationRoleConfigurations: Object.fromEntries(
       reviewRoles.map((role) => [
         role,
@@ -384,6 +388,7 @@ async function frozenManifest() {
   assert.equal(manifest.workerAgentsHash, workerAgentsHash);
   assert.equal(manifest.observerHash, observerHash);
   assert.equal(manifest.workerDockerfileHash, workerDockerfileHash);
+  assert.equal(manifest.tempDirectory, tempDirectory);
   assert.equal(manifest.installedPackage.version, release.version);
   assert.equal(manifest.installedPackage.sourceCommit, release.sourceCommit);
   assert.equal(manifest.installedPackage.distHash, release.distHash);
@@ -559,7 +564,7 @@ async function calibration() {
       policyId,
       activity: "measurement",
       pilot: {
-        id: "issue31-fixed-v2",
+        id: "issue31-fixed-v5",
         directory: pilot,
         overallLimitMs: plan.overallLimitMs,
         evaluationLimit: plan.slots.length,
@@ -765,7 +770,7 @@ async function runNext() {
       policyId,
       activity: "pilot",
       pilot: {
-        id: "issue31-fixed-v2",
+        id: "issue31-fixed-v5",
         directory: pilot,
         overallLimitMs: plan.overallLimitMs,
         evaluationLimit: plan.slots.length,

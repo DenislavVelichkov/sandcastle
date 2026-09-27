@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "runnerSourceCommit": "b68a57fe385d3109e8470850e1e040b60bcda1eb",
+  "runnerHash": "3bf72458875ceb7c0eb62491a934cb374f60929f51d447dc6237a38e50e179da",
+  "workerImageDigest": "sha256:fd16475df746edadc2ed06e5ae06b338f7169fb9be79f3ce0b9defcc91b93c4e",
+  "planSha256": "23efe3955634b3ded19e3e303f2f02ce44c873b9cacf58368689771a4e824cfb",
+  "fixture": {
+    "head": "a43c4a67a1cfb202cdb93527289a8ea82c527545",
+    "tree": "652edcbe281c6d10841f2bebc41e342660afe2d0",
+    "historyCommits": 1
+  },
+  "accountBaseline": {
+    "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+    "weeklyUsedPercent": 37,
+    "weeklyResetsAt": 1791046690,
+    "readingResolutionPercentPoints": 1
+  },
+  "guards": {
+    "maxWeeklyRisePercentPoints": 20,
+    "minRemainingPercent": 20,
+    "maxWallAndActiveMinutes": 60,
+    "maxInvocationMinutes": 15,
+    "maxNewSlotsPerCommand": 1,
+    "noResetCredits": true
+  }
+}

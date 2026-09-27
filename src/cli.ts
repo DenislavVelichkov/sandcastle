@@ -2,7 +2,7 @@ import { Command, Options } from "@effect/cli";
 import { FileSystem } from "@effect/platform";
 import { Effect, Option } from "effect";
 import * as clack from "@clack/prompts";
-import { execFileSync, execSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { styleText } from "node:util";
 
@@ -28,8 +28,9 @@ import {
   getTemplateDependencies,
 } from "./InitService.js";
 import { defaultImageName } from "./sandboxes/docker.js";
-import { makeFixedBenchmarkPlan, withBenchmarkActivity } from "./benchmark.js";
+import { withBenchmarkActivity } from "./benchmark.js";
 import { writeBenchmarkReport } from "./benchmarkReport.js";
+import { planTicketBenchmark, runTicketBenchmark } from "./ticketBenchmark.js";
 import type {
   AgentEntry,
   IssueTrackerEntry,
@@ -686,39 +687,109 @@ const podmanCommand = Command.make("podman", {}, () =>
 const benchmarkCommand = Command.make(
   "benchmark",
   {
-    arm: Options.text("arm").pipe(
+    ticket: Options.text("ticket").pipe(
       Options.withDescription(
-        "Explicit model:effort arm; repeat for every arm including gpt-6-sol:high",
+        "Ticket file, GitHub issue URL or issue number; repeat for multiple tickets",
       ),
       Options.repeated,
     ),
+    arm: Options.text("arm").pipe(
+      Options.withDescription(
+        "Model:effort; repeat for any number of arms (default: Sol xhigh, Astra medium, Luna max)",
+      ),
+      Options.repeated,
+    ),
+    base: Options.text("base").pipe(
+      Options.withDescription("Git commit or ref to start candidates from"),
+      Options.optional,
+    ),
+    image: Options.text("image").pipe(
+      Options.withDescription("Docker worker image"),
+      Options.optional,
+    ),
+    prepare: Options.text("prepare").pipe(
+      Options.withDescription("Sandbox setup command before each model call"),
+      Options.optional,
+    ),
+    check: Options.text("check").pipe(
+      Options.withDescription(
+        "Independent sandbox check after each model call",
+      ),
+      Options.optional,
+    ),
+    output: Options.text("output").pipe(
+      Options.withDescription("Host evidence directory"),
+      Options.optional,
+    ),
+    maxMinutes: Options.text("max-minutes").pipe(
+      Options.withDescription("Model-call window in minutes (default: 60)"),
+      Options.optional,
+    ),
+    maxNewSlots: Options.text("max-new-slots").pipe(
+      Options.withDescription(
+        "Stop after this many new model calls; resume with the same plan",
+      ),
+      Options.optional,
+    ),
+    dryRun: Options.boolean("dry-run").pipe(
+      Options.withDescription(
+        "Print the frozen plan without making model calls",
+      ),
+    ),
   },
-  ({ arm }) =>
+  ({
+    ticket,
+    arm,
+    base,
+    image,
+    prepare,
+    check,
+    output,
+    maxMinutes,
+    maxNewSlots,
+    dryRun,
+  }) =>
     Effect.gen(function* () {
-      const entry = resolve(process.cwd(), ".sandcastle/benchmark.mjs");
-      yield* Effect.try({
-        try: () => {
-          makeFixedBenchmarkPlan(
-            arm.map((value) => {
-              const parts = value.split(":");
-              if (parts.length !== 2 || !parts[0] || !parts[1])
-                throw new InitError({
-                  message: `Invalid benchmark arm: ${value}; expected model:effort`,
-                });
-              return { model: parts[0], effort: parts[1] };
-            }),
-          );
-          execFileSync(
-            process.execPath,
-            [entry, ...arm.flatMap((value) => ["--arm", value])],
-            {
-              cwd: process.cwd(),
-              stdio: "inherit",
-            },
-          );
-        },
+      const d = yield* Display;
+      const optional = (value: Option.Option<string>) =>
+        value._tag === "Some" ? value.value : undefined;
+      const plan = yield* Effect.tryPromise({
+        try: () =>
+          planTicketBenchmark({
+            cwd: process.cwd(),
+            tickets: ticket,
+            arms: arm,
+            base: optional(base),
+            image: optional(image),
+            prepare: optional(prepare),
+            check: optional(check),
+            output: optional(output),
+            maxMinutes:
+              maxMinutes._tag === "Some" ? Number(maxMinutes.value) : undefined,
+          }),
         catch: (error) => new InitError({ message: String(error) }),
       });
+      if (dryRun) {
+        console.log(JSON.stringify(plan, null, 2));
+        return;
+      }
+      yield* d.status(
+        `Benchmarking ${plan.tickets.map((item) => item.source).join(", ")} with ${plan.arms.map((item) => `${item.model}:${item.effort}`).join(", ")}; ${plan.slots.length} calls planned`,
+        "info",
+      );
+      const result = yield* Effect.tryPromise({
+        try: () =>
+          runTicketBenchmark(
+            plan,
+            undefined,
+            maxNewSlots._tag === "Some" ? Number(maxNewSlots.value) : Infinity,
+          ),
+        catch: (error) => new InitError({ message: String(error) }),
+      });
+      yield* d.status(
+        `${result.status}: ${result.completed}/${plan.slots.length} slots; ${result.output}/report.html`,
+        result.status === "complete" ? "success" : "info",
+      );
     }),
 );
 

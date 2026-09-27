@@ -1,0 +1,66 @@
+{
+  "planId": "6a5b780f1f1ccec46305d51fb317119b76322ce4b0c4d7b32efc1b32c30df560",
+  "startedAt": "2026-09-27T16:06:41.277Z",
+  "results": [
+    {
+      "slotId": "ticket-1-arm-1",
+      "startedAt": "2026-09-27T16:06:41.280Z",
+      "finishedAt": "2026-09-27T16:10:56.546Z",
+      "durationMs": 255266,
+      "status": "passed",
+      "branch": "codex/benchmark-6a5b780f-0c4faa-ticket-1-arm-1",
+      "candidateHead": "a5715c3c45f036c3df280b6f648e029fd6601ca9",
+      "commits": [
+        "a5715c3c45f036c3df280b6f648e029fd6601ca9"
+      ],
+      "checkExitCode": 0,
+      "checkOutputSha256": "fb9348f7f55f2034e9f414e279b9827ae99c61c3c7dcb3bed3b39e08f8fa612e",
+      "usage": {
+        "inputTokens": 52524,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 532352,
+        "outputTokens": 9055
+      }
+    },
+    {
+      "slotId": "ticket-1-arm-2",
+      "startedAt": "2026-09-27T16:11:22.602Z",
+      "finishedAt": "2026-09-27T16:14:04.744Z",
+      "durationMs": 162142,
+      "status": "passed",
+      "branch": "codex/benchmark-6a5b780f-0c4faa-ticket-1-arm-2",
+      "candidateHead": "9688f154d2b4e0a8d2814bdd47514d6c8c1ddf78",
+      "commits": [
+        "9688f154d2b4e0a8d2814bdd47514d6c8c1ddf78"
+      ],
+      "checkExitCode": 0,
+      "checkOutputSha256": "36412a7b323367f89b24e1a7c2059892c2c413537c21a840d38d1c6ae4fe5071",
+      "usage": {
+        "inputTokens": 45873,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 189696,
+        "outputTokens": 2035
+      }
+    },
+    {
+      "slotId": "ticket-1-arm-3",
+      "startedAt": "2026-09-27T16:14:23.036Z",
+      "finishedAt": "2026-09-27T16:19:49.299Z",
+      "durationMs": 326263,
+      "status": "passed",
+      "branch": "codex/benchmark-6a5b780f-0c4faa-ticket-1-arm-3",
+      "candidateHead": "f540f0cdd8103f67e5de71002ff5aea84a8fb90b",
+      "commits": [
+        "f540f0cdd8103f67e5de71002ff5aea84a8fb90b"
+      ],
+      "checkExitCode": 0,
+      "checkOutputSha256": "a1cbb73c0aa7e87a7747c1c04521f8bece08d52151eeeeb49f8f5fa569ebc847",
+      "usage": {
+        "inputTokens": 60043,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 1013760,
+        "outputTokens": 12137
+      }
+    }
+  ]
+}
