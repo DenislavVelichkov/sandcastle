@@ -126,7 +126,7 @@ After 28 fixed development evaluations, call `freezeBenchmarkPair()`. A returned
 
 ## Review the routing decision
 
-**Retain fixed Sol High.** The [seventh pilot](proofs/issue-26-v7-report/findings.md) attempted one development slot, which remained incomplete after specification review. Its other 63 slots are unrun. There is no qualified development pair, held-out comparison or attributable subscription-savings result. The [separate fixed study](proofs/issue-31-v2-report/findings.md) also stopped after one incomplete slot, at an account reset. Its credit comparison cannot replace the original adaptive protocol's subscription evidence. Neither study authorizes a project policy change.
+**Retain fixed Sol High.** The [seventh pilot](proofs/issue-26-v7-report/findings.md) attempted one development slot, which remained incomplete after specification review. Its other 63 slots are unrun. There is no qualified development pair, held-out comparison or attributable subscription-savings result. The [separate fixed study's v3 run](proofs/issue-31-v3-report/findings.md) stopped after nine development slots: six accepted, two failed, one incomplete and 31 unrun. Its credit comparison cannot replace the original adaptive protocol's subscription evidence. Neither study authorizes a project policy change.
 
 To check the retained adaptive evidence without modifying it, run this from the Sandcastle source checkout:
 
