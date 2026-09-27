@@ -98,6 +98,11 @@ export interface TicketBenchmarkOptions {
 
 const sha256 = (value: string) =>
   createHash("sha256").update(value).digest("hex");
+export const invocationBudgetMs = (
+  deadlineMs: number,
+  limitMs: number,
+  nowMs = Date.now(),
+) => Math.max(0, Math.min(limitMs, deadlineMs - nowMs));
 const command = (cwd: string, name: string, args: readonly string[]) =>
   execFileSync(name, [...args], {
     cwd,
@@ -336,7 +341,7 @@ const writeReport = async (plan: TicketBenchmarkPlan, ledger: Ledger) => {
 const liveSlot = async (
   plan: TicketBenchmarkPlan,
   slot: Slot,
-  remainingMs: number,
+  deadlineMs: number,
 ): Promise<
   Omit<
     TicketBenchmarkResult,
@@ -391,6 +396,9 @@ const liveSlot = async (
       hooks: { sandbox: { onSandboxReady: setup } },
     });
     const prompt = `Implement this ticket in the repository. Follow AGENTS.md and project conventions. Run focused checks, commit your work, and finish within one agent invocation. Do not delegate or invoke another AI agent. Do not alter benchmark files or use a different task.\n\nTicket: ${ticket.source}\n${ticket.text}`;
+    const callBudgetMs = invocationBudgetMs(deadlineMs, plan.invocationLimitMs);
+    if (callBudgetMs === 0)
+      throw new Error("Model-call window expired before invocation");
     const result = await sandbox.run({
       agent: codex(arm.model, {
         effort: arm.effort,
@@ -405,9 +413,7 @@ const liveSlot = async (
         type: "file",
         path: join(plan.output, "logs", `${slot.id}.log`),
       },
-      signal: AbortSignal.timeout(
-        Math.min(plan.invocationLimitMs, remainingMs),
-      ),
+      signal: AbortSignal.timeout(callBudgetMs),
     });
     const candidateHead = git(sandbox.worktreePath, "rev-parse", "HEAD");
     let checkExitCode: number | undefined;
@@ -537,9 +543,8 @@ export const runTicketBenchmark = async (
       ledger.results.length,
       ledger.results.length + maxNewSlots,
     )) {
-      const remainingMs =
-        plan.overallLimitMs - (Date.now() - Date.parse(ledger.startedAt));
-      if (remainingMs <= 0) break;
+      const deadlineMs = Date.parse(ledger.startedAt) + plan.overallLimitMs;
+      if (Date.now() >= deadlineMs) break;
       const startedAt = new Date().toISOString();
       ledger = {
         ...ledger,
@@ -555,7 +560,7 @@ export const runTicketBenchmark = async (
         "slotId" | "startedAt" | "finishedAt" | "durationMs"
       >;
       try {
-        outcome = await executeSlot(plan, slot, remainingMs);
+        outcome = await executeSlot(plan, slot, deadlineMs);
       } catch (error) {
         outcome = { status: "incomplete", reason: String(error) };
       }

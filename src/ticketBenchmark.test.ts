@@ -3,7 +3,17 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { planTicketBenchmark, runTicketBenchmark } from "./ticketBenchmark.js";
+import {
+  invocationBudgetMs,
+  planTicketBenchmark,
+  runTicketBenchmark,
+} from "./ticketBenchmark.js";
+
+it("charges setup time against the remaining model-call budget", () => {
+  expect(invocationBudgetMs(1_000, 900, 100)).toBe(900);
+  expect(invocationBudgetMs(1_000, 900, 700)).toBe(300);
+  expect(invocationBudgetMs(1_000, 900, 1_000)).toBe(0);
+});
 
 it("discovers one ticket, runs each default arm once, and retains its report", async () => {
   const root = await mkdtemp(join(tmpdir(), "ticket-benchmark-"));

@@ -722,7 +722,7 @@ const benchmarkCommand = Command.make(
       Options.optional,
     ),
     maxMinutes: Options.text("max-minutes").pipe(
-      Options.withDescription("Overall time limit in minutes (default: 60)"),
+      Options.withDescription("Model-call window in minutes (default: 60)"),
       Options.optional,
     ),
     maxNewSlots: Options.text("max-new-slots").pipe(
