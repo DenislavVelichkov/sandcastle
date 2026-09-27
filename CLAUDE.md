@@ -9,6 +9,7 @@ If Vitest fails before collecting tests with `/tmp` `ENOSPC`, check inode availa
 
 - **CRITICAL**: Native proof receipts and applicability records are bound by byte hashes. Preserve exported evidence JSON exactly; formatting changes invalidate their recorded hashes.
 - **CRITICAL**: Issue #26's protected historical grader must commit its isolated shadow before focused tests that exercise Git worktrees; an archive without `.git` makes known corrections fail preflight.
+- **CRITICAL**: Historical grading may replace worker-installed `node_modules` when pnpm store paths differ. Permit the noninteractive purge during the grader install or it aborts before protected tests.
 - **CRITICAL**: Issue #26's frozen worker configuration must come from a private snapshot. The live Codex configuration can change during calibration; a runtime-identity mismatch must stop that attempt before preflight.
 - **CRITICAL**: Issue #26's review prompts must include the exact task instructions. A reviewer asked to verify requirements without them can reject calibration even when the candidate is correct.
 - **CRITICAL**: Issue #26's pilot may stop on a failed required review before using its second permitted implementation iteration. Retain that slot as incomplete; do not infer that another iteration ran or replace the frozen case.
