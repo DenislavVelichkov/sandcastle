@@ -1,10 +1,11 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import {
   codex,
+  createBindMountSandboxProvider,
   createWorktree,
   recoverDurableWorkflow,
   resumeDurableWorkflow,
@@ -422,6 +423,190 @@ it("guards ordinary durable dispatch with worker catalog and account readings", 
     expect(recoveredFailure.usage?.tokens.unknown).toEqual([]);
   } finally {
     await real.close();
+    await rm(root, { recursive: true, force: true });
+  }
+}, 15_000);
+
+it("keeps an unchanged window's limit through guarded stop, recovery and resume", async () => {
+  const root = await mkdtemp(join(tmpdir(), "sandcastle-reset-guard-"));
+  git(root, "init", "-b", "main");
+  git(root, "config", "user.name", "Test");
+  git(root, "config", "user.email", "test@example.com");
+  await writeFile(join(root, "README.md"), "base\n");
+  git(root, "add", "README.md");
+  git(root, "commit", "-m", "base");
+  const worktree = await createWorktree({
+    cwd: root,
+    branchStrategy: { type: "branch", branch: "reset-guard" },
+  });
+  const task: WorkflowTask = {
+    id: "one",
+    reference: "issue:one",
+    state: "ready",
+    dependencies: [],
+    scope: ["result.txt"],
+    requiredRoles: [],
+    requiredCapabilities: [],
+  };
+  const now = Date.now();
+  let phase: "initial" | "resume" | "later" = "initial";
+  let reads = 0;
+  let modelCalls = 0;
+  const sandbox = createBindMountSandboxProvider({
+    name: "controlled-codex",
+    create: async ({ worktreePath }) => ({
+      worktreePath,
+      exec: async (command, options) => {
+        if (command.startsWith("codex exec")) {
+          modelCalls++;
+          const line = JSON.stringify({
+            type: "item.completed",
+            item: { type: "agent_message", text: "first iteration" },
+          });
+          options?.onLine?.(line);
+          return { stdout: line, stderr: "", exitCode: 0 };
+        }
+        const result = spawnSync(command, {
+          cwd: options?.cwd ?? worktreePath,
+          shell: true,
+          encoding: "utf8",
+        });
+        return {
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.status ?? 1,
+        };
+      },
+      copyFileIn: async () => {
+        throw new Error("No session transfer expected");
+      },
+      copyFileOut: async () => {
+        throw new Error("No session transfer expected");
+      },
+      close: async () => {},
+    }),
+  });
+  const options = {
+    directory: join(root, "state"),
+    projectId: "project",
+    invocationId: "reset-guard",
+    runtimeIdentity: "runtime-v1",
+    selected: [{ id: task.id, reference: task.reference }],
+    worktrees: { one: worktree },
+    project: {
+      root,
+      capabilities: [],
+      getTask: async () => task,
+      reserve: async () => ({
+        id: "reservation",
+        retain: async () => {},
+        release: async () => {},
+      }),
+      prompt: () => "test",
+      check: async () => ({ status: "passed" as const, evidence: [] }),
+      accept: async () => ({ status: "accepted" as const, evidence: [] }),
+      validateHumanRequest: async () => true,
+    },
+    recoverReservation: async (id: string) => {
+      expect(id).toBe("reservation");
+    },
+    policy: {
+      iterations: 2,
+      roles: {
+        implementation: {
+          agent: codex("gpt-6-sol", {
+            effort: "high" as const,
+            serviceTier: "default" as const,
+            captureSessions: false,
+          }),
+          sandbox,
+        },
+      },
+    },
+    usage: {
+      policyId: "fixed",
+      activity: "library-proof" as const,
+      readAccount: async () => {
+        reads++;
+        const first = phase === "initial" && reads === 1;
+        return {
+          accountId: "account-a",
+          observedAt: Date.now(),
+          denied: false,
+          windows: {
+            short: {
+              usedPercent: first ? 30 : 1,
+              resetsAt: now + (first ? 60 * 60_000 : 2 * 60 * 60_000),
+            },
+            weekly: {
+              usedPercent: first
+                ? 40
+                : phase === "resume" && reads >= 3
+                  ? 45
+                  : 44,
+              resetsAt: now + 7 * 24 * 60 * 60_000,
+            },
+          },
+        };
+      },
+      listModels: async () => ({
+        data: [
+          {
+            model: "gpt-6-sol",
+            supportedReasoningEfforts: [{ reasoningEffort: "high" }],
+          },
+        ],
+      }),
+    },
+  };
+  try {
+    const stopped = await runDurableWorkflow(options);
+    expect(stopped.lifecycle).toBe("stopped");
+    expect(stopped.usage?.stopReason).toMatch(/short changed/);
+    expect(stopped.usage?.remaining.one?.implementation).toBe(2);
+    expect(modelCalls).toBe(0);
+    await recoverDurableWorkflow(options);
+
+    phase = "resume";
+    reads = 0;
+    const continued = await resumeDurableWorkflow({
+      ...options,
+      usage: {
+        ...options.usage,
+        resetContinuation: { id: "owner-reset", reason: "Short window reset" },
+      },
+    });
+    expect(continued.lifecycle).toBe("stopped");
+    expect(continued.usage?.baseline.windows.weekly?.usedPercent).toBe(40);
+    expect(continued.usage?.guardBaseline.windows.weekly?.usedPercent).toBe(40);
+    expect(continued.usage?.resetContinuations).toHaveLength(1);
+    expect(
+      continued.usage?.accountHistory.some(
+        (item) => item.resetDecisionId === "owner-reset",
+      ),
+    ).toBe(true);
+    expect(continued.usage?.stopReason).toMatch(
+      /weekly rose by 5 percentage points/,
+    );
+    expect(continued.usage?.remaining.one?.implementation).toBe(1);
+    expect(continued.usage?.invocations).toBe(1);
+    expect(modelCalls).toBe(1);
+
+    phase = "later";
+    reads = 0;
+    await recoverDurableWorkflow(options);
+    const later = await resumeDurableWorkflow(options);
+    expect(later.usage?.guardBaseline.windows.weekly?.usedPercent).toBe(40);
+    expect(later.usage?.remaining.one?.implementation).toBe(1);
+    expect(later.usage?.stopReason).toMatch(
+      /weekly rose by 5 percentage points/,
+    );
+    expect(modelCalls).toBe(1);
+    expect((await workflowStatus(options.directory)).resources.retained).toBe(
+      true,
+    );
+  } finally {
+    await worktree.close();
     await rm(root, { recursive: true, force: true });
   }
 }, 15_000);

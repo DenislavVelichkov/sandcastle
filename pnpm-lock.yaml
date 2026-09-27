@@ -11,6 +11,9 @@ importers:
       '@clack/prompts':
         specifier: ^1.1.0
         version: 1.8.1
+      '@standard-schema/spec':
+        specifier: 1.1.0
+        version: 1.1.0
       '@vercel/sandbox':
         specifier: '>=1.0.0'
         version: 3.3.0
