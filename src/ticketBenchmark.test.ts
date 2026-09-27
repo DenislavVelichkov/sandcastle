@@ -40,7 +40,17 @@ it("discovers one ticket, runs each default arm once, and retains its report", a
         usage: null,
       };
     };
-    expect(await runTicketBenchmark(plan, execute)).toMatchObject({
+    expect(await runTicketBenchmark(plan, execute, 1)).toMatchObject({
+      status: "in-progress",
+      completed: 1,
+    });
+    expect(calls).toBe(1);
+    expect(await runTicketBenchmark(plan, execute, 1)).toMatchObject({
+      status: "in-progress",
+      completed: 2,
+    });
+    expect(calls).toBe(2);
+    expect(await runTicketBenchmark(plan, execute, 1)).toMatchObject({
       status: "complete",
       completed: 3,
     });
