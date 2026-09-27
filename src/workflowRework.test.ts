@@ -395,6 +395,114 @@ it("resumes rejected work once with its feedback and fresh candidate decisions",
   }
 }, 30_000);
 
+it("resumes a repaired candidate stopped during verification without replaying roles", async () => {
+  const f = await fixture(["a"], (_task, call) => call % 2 === 1);
+  const task: WorkflowTask = {
+    id: "a",
+    reference: "issue:a",
+    state: "ready",
+    dependencies: [],
+    scope: ["a.txt"],
+    requiredRoles: ["review"],
+    requiredCapabilities: ["recovery"],
+  };
+  let checks = 0;
+  let enterCheck!: () => void;
+  const checking = new Promise<void>((resolve) => {
+    enterCheck = resolve;
+  });
+  let finishCheck!: () => void;
+  const checkBarrier = new Promise<void>((resolve) => {
+    finishCheck = resolve;
+  });
+  const project: DurableWorkflowOptions["project"] = {
+    root: f.root,
+    capabilities: ["recovery"],
+    getTask: async () => task,
+    reserve: f.reservation.reserve,
+    prompt: (_task, role, context) =>
+      `${role}: ${context?.rejectionFeedback ?? "initial"}`,
+    check: async (candidate) => {
+      checks++;
+      if (checks === 2) {
+        enterCheck();
+        await checkBarrier;
+      }
+      const evidence = await question(f.root, "a", candidate.head);
+      return { status: "passed", evidence: [evidence.path] };
+    },
+    accept: (candidate) => waitingAcceptance(f.root, candidate),
+    validateHumanRequest: async () => true,
+  };
+  const options: DurableWorkflowOptions = {
+    directory: f.directory,
+    projectId: "project",
+    invocationId: "invocation",
+    runtimeIdentity: "runtime",
+    selected: [{ id: "a", reference: "issue:a" }],
+    worktrees: f.worktrees,
+    project,
+    recoverReservation: f.reservation.recover,
+    policy: {
+      iterations: 2,
+      roles: {
+        implementation: { agent: f.agent, sandbox: f.sandbox },
+        review: { agent: f.agent, sandbox: f.sandbox },
+      },
+    },
+  };
+  try {
+    const first = await runDurableWorkflow(options);
+    const rejectedHead = first.requests[0]!.candidate;
+    await respondWorkflow({
+      directory: f.directory,
+      requestId: first.requests[0]!.id,
+      responseId: "reject-1",
+      sourceEvent: {},
+      route: route("Reject: repair this candidate"),
+    });
+    await processWorkflowResponses(f.directory, project.validateHumanRequest);
+    await requestWorkflowRework(f.directory, "a");
+
+    const execution = resumeDurableWorkflow(options);
+    await checking;
+    expect((await workflowStatus(f.directory)).unfinished.a?.phase).toBe(
+      "verification",
+    );
+    const repairedHead = git(f.worktrees.a!.worktreePath, "rev-parse", "HEAD");
+    expect(repairedHead).not.toBe(rejectedHead);
+    const stopping = checkpointStopWorkflow(f.directory);
+    await expect
+      .poll(async () => (await workflowStatus(f.directory)).lifecycle)
+      .toBe("stopping");
+    finishCheck();
+    const stopped = await stopping;
+    expect((await execution).revision).toBe(stopped.revision);
+    expect(stopped.tasks.a).toMatchObject({ status: "paused", remaining: 0 });
+    expect(stopped.resources).toMatchObject({
+      reservationId: "reservation",
+      retained: true,
+    });
+    expect(f.calls).toHaveLength(4);
+
+    const resumed = await resumeDurableWorkflow(options);
+    expect(resumed.tasks.a).toMatchObject({ status: "waiting", remaining: 0 });
+    expect(resumed.checksPassed?.a?.candidate).toBe(repairedHead);
+    expect(resumed.requests).toHaveLength(2);
+    expect(resumed.requests[0]?.candidate).toBe(rejectedHead);
+    expect(resumed.requests[1]?.candidate).toBe(repairedHead);
+    expect(checks).toBe(3);
+    expect(f.calls).toHaveLength(4);
+    expect((await resumeDurableWorkflow(options)).requests[1]?.id).toBe(
+      resumed.requests[1]?.id,
+    );
+    expect(f.calls).toHaveLength(4);
+  } finally {
+    finishCheck();
+    await f.close();
+  }
+}, 30_000);
+
 it("keeps a rejected candidate when its required review allowance is spent", async () => {
   const f = await fixture(["a"], (_task, call) => call === 1, "codex");
   const task: WorkflowTask = {
