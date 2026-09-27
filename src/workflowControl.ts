@@ -1658,35 +1658,45 @@ const driveDurableWorkflow = async (
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
     }
-    reservation = await options.project.reserve({
-      tasks: admission.tasks,
-      branch: first.branch,
-      branches: Object.fromEntries(
-        admission.tasks.map((task) => [
-          task.id,
-          options.worktrees[task.id]!.branch,
-        ]),
-      ),
-      implementationIterations: options.policy.iterations,
-      ...(resume ? { resumeId: previous!.resources.reservationId } : {}),
-      roles: Object.fromEntries(
-        admission.tasks.map((task) => [
-          task.id,
-          ["implementation", ...task.requiredRoles],
-        ]),
-      ),
-    });
-    if (
-      typeof reservation === "function" ||
-      !reservation?.id ||
-      typeof reservation.retain !== "function" ||
-      typeof reservation.release !== "function"
-    )
-      throw new Error(
-        "Durable workflow requires a project-owned durable reservation",
-      );
-    if (resume && reservation.id !== previous!.resources.reservationId)
-      throw new Error("Project changed the retained reservation identity");
+    try {
+      reservation = await options.project.reserve({
+        tasks: admission.tasks,
+        branch: first.branch,
+        branches: Object.fromEntries(
+          admission.tasks.map((task) => [
+            task.id,
+            options.worktrees[task.id]!.branch,
+          ]),
+        ),
+        implementationIterations: options.policy.iterations,
+        ...(resume ? { resumeId: previous!.resources.reservationId } : {}),
+        roles: Object.fromEntries(
+          admission.tasks.map((task) => [
+            task.id,
+            ["implementation", ...task.requiredRoles],
+          ]),
+        ),
+      });
+      if (
+        typeof reservation === "function" ||
+        !reservation?.id ||
+        typeof reservation.retain !== "function" ||
+        typeof reservation.release !== "function"
+      )
+        throw new Error(
+          "Durable workflow requires a project-owned durable reservation",
+        );
+      if (resume && reservation.id !== previous!.resources.reservationId)
+        throw new Error("Project changed the retained reservation identity");
+    } catch (error) {
+      if (resume)
+        await update(options.directory, previous!, {
+          lifecycle: "recovery-required",
+          failure: `Project reservation refused resume: ${String(error)}`,
+          resources: { ...previous!.resources, retained: true },
+        });
+      throw error;
+    }
     if (resume) {
       try {
         usageState = JSON.parse(
@@ -1863,10 +1873,10 @@ const driveDurableWorkflow = async (
         });
         continue;
       }
-      const attemptId = rejectionFor(state, task.id)?.responseId;
+      const rejection = rejectionFor(state, task.id);
+      const attemptId = rejection?.responseId;
       let resumed: WorkflowOptions["resume"];
       if (resume && priorTask?.status === "rework-requested") {
-        const rejection = rejectionFor(state, task.id);
         const request = state.requests.find(
           (item) => item.id === rejection?.requestId,
         );
@@ -1878,18 +1888,17 @@ const driveDurableWorkflow = async (
               (role) => !usageState?.remaining[task.id]?.[role],
             )
           : undefined;
-        const reason =
-          !request || !rejection
-            ? "Requested rework has no applied rejection"
-            : !candidateCurrent(request)
-              ? "Rejected candidate changed before rework"
-              : !session
-                ? "Requested rework has no captured implementation session"
-                : !state.baselineHeads?.[task.id]
-                  ? "Requested rework has no original baseline"
-                  : unavailable
-                    ? `No reserved invocation remains for ${task.id}/${unavailable}`
-                    : undefined;
+        let reason: string | undefined;
+        if (!request || !rejection)
+          reason = "Requested rework has no applied rejection";
+        else if (!candidateCurrent(request))
+          reason = "Rejected candidate changed before rework";
+        else if (!session)
+          reason = "Requested rework has no captured implementation session";
+        else if (!state.baselineHeads?.[task.id])
+          reason = "Requested rework has no original baseline";
+        else if (unavailable)
+          reason = `No reserved invocation remains for ${task.id}/${unavailable}`;
         if (reason) {
           state = await update(options.directory, state, {
             tasks: {
@@ -1951,9 +1960,7 @@ const driveDurableWorkflow = async (
           ...(session ? { sessionId: session.id } : {}),
           baselineHead,
           completedRoles: roles.filter((item) => done.includes(item)),
-          ...(attemptId
-            ? { rejectionFeedback: rejectionFor(state, task.id)!.originalText }
-            : {}),
+          ...(rejection ? { rejectionFeedback: rejection.originalText } : {}),
         };
       }
       const worktree = options.worktrees[task.id]!;
@@ -2573,8 +2580,11 @@ const driveDurableWorkflow = async (
     try {
       await runControlEffect(Scope.close(scope, Exit.succeed(undefined)));
     } finally {
-      if (!state && reservation && typeof reservation !== "function")
-        await reservation.release();
+      if (!state && reservation) {
+        if (typeof reservation === "function") await reservation();
+        else if (typeof reservation.release === "function")
+          await reservation.release();
+      }
     }
   }
 };

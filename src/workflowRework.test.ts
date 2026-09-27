@@ -583,6 +583,81 @@ it("retains the same reservation when the last rework attempt is interrupted", a
   }
 }, 30_000);
 
+it("reports a refused resume without losing requested rework or its reservation", async () => {
+  const f = await fixture(["a"], () => true);
+  const task: WorkflowTask = {
+    id: "a",
+    reference: "issue:a",
+    state: "ready",
+    dependencies: [],
+    scope: ["a.txt"],
+    requiredRoles: [],
+    requiredCapabilities: ["recovery"],
+  };
+  const project: DurableWorkflowOptions["project"] = {
+    root: f.root,
+    capabilities: ["recovery"],
+    getTask: async () => task,
+    reserve: async (request) => {
+      if (request.resumeId) throw new Error("scope unavailable");
+      return f.reservation.reserve(request);
+    },
+    prompt: () => "Implement selected task",
+    check: async (candidate) => {
+      const evidence = await question(f.root, "a", candidate.head);
+      return { status: "passed", evidence: [evidence.path] };
+    },
+    accept: (candidate) => waitingAcceptance(f.root, candidate),
+    validateHumanRequest: async () => true,
+  };
+  const options: DurableWorkflowOptions = {
+    directory: f.directory,
+    projectId: "project",
+    invocationId: "invocation",
+    runtimeIdentity: "runtime",
+    selected: [{ id: "a", reference: "issue:a" }],
+    worktrees: f.worktrees,
+    project,
+    recoverReservation: f.reservation.recover,
+    policy: {
+      iterations: 2,
+      roles: { implementation: { agent: f.agent, sandbox: f.sandbox } },
+    },
+  };
+  try {
+    const first = await runDurableWorkflow(options);
+    await respondWorkflow({
+      directory: f.directory,
+      requestId: first.requests[0]!.id,
+      responseId: "reject-1",
+      sourceEvent: {},
+      route: route("Reject: repair it"),
+    });
+    await processWorkflowResponses(f.directory, project.validateHumanRequest);
+    await requestWorkflowRework(f.directory, "a");
+    await expect(resumeDurableWorkflow(options)).rejects.toThrow(
+      "scope unavailable",
+    );
+    const status = await workflowStatus(f.directory);
+    expect(status.lifecycle).toBe("recovery-required");
+    expect(status.failure).toContain("scope unavailable");
+    expect(status.tasks.a).toMatchObject({
+      status: "rework-requested",
+      remaining: 1,
+    });
+    expect(status.resources).toMatchObject({
+      reservationId: "reservation",
+      retained: true,
+    });
+    expect(git(f.worktrees.a!.worktreePath, "rev-parse", "HEAD")).toBe(
+      first.requests[0]?.candidate,
+    );
+    expect(f.calls).toHaveLength(1);
+  } finally {
+    await f.close();
+  }
+}, 30_000);
+
 it("reconsiders only a dependency blocker after its prerequisite is approved", async () => {
   const ids = ["parent", "child", "grandchild", "other"];
   const f = await fixture(ids, () => true);
