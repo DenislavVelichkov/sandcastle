@@ -78,6 +78,7 @@
     "@effect/platform-node": "^0.105.0",
     "@effect/printer": "^0.48.0",
     "@effect/printer-ansi": "^0.48.0",
+    "@standard-schema/spec": "1.1.0",
     "@types/node": "^25.5.0",
     "@typescript/native-preview": "^7.0.0-dev.20260317.1",
     "effect": "^3.20.0",
