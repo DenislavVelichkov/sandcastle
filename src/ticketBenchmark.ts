@@ -168,7 +168,7 @@ const readTicket = async (cwd: string, value: string): Promise<Ticket> => {
   return { source, title, text, sha256: sha256(text) };
 };
 
-const discoverTickets = (cwd: string): string[] => {
+const discoverTicket = (cwd: string): string => {
   const files = git(
     cwd,
     "ls-files",
@@ -180,7 +180,7 @@ const discoverTickets = (cwd: string): string[] => {
     .split("\n")
     .filter((name) => /\.(md|txt)$/i.test(name))
     .sort();
-  if (files.length) return files;
+  if (files.length) return files[0]!;
   let issues: { number: number; url: string }[];
   try {
     issues = JSON.parse(
@@ -204,7 +204,7 @@ const discoverTickets = (cwd: string): string[] => {
   }
   if (!issues.length)
     throw new Error("No eligible project ticket found; pass --ticket");
-  return issues.sort((a, b) => a.number - b.number).map((issue) => issue.url);
+  return issues.sort((a, b) => a.number - b.number)[0]!.url;
 };
 
 export const planTicketBenchmark = async (
@@ -220,7 +220,7 @@ export const planTicketBenchmark = async (
   );
   const inputs = options.tickets?.length
     ? options.tickets
-    : discoverTickets(cwd);
+    : [discoverTicket(cwd)];
   const tickets = await Promise.all(
     inputs.map((value) => readTicket(cwd, value)),
   );

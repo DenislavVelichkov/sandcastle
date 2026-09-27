@@ -103,7 +103,7 @@ The [issue #18 release adoption report](proofs/issue-18-release-adoption.md) rec
 
 ## Run the bounded benchmark
 
-Run the generic benchmark from a clean committed project with a Docker image that contains Codex and the project's tools. `--ticket` accepts a local ticket file, a GitHub issue URL, or an issue number; repeat it for multiple tickets. If omitted, the command uses all tracked Markdown/text files under `tickets/`, `docs/tickets/`, or `.sandcastle/tickets/`, or open GitHub issues with the `Sandcastle` label. Review the frozen plan before model calls:
+Run the generic benchmark from a clean committed project with a Docker image that contains Codex and the project's tools. `--ticket` accepts a local ticket file, a GitHub issue URL, or an issue number; repeat it for multiple tickets. If omitted, the command selects the first tracked Markdown/text file under `tickets/`, `docs/tickets/`, or `.sandcastle/tickets/`, or the oldest open GitHub issue with the `Sandcastle` label. It prints that choice before model calls. Review the frozen plan first:
 
 ```sh
 sandcastle benchmark --ticket tickets/example.md --dry-run

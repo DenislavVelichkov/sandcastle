@@ -773,6 +773,10 @@ const benchmarkCommand = Command.make(
         console.log(JSON.stringify(plan, null, 2));
         return;
       }
+      yield* d.status(
+        `Benchmarking ${plan.tickets.map((item) => item.source).join(", ")} with ${plan.arms.map((item) => `${item.model}:${item.effort}`).join(", ")}; ${plan.slots.length} calls planned`,
+        "info",
+      );
       const result = yield* Effect.tryPromise({
         try: () =>
           runTicketBenchmark(
