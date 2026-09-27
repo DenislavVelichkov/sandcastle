@@ -653,7 +653,7 @@ export const workflowStatus = async (
   const unfinished = Object.fromEntries(
     await Promise.all(
       Object.entries(state.tasks)
-        .filter(([, task]) => task.status === "paused")
+        .filter(([, task]) => ["active", "paused"].includes(task.status))
         .map(async ([taskId]) => {
           const task = state.selectedTasks?.find((item) => item.id === taskId);
           const roles = task ? ["implementation", ...task.requiredRoles] : [];
@@ -2315,21 +2315,20 @@ const driveDurableWorkflow = async (
           ),
         );
       }
-      if (stopAfterResult && failure) {
-        if (usageState?.currentTask)
-          await mutateUsage((current) =>
-            finishWorkflowTask(current, Date.now()),
-          );
-        const sessions = await capturedSessions(options.directory, task.id);
-        const used = sessions.filter(
-          (session) => session.role === "implementation",
-        ).length;
+      if (failure && !result) {
         const phase = await readCheckPhase(options.directory, task.id);
         if (
-          !result &&
           phase?.acceptanceStarted &&
           phase.candidate === git(worktree.worktreePath, "rev-parse", "HEAD")
         ) {
+          if (usageState?.currentTask)
+            await mutateUsage((current) =>
+              finishWorkflowTask(current, Date.now()),
+            );
+          const sessions = await capturedSessions(options.directory, task.id);
+          const used = sessions.filter(
+            (session) => session.role === "implementation",
+          ).length;
           const reason = `Acceptance outcome is uncertain for ${task.id}; owner recovery is required`;
           state = await update(options.directory, state, {
             active: [],
@@ -2347,6 +2346,16 @@ const driveDurableWorkflow = async (
           });
           throw new Error(reason);
         }
+      }
+      if (stopAfterResult && failure) {
+        if (usageState?.currentTask)
+          await mutateUsage((current) =>
+            finishWorkflowTask(current, Date.now()),
+          );
+        const sessions = await capturedSessions(options.directory, task.id);
+        const used = sessions.filter(
+          (session) => session.role === "implementation",
+        ).length;
         const roles = ["implementation", ...task.requiredRoles];
         const done = await completedRoles(options.directory, task.id);
         const unfinishedRole = roles.find((role) => !done.includes(role));

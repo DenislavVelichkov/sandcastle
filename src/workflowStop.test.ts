@@ -273,8 +273,13 @@ it("stops an active workflow after session capture and restores its exact saved 
   }
 });
 
-it.each(["check", "acceptance", "uncertain-acceptance"] as const)(
-  "resumes a stopped %s without another agent call",
+it.each([
+  "check",
+  "acceptance",
+  "uncertain-acceptance",
+  "failed-acceptance",
+] as const)(
+  "handles interrupted %s without another agent call",
   async (barrierPhase) => {
     const base = await mkdtemp(join(tmpdir(), "sandcastle-check-stop-"));
     const root = join(base, "repo");
@@ -404,7 +409,10 @@ it.each(["check", "acceptance", "uncertain-acceptance"] as const)(
             checkStarted();
             await checkBarrier;
           }
-          if (barrierPhase === "uncertain-acceptance")
+          if (
+            barrierPhase === "uncertain-acceptance" ||
+            barrierPhase === "failed-acceptance"
+          )
             throw new Error("host answer outcome was lost");
           return {
             status: "waiting",
@@ -456,19 +464,33 @@ it.each(["check", "acceptance", "uncertain-acceptance"] as const)(
     };
     try {
       const execution = runDurableWorkflow(options);
-      if (barrierPhase === "uncertain-acceptance")
+      if (
+        barrierPhase === "uncertain-acceptance" ||
+        barrierPhase === "failed-acceptance"
+      )
         void execution.catch(() => {});
       await checking;
+      expect((await workflowStatus(directory)).unfinished.a?.phase).toBe(
+        barrierPhase === "check" ? "verification" : "acceptance",
+      );
       const candidate = git(worktree.worktreePath, "rev-parse", "HEAD");
-      const stopping = checkpointStopWorkflow(directory);
-      await expect
-        .poll(async () => (await workflowStatus(directory)).lifecycle)
-        .toBe("stopping");
+      const stopping =
+        barrierPhase === "failed-acceptance"
+          ? undefined
+          : checkpointStopWorkflow(directory);
+      if (stopping)
+        await expect
+          .poll(async () => (await workflowStatus(directory)).lifecycle)
+          .toBe("stopping");
       finishCheck();
-      if (barrierPhase === "uncertain-acceptance") {
-        await expect(stopping).rejects.toThrow(
-          "Acceptance outcome is uncertain",
-        );
+      if (
+        barrierPhase === "uncertain-acceptance" ||
+        barrierPhase === "failed-acceptance"
+      ) {
+        if (stopping)
+          await expect(stopping).rejects.toThrow(
+            "Acceptance outcome is uncertain",
+          );
         await expect(execution).rejects.toThrow(
           "Acceptance outcome is uncertain",
         );
@@ -486,7 +508,7 @@ it.each(["check", "acceptance", "uncertain-acceptance"] as const)(
         expect(calls).toBe(2);
         return;
       }
-      const stopped = await stopping;
+      const stopped = await stopping!;
       expect((await execution).revision).toBe(stopped.revision);
       expect(stopped.tasks.a?.remaining).toBe(0);
       if (barrierPhase === "check") {
