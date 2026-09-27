@@ -429,14 +429,7 @@ const initCommand = Command.make(
           createLabel: shouldCreateLabel,
           issueTracker: selectedIssueTracker,
           sandboxProvider: selectedSandboxProvider,
-        }).pipe(
-          Effect.mapError(
-            (e) =>
-              new InitError({
-                message: `${e instanceof Error ? e.message : e}`,
-              }),
-          ),
-        ),
+        }),
       );
 
       // Detect the host package manager so the zod offer below and the next
