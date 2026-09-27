@@ -215,7 +215,7 @@ const reviewRoles = ["standards-review", "specification-review"];
 const candidateScope = ["src", ".changeset"];
 const configurations = arms.map(({ model, effort }) => [model, effort]);
 const fixturePrompt = (fixture) =>
-  `Implement this bounded Sandcastle task: ${fixture.focus}. Change only the relevant source and tests. Use pnpm for every install and project check; do not add lockfile or workspace metadata. Run the project checks, commit the result, and finish. Do not read outside this answer-free repository.`;
+  `Implement this bounded Sandcastle task: ${fixture.focus}. Change only the relevant source and tests; add the required changeset for user-facing behavior. Use pnpm for installs and checks; do not add lockfile or workspace metadata. Run focused tests and typecheck, then commit and finish within the 15-minute worker limit. The independent host grader builds and runs the full test suite, so do not duplicate that work. Do not read outside this answer-free repository.`;
 
 async function freezeManifest() {
   const models = worker("models");
