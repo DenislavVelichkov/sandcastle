@@ -7,8 +7,8 @@
  * SandboxFactory), clack's own cleanup is bypassed and the terminal is left
  * in raw mode with the cursor hidden.
  *
- * Registering a process 'exit' listener that restores these guarantees the
- * terminal is always left in a usable state.
+ * Registering a process 'exit' listener restores the terminal when stdout is
+ * attached to one, without adding escape sequences to redirected output.
  */
 
 /** Escape sequence to show the cursor (DECTCEM). */
@@ -21,7 +21,7 @@ export const SHOW_CURSOR = "\x1b[?25h";
 export const makeTerminalCleanupHandler =
   (
     stdin: { isTTY?: boolean; setRawMode?: (raw: boolean) => void },
-    stdout: { write: (data: string) => boolean },
+    stdout: { isTTY?: boolean; write: (data: string) => boolean },
   ) =>
   (): void => {
     if (stdin.isTTY && stdin.setRawMode) {
@@ -31,7 +31,7 @@ export const makeTerminalCleanupHandler =
         // Best-effort — may fail if stdin is already closed
       }
     }
-    stdout.write(SHOW_CURSOR);
+    if (stdout.isTTY) stdout.write(SHOW_CURSOR);
   };
 
 /**
