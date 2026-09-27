@@ -1,19 +1,28 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
 import {
   checkpointStopWorkflow,
+  claudeCode,
+  createBindMountSandboxProvider,
   createWorktree,
   recoverDurableWorkflow,
   resumeDurableWorkflow,
   runDurableWorkflow,
   workflowStatus,
   type DurableWorkflowOptions,
-  type Worktree,
 } from "./index.js";
+import { claudeSandboxSessionPath } from "./SessionStore.js";
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -31,7 +40,8 @@ it("stops an active workflow after session capture and restores its exact saved 
     branchStrategy: { type: "branch", branch: "active" },
   });
   const directory = join(root, "control");
-  const sessionFile = join(root, "session.jsonl");
+  const hostProjectsDir = join(root, "host-sessions");
+  const sandboxProjectsDir = join(root, "sandbox-sessions");
   let started!: () => void;
   const running = new Promise<void>((resolve) => {
     started = resolve;
@@ -49,42 +59,79 @@ it("stops an active workflow after session capture and restores its exact saved 
     requiredRoles: [],
     requiredCapabilities: ["recovery"],
   };
-  const mock: Worktree = {
-    ...worktree,
-    run: async ({ signal, onSessionCaptured, resumeSession }) => {
-      calls++;
-      if (calls === 2) {
-        resumedSession = resumeSession;
-        git(worktree.worktreePath, "add", "README.md", "new.txt");
-        git(worktree.worktreePath, "commit", "-m", "finish");
-        return {
-          iterations: [
-            { sessionId: "session-1", sessionFilePath: sessionFile },
-          ],
-          commits: [{ sha: git(worktree.worktreePath, "rev-parse", "HEAD") }],
-        } as never;
-      }
-      await writeFile(join(worktree.worktreePath, "README.md"), "unfinished\n");
-      await writeFile(join(worktree.worktreePath, "new.txt"), "untracked\n");
-      started();
-      await new Promise<void>((resolve) =>
-        signal?.addEventListener("abort", () => resolve(), { once: true }),
-      );
-      await writeFile(sessionFile, '{"session":true}\n');
-      await onSessionCaptured?.({
-        sessionId: "session-1",
-        sessionFilePath: sessionFile,
-      });
-      throw signal?.reason;
-    },
-  };
+  let finishPending: (() => void) | undefined;
+  const sandbox = createBindMountSandboxProvider({
+    name: "controlled-agent",
+    create: async ({ worktreePath }) => ({
+      worktreePath,
+      exec: async (command, args) => {
+        if (!command.startsWith("claude ")) {
+          const result = spawnSync(command, {
+            cwd: args?.cwd ?? worktreePath,
+            shell: true,
+            encoding: "utf8",
+          });
+          return {
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.status ?? 1,
+          };
+        }
+        calls++;
+        const init = JSON.stringify({
+          type: "system",
+          subtype: "init",
+          session_id: "session-1",
+        });
+        args?.onLine?.(init);
+        if (calls === 2) {
+          resumedSession = command.includes("--resume")
+            ? "session-1"
+            : undefined;
+          git(worktreePath, "add", "README.md", "new.txt");
+          git(worktreePath, "commit", "-m", "finish");
+          const result = JSON.stringify({
+            type: "result",
+            result: "<promise>COMPLETE</promise>",
+          });
+          args?.onLine?.(result);
+          return { stdout: `${init}\n${result}`, stderr: "", exitCode: 0 };
+        }
+        await writeFile(join(worktreePath, "README.md"), "unfinished\n");
+        await writeFile(join(worktreePath, "new.txt"), "untracked\n");
+        const sessionFile = claudeSandboxSessionPath(
+          worktreePath,
+          "session-1",
+          sandboxProjectsDir,
+        );
+        await mkdir(dirname(sessionFile), { recursive: true });
+        await writeFile(sessionFile, '{"session":true}\n');
+        started();
+        return new Promise((resolve) => {
+          finishPending = () =>
+            resolve({ stdout: init, stderr: "", exitCode: 130 });
+        });
+      },
+      copyFileIn: async (from, to) => {
+        await mkdir(dirname(to), { recursive: true });
+        await copyFile(from, to);
+      },
+      copyFileOut: async (from, to) => {
+        await mkdir(dirname(to), { recursive: true });
+        await copyFile(from, to);
+      },
+      close: async () => {
+        finishPending?.();
+      },
+    }),
+  });
   const options: DurableWorkflowOptions = {
     directory,
     projectId: "project",
     invocationId: "invocation",
     runtimeIdentity: "runtime-v1",
     selected: [{ id: task.id, reference: task.reference }],
-    worktrees: { a: mock },
+    worktrees: { a: worktree },
     project: {
       root,
       capabilities: ["recovery"],
@@ -108,13 +155,10 @@ it("stops an active workflow after session capture and restores its exact saved 
       iterations: 2,
       roles: {
         implementation: {
-          agent: {
-            captureSessions: true,
-            sessionStorage: {},
-            buildPrintCommand: () => ({}),
-            parseStreamLine: () => [],
-          } as never,
-          sandbox: { tag: "bind-mount", create: () => ({}) } as never,
+          agent: claudeCode("test", {
+            sessionStorage: { hostProjectsDir, sandboxProjectsDir },
+          }),
+          sandbox,
         },
       },
     },
@@ -218,62 +262,99 @@ it.each([
     branchStrategy: { type: "branch", branch: "unfinished" },
   });
   const directory = join(root, "control");
-  const sessionFile = join(root, "session.jsonl");
+  const hostProjectsDir = join(root, "host-sessions");
+  const sandboxProjectsDir = join(root, "sandbox-sessions");
   let started!: () => void;
   const running = new Promise<void>((resolve) => {
     started = resolve;
   });
-  let calls = 0;
+  let finishPending: (() => void) | undefined;
+  const sandbox = createBindMountSandboxProvider({
+    name: "controlled-agent",
+    create: async ({ worktreePath }) => {
+      let role = "";
+      return {
+        worktreePath,
+        exec: async (command, args) => {
+          if (!command.startsWith("claude ")) {
+            const result = spawnSync(command, {
+              cwd: args?.cwd ?? worktreePath,
+              shell: true,
+              encoding: "utf8",
+            });
+            return {
+              stdout: result.stdout,
+              stderr: result.stderr,
+              exitCode: result.status ?? 1,
+            };
+          }
+          role = args?.stdin ?? "";
+          const sessionId =
+            role === "implementation"
+              ? "implementation-session"
+              : "review-session";
+          const init = JSON.stringify({
+            type: "system",
+            subtype: "init",
+            session_id: sessionId,
+          });
+          args?.onLine?.(init);
+          if (role === "implementation") {
+            await writeFile(join(worktreePath, "draft.txt"), "keep me\n");
+            git(worktreePath, "add", "draft.txt");
+            git(worktreePath, "commit", "-m", "implementation");
+            const sessionFile = claudeSandboxSessionPath(
+              worktreePath,
+              sessionId,
+              sandboxProjectsDir,
+            );
+            await mkdir(dirname(sessionFile), { recursive: true });
+            await writeFile(sessionFile, '{"session":true}\n');
+            const result = JSON.stringify({
+              type: "result",
+              result: "<promise>COMPLETE</promise>",
+            });
+            args?.onLine?.(result);
+            return { stdout: `${init}\n${result}`, stderr: "", exitCode: 0 };
+          }
+          if (cleanupFails) {
+            const sessionFile = claudeSandboxSessionPath(
+              worktreePath,
+              sessionId,
+              sandboxProjectsDir,
+            );
+            await mkdir(dirname(sessionFile), { recursive: true });
+            await writeFile(sessionFile, '{"session":true}\n');
+          }
+          started();
+          return new Promise((resolve) => {
+            finishPending = () =>
+              resolve({ stdout: init, stderr: "", exitCode: 130 });
+          });
+        },
+        copyFileIn: async (from, to) => {
+          await mkdir(dirname(to), { recursive: true });
+          await copyFile(from, to);
+        },
+        copyFileOut: async (from, to) => {
+          await mkdir(dirname(to), { recursive: true });
+          await copyFile(from, to);
+        },
+        close: async () => {
+          finishPending?.();
+          if (cleanupFails && role === "review")
+            throw new Error("close failed");
+        },
+      };
+    },
+  });
   const options: DurableWorkflowOptions = {
     directory,
     projectId: "project",
     invocationId: "invocation",
     runtimeIdentity: "runtime-v1",
     selected: [{ id: "a", reference: "issue:a" }],
-    worktrees: {
-      a: {
-        ...worktree,
-        run: async ({ signal, onSessionCaptured, onCleanupFailure }) => {
-          calls++;
-          if (calls === 1) {
-            await writeFile(
-              join(worktree.worktreePath, "draft.txt"),
-              "keep me\n",
-            );
-            git(worktree.worktreePath, "add", "draft.txt");
-            git(worktree.worktreePath, "commit", "-m", "implementation");
-            await writeFile(sessionFile, '{"session":true}\n');
-            await onSessionCaptured?.({
-              sessionId: "implementation-session",
-              sessionFilePath: sessionFile,
-            });
-            return {
-              iterations: [
-                {
-                  sessionId: "implementation-session",
-                  sessionFilePath: sessionFile,
-                },
-              ],
-              commits: [
-                { sha: git(worktree.worktreePath, "rev-parse", "HEAD") },
-              ],
-            } as never;
-          }
-          started();
-          await new Promise<void>((resolve) =>
-            signal?.addEventListener("abort", () => resolve(), { once: true }),
-          );
-          if (cleanupFails) {
-            await onSessionCaptured?.({
-              sessionId: "review-session",
-              sessionFilePath: sessionFile,
-            });
-            await onCleanupFailure?.(new Error("close failed"));
-          }
-          throw signal?.reason;
-        },
-      },
-    },
+    worktrees: { a: worktree },
     project: {
       root,
       capabilities: ["recovery"],
@@ -291,7 +372,7 @@ it.each([
         retain: () => {},
         release: () => {},
       }),
-      prompt: () => "fixture",
+      prompt: (_task, role) => role,
       check: async () => ({ status: "passed", evidence: [] }),
       accept: async () => ({ status: "accepted", evidence: [] }),
       validateHumanRequest: async () => true,
@@ -300,22 +381,16 @@ it.each([
       iterations: 2,
       roles: {
         implementation: {
-          agent: {
-            captureSessions: true,
-            sessionStorage: {},
-            buildPrintCommand: () => ({}),
-            parseStreamLine: () => [],
-          } as never,
-          sandbox: { tag: "bind-mount", create: () => ({}) } as never,
+          agent: claudeCode("test", {
+            sessionStorage: { hostProjectsDir, sandboxProjectsDir },
+          }),
+          sandbox,
         },
         review: {
-          agent: {
-            captureSessions: true,
-            sessionStorage: {},
-            buildPrintCommand: () => ({}),
-            parseStreamLine: () => [],
-          } as never,
-          sandbox: { tag: "bind-mount", create: () => ({}) } as never,
+          agent: claudeCode("test", {
+            sessionStorage: { hostProjectsDir, sandboxProjectsDir },
+          }),
+          sandbox,
         },
       },
     },

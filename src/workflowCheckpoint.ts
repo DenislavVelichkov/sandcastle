@@ -22,8 +22,11 @@ type FileEntry =
   | { path: string; kind: "link"; target: string }
   | { path: string; kind: "file"; sha256: string; mode: number };
 
+/** Content-bound source and session checkpoint for one invocation. */
 export interface WorkflowCheckpoint {
+  /** Durable checkpoint directory identity. */
   readonly id: string;
+  /** SHA-256 of the checkpoint manifest bytes. */
   readonly sha256: string;
 }
 

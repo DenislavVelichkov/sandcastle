@@ -12,6 +12,9 @@ import {
 } from "node:fs/promises";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { FileSystem } from "@effect/platform";
+import { NodeContext } from "@effect/platform-node";
+import { Cause, Data, Duration, Effect, Exit, Option, Scope } from "effect";
 import type { AgentProvider } from "./AgentProvider.js";
 import type { Worktree } from "./createWorktree.js";
 import {
@@ -71,58 +74,102 @@ type TaskState =
   | "paused"
   | "cancelled";
 
+/** Durable exact-candidate question awaiting a host answer. */
 export interface WorkflowRequest extends WorkflowHumanQuestion {
+  /** Stable request identity used for deduplication. */
   readonly id: string;
+  /** Project that owns this request. */
   readonly projectId: string;
+  /** Invocation that created this request. */
   readonly invocationId: string;
+  /** Task awaiting this answer. */
   readonly taskId: string;
+  /** Absolute path of the retained candidate worktree. */
   readonly worktree: string;
+  /** Source branch of the retained candidate. */
   readonly branch: string;
+  /** Exact candidate commit shown to the owner. */
   readonly candidate: string;
+  /** Digest of the evidence set bound to the request. */
   readonly evidenceHash: string;
+  /** Durable answer lifecycle. */
   readonly status: "pending" | "applied" | "stale" | "cancelled";
+  /** Integration inputs captured for an approved answer, when enabled. */
   readonly integration?: WorkflowIntegrationInput;
 }
 
 interface WorkflowIntegrationInput {
+  /** Absolute path of the candidate worktree. */
   readonly worktree: string;
+  /** Candidate and exact check result authorized for integration. */
   readonly candidate: WorkflowCandidate;
+  /** Project verification result for that candidate. */
   readonly check: WorkflowDecision;
+  /** Evidence files and hashes retained with the intent. */
   readonly evidence: readonly {
+    /** Absolute evidence file path. */
     readonly path: string;
+    /** SHA-256 of its accepted bytes. */
     readonly sha256: string;
   }[];
+  /** Target branch frozen when the intent was created. */
   readonly targetBranch: string;
+  /** Target commit frozen when the intent was created. */
   readonly targetHead: string;
+  /** Human request identity, when approval was required. */
   readonly requestId?: string;
 }
 
+/** Durable identity and progress for one accepted-candidate integration. */
 export interface WorkflowIntegrationIntent extends WorkflowIntegrationInput {
+  /** Stable Git effect identity used during reconciliation. */
   readonly id: string;
+  /** Current integration phase. */
   readonly status: "ready" | "applying" | "integrated" | "blocked";
+  /** Applied human response that authorized this intent, when required. */
   readonly responseId?: string;
+  /** Resulting target commit after integration. */
   readonly commit?: string;
+  /** Project integration gate result for this candidate. */
   readonly gate?: WorkflowDecision;
+  /** Files and hashes backing the integration gate. */
   readonly gateEvidence?: WorkflowIntegrationInput["evidence"];
+  /** Verified target state after the Git effect. */
   readonly postconditions?: {
+    /** Target branch that received the candidate. */
     readonly branch: string;
+    /** Integrated Git tree hash. */
     readonly tree: string;
+    /** Target was clean after integration. */
     readonly clean: true;
   };
+  /** Actionable reason when integration is blocked. */
   readonly reason?: string;
 }
 
+/** Durable result of authenticating and applying one host answer. */
 export interface WorkflowResponseReceipt {
+  /** Stable response identity; duplicates must match the original payload. */
   readonly responseId: string;
+  /** Request answered by this receipt. */
   readonly requestId: string;
+  /** Whether the exact request still accepted this response. */
   readonly status: "applied" | "stale";
+  /** Exact owner decision. */
   readonly decision: Decision;
+  /** Hash of the authenticated response payload. */
   readonly payloadHash: string;
+  /** Host observation time. */
   readonly observedAt: string;
+  /** Authenticated owner identity. */
   readonly owner: string;
+  /** Trusted host source reference. */
   readonly sourceRef: string;
+  /** Unique host event identity. */
   readonly eventId: string;
+  /** Unmodified text received from the owner. */
   readonly originalText: string;
+  /** Reason a response became stale. */
   readonly reason?: string;
 }
 
@@ -147,78 +194,129 @@ interface WorkflowResponse {
   readonly decision: Decision;
 }
 
+/** Complete durable state of one workflow invocation. */
 export interface WorkflowSnapshot {
+  /** Durable state schema version. */
   readonly version: 1;
+  /** Monotonic publication revision. */
   readonly revision: number;
+  /** Project-owned identity. */
   readonly projectId: string;
+  /** Stable identity of this invocation. */
   readonly invocationId: string;
+  /** Absolute project repository root. */
   readonly projectRoot: string;
+  /** Time this revision was published. */
   readonly observedAt: string;
+  /** Controller lifecycle, distinct from task status. */
   readonly lifecycle: "running" | "stopping" | "stopped" | "recovery-required";
+  /** Recorded failure requiring owner recovery. */
   readonly failure?: string;
+  /** PID and process-start identity of the writer. */
   readonly owner: { readonly pid: number; readonly start: string };
+  /** Child processes that must drain before a stopped receipt. */
   readonly processes?: readonly {
+    /** Child PID. */
     readonly pid: number;
+    /** Kernel process-start identity. */
     readonly start: string;
   }[];
+  /** Task status, reason, and remaining implementation allowance by ID. */
   readonly tasks: Record<
     string,
     { status: TaskState; reason?: string; remaining: number }
   >;
+  /** Task IDs currently executing. */
   readonly active: readonly string[];
+  /** Task IDs that have begun at least one provider invocation. */
   readonly startedTasks?: readonly string[];
+  /** Human questions issued by this invocation. */
   readonly requests: readonly WorkflowRequest[];
+  /** Authenticated answer receipts. */
   readonly responses: readonly WorkflowResponseReceipt[];
+  /** Passed project checks bound to candidate commits. */
   readonly checksPassed?: Readonly<
     Record<
       string,
       { readonly candidate: string; readonly check: WorkflowDecision }
     >
   >;
+  /** Integration intents by task ID. */
   readonly integrations?: Readonly<Record<string, WorkflowIntegrationIntent>>;
+  /** Project checkpoint IDs associated with human requests. */
   readonly checkpoints: readonly string[];
+  /** Verified source and session checkpoint for recovery. */
   readonly checkpoint?: WorkflowCheckpoint;
+  /** Whether source bytes were verified for restoration. */
   readonly sourceRestoration?: "verified" | "unavailable";
+  /** Whether required provider sessions were verified. */
   readonly sessionRestoration?: "verified" | "unavailable";
+  /** Frozen provider, build, and project contract identity. */
   readonly runtimeIdentity?: string;
+  /** Target commit recorded before integration. */
   readonly targetHead?: string;
+  /** Target branch recorded before integration. */
   readonly targetBranch?: string;
+  /** Original Git head for each selected task. */
   readonly baselineHeads?: Readonly<Record<string, string>>;
+  /** Exact task contracts selected at admission. */
   readonly selectedTasks?: readonly WorkflowTask[];
+  /** Project evidence identifiers by task ID. */
   readonly evidence?: Readonly<Record<string, readonly string[]>>;
+  /** Captured provider sessions by task ID. */
   readonly sessions?: Readonly<
     Record<
       string,
       readonly {
+        /** Role that owns the session. */
         role: string;
+        /** Provider session identity. */
         id: string;
+        /** Host file holding the captured session. */
         path?: string;
+        /** Time the host recorded the capture. */
         capturedAt?: string;
       }[]
     >
   >;
+  /** Project-owned logical reservation and task scopes. */
   readonly resources: {
+    /** Stable reservation identity required by recovery. */
     readonly reservationId: string;
+    /** Whether the project must still hold this reservation. */
     readonly retained: boolean;
+    /** Exact edit scopes by task ID. */
     readonly scopes: Readonly<Record<string, readonly string[]>>;
   };
+  /** Original implementation allowance for this invocation. */
   readonly allowances: { readonly iterations: number };
+  /** Guarded account and role usage state, when enabled. */
   readonly usage?: WorkflowUsageState;
 }
 
+/** Snapshot with freshness and process-liveness observations. */
 export interface WorkflowStatus extends WorkflowSnapshot {
+  /** Milliseconds since the last published revision. */
   readonly observationAgeMs: number;
+  /** Whether the recorded owner is still recently observable. */
   readonly liveness: "live" | "last-known";
 }
 
+/** Owner answer authenticated by the trusted host route. */
 export interface WorkflowAuthenticatedAnswer {
+  /** Authenticated decision maker. */
   readonly owner: string;
+  /** Displayed question identity. */
   readonly questionId: string;
+  /** Source that displayed the question. */
   readonly sourceRef: string;
+  /** Unique event identity for deduplication. */
   readonly eventId: string;
+  /** Exact owner reply. */
   readonly originalText: string;
 }
 
+/** Trusted host adapter for owner replies. */
 export interface WorkflowResponseRoute {
   /** Implement only in the owner-verified host route. Never expose it to an agent. */
   authenticate(
@@ -227,11 +325,14 @@ export interface WorkflowResponseRoute {
   ): Promise<WorkflowAuthenticatedAnswer>;
 }
 
+/** Host-only inputs for one durable invocation and its recovery. */
 export interface DurableWorkflowOptions extends Omit<
   WorkflowOptions,
   "worktree"
 > {
+  /** Project bindings with request validation and optional integration gates. */
   readonly project: WorkflowProject & {
+    /** Verify the current project contract for an exact human request. */
     validateHumanRequest(request: WorkflowRequest): Promise<boolean>;
     /** Hold the project's target-branch lock for the entire callback. */
     withTargetLock?<T>(branch: string, action: () => Promise<T>): Promise<T>;
@@ -240,8 +341,11 @@ export interface DurableWorkflowOptions extends Omit<
       intent: WorkflowIntegrationIntent,
     ): Promise<WorkflowDecision>;
   };
+  /** Absolute host state directory outside all agent worktrees. */
   readonly directory: string;
+  /** Stable project identity. */
   readonly projectId: string;
+  /** Unique invocation identity. */
   readonly invocationId: string;
   /** Separate worktrees keep a waiting candidate frozen while another task runs. */
   readonly worktrees: Readonly<Record<string, Worktree>>;
@@ -270,22 +374,53 @@ const stopPath = (directory: string): string => join(directory, "stop.json");
 const usagePath = (directory: string): string => join(directory, "usage.json");
 const pilotBudgetPath = (directory: string): string =>
   join(directory, "budget.json");
+
+class WorkflowControlError extends Data.TaggedError("WorkflowControlError")<{
+  readonly operation: string;
+  readonly cause: unknown;
+  readonly message: string;
+  readonly code?: string;
+}> {}
+
+const controlStep = <A>(operation: string, run: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: run,
+    catch: (cause) =>
+      new WorkflowControlError({
+        operation,
+        cause,
+        message: `${operation}: ${String(cause)}`,
+        code: (cause as NodeJS.ErrnoException)?.code,
+      }),
+  });
+
+const runControlEffect = async <A, E>(
+  effect: Effect.Effect<A, E>,
+): Promise<A> => {
+  const exit = await Effect.runPromiseExit(effect);
+  if (Exit.isSuccess(exit)) return exit.value;
+  const failure = Cause.failureOption(exit.cause);
+  if (Option.isSome(failure)) throw failure.value;
+  throw Cause.squash(exit.cause);
+};
+
 const readWithin = async <T>(
   read: () => Promise<T>,
   message: string,
-): Promise<T> => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      read(),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), 30_000);
+): Promise<T> =>
+  runControlEffect(
+    controlStep(message, read).pipe(
+      Effect.timeoutFail({
+        duration: Duration.seconds(30),
+        onTimeout: () =>
+          new WorkflowControlError({
+            operation: message,
+            cause: undefined,
+            message,
+          }),
       }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-};
+    ),
+  );
 const readGuardedAccount = (usage: WorkflowUsageOptions) =>
   readWithin(usage.readAccount, "Account reading timed out");
 const sessionPath = (directory: string): string => join(directory, "sessions");
@@ -316,14 +451,38 @@ const stopRequested = async (directory: string): Promise<boolean> => {
   }
 };
 
-const readState = async (directory: string): Promise<WorkflowSnapshot> => {
-  const state = JSON.parse(
-    await readFile(statePath(directory), "utf8"),
-  ) as WorkflowSnapshot;
-  if (state.version !== 1)
-    throw new Error("Unsupported workflow state version");
-  return state;
-};
+const readState = (directory: string): Promise<WorkflowSnapshot> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const text = yield* fs.readFileString(statePath(directory)).pipe(
+      Effect.mapError(
+        (cause) =>
+          new WorkflowControlError({
+            operation: "Read workflow state",
+            cause,
+            message: `Read workflow state: ${String(cause)}`,
+          }),
+      ),
+    );
+    const state = yield* Effect.try({
+      try: () => JSON.parse(text) as WorkflowSnapshot,
+      catch: (cause) =>
+        new WorkflowControlError({
+          operation: "Parse workflow state",
+          cause,
+          message: `Parse workflow state: ${String(cause)}`,
+        }),
+    });
+    if (state.version !== 1)
+      return yield* Effect.fail(
+        new WorkflowControlError({
+          operation: "Validate workflow state",
+          cause: undefined,
+          message: "Unsupported workflow state version",
+        }),
+      );
+    return state;
+  }).pipe(Effect.provide(NodeContext.layer), runControlEffect);
 
 const syncDirectory = async (directory: string): Promise<void> => {
   const handle = await open(directory, "r");
@@ -334,26 +493,42 @@ const syncDirectory = async (directory: string): Promise<void> => {
   }
 };
 
-const publish = async (
+const publish = (
   path: string,
   value: unknown,
   exclusive = false,
 ): Promise<void> => {
   const temp = `${path}.${randomUUID()}.tmp`;
-  const file = await open(temp, "wx", 0o600);
-  try {
-    await file.writeFile(JSON.stringify(value));
-    await file.sync();
-  } finally {
-    await file.close();
-  }
-  try {
-    if (exclusive) await link(temp, path);
-    else await rename(temp, path);
-    await syncDirectory(dirname(path));
-  } finally {
-    await rm(temp, { force: true });
-  }
+  return Effect.gen(function* () {
+    yield* Effect.acquireUseRelease(
+      controlStep("Open workflow record", () => open(temp, "wx", 0o600)),
+      (file) =>
+        Effect.gen(function* () {
+          yield* controlStep("Write workflow record", () =>
+            file.writeFile(JSON.stringify(value)),
+          );
+          yield* controlStep("Sync workflow record", () => file.sync());
+        }),
+      (file) =>
+        controlStep("Close workflow record", () => file.close()).pipe(
+          Effect.orDie,
+        ),
+    );
+    if (exclusive)
+      yield* controlStep("Publish workflow record", () => link(temp, path));
+    else
+      yield* controlStep("Publish workflow record", () => rename(temp, path));
+    yield* controlStep("Sync workflow directory", () =>
+      syncDirectory(dirname(path)),
+    );
+  }).pipe(
+    Effect.ensuring(
+      controlStep("Remove workflow temporary record", () =>
+        rm(temp, { force: true }),
+      ).pipe(Effect.orDie),
+    ),
+    runControlEffect,
+  );
 };
 
 const claimResponseIdentity = async (
@@ -1377,8 +1552,6 @@ const driveDurableWorkflow = async (
   });
   await mkdir(rolePath(options.directory), { recursive: true, mode: 0o700 });
   await mkdir(cleanupPath(options.directory), { recursive: true, mode: 0o700 });
-  await mkdir(lockPath(options.directory));
-  await writeLockOwner(options.directory);
   let reservation: Awaited<ReturnType<WorkflowProject["reserve"]>> | undefined;
   let state: WorkflowSnapshot | undefined;
   let usageState: WorkflowUsageState | undefined;
@@ -1415,6 +1588,27 @@ const driveDurableWorkflow = async (
       if (error.code !== "EEXIST") throw error;
     });
   };
+  const scope = await runControlEffect(Scope.make());
+  try {
+    await runControlEffect(
+      Scope.extend(
+        Effect.acquireRelease(
+          controlStep("Acquire workflow execution lock", () =>
+            mkdir(lockPath(options.directory)),
+          ),
+          () =>
+            controlStep("Release workflow execution lock", () =>
+              rm(lockPath(options.directory), { recursive: true, force: true }),
+            ).pipe(Effect.orDie),
+        ),
+        scope,
+      ),
+    );
+    await writeLockOwner(options.directory);
+  } catch (error) {
+    await runControlEffect(Scope.close(scope, Exit.succeed(undefined)));
+    throw error;
+  }
   try {
     if (!resume) {
       try {
@@ -1843,7 +2037,11 @@ const driveDurableWorkflow = async (
         onCleanupFailure: async (taskId, error) => {
           await publish(
             join(cleanupPath(options.directory), `${randomUUID()}.json`),
-            { taskId, reason: String(error), at: new Date().toISOString() },
+            {
+              taskId,
+              reason: String(error),
+              at: new Date().toISOString(),
+            },
             true,
           );
         },
@@ -2115,7 +2313,10 @@ const driveDurableWorkflow = async (
           active: [],
           ...(intent
             ? {
-                integrations: { ...state.integrations, [task.id]: intent },
+                integrations: {
+                  ...state.integrations,
+                  [task.id]: intent,
+                },
               }
             : {}),
           tasks: {
@@ -2213,9 +2414,12 @@ const driveDurableWorkflow = async (
     }
     throw error;
   } finally {
-    await rm(lockPath(options.directory), { recursive: true, force: true });
-    if (!state && reservation && typeof reservation !== "function")
-      await reservation.release();
+    try {
+      await runControlEffect(Scope.close(scope, Exit.succeed(undefined)));
+    } finally {
+      if (!state && reservation && typeof reservation !== "function")
+        await reservation.release();
+    }
   }
 };
 
@@ -2225,8 +2429,27 @@ export const integrateWorkflowTask = async (
   taskId: string,
 ): Promise<WorkflowSnapshot> => {
   assertHostDirectory(options.directory, options.worktrees);
-  await mkdir(lockPath(options.directory));
-  await writeLockOwner(options.directory);
+  const scope = await runControlEffect(Scope.make());
+  try {
+    await runControlEffect(
+      Scope.extend(
+        Effect.acquireRelease(
+          controlStep("Acquire integration lock", () =>
+            mkdir(lockPath(options.directory)),
+          ),
+          () =>
+            controlStep("Release integration lock", () =>
+              rm(lockPath(options.directory), { recursive: true, force: true }),
+            ).pipe(Effect.orDie),
+        ),
+        scope,
+      ),
+    );
+    await writeLockOwner(options.directory);
+  } catch (error) {
+    await runControlEffect(Scope.close(scope, Exit.succeed(undefined)));
+    throw error;
+  }
   try {
     let state = await readState(options.directory);
     const intent = state.integrations?.[taskId];
@@ -2361,7 +2584,12 @@ export const integrateWorkflowTask = async (
           state = await update(options.directory, state, {
             integrations: {
               ...state.integrations,
-              [taskId]: { ...intent, status: "applying", gate, gateEvidence },
+              [taskId]: {
+                ...intent,
+                status: "applying",
+                gate,
+                gateEvidence,
+              },
             },
           });
           applying = true;
@@ -2428,51 +2656,96 @@ export const integrateWorkflowTask = async (
       },
     );
   } finally {
-    await rm(lockPath(options.directory), { recursive: true, force: true });
+    await runControlEffect(Scope.close(scope, Exit.succeed(undefined)));
   }
 };
 
-const driveWithPilotBudget = async (
+const driveWithPilotBudget = (
   options: DurableWorkflowOptions,
   resume = false,
   startedAt = Date.now(),
-): Promise<WorkflowSnapshot> => {
-  const usage = options.usage;
-  if (!usage || usage.activity === "library-proof") {
-    if (usage?.pilot)
-      throw new Error("Library proof cannot consume a pilot budget");
-    return driveDurableWorkflow(options, resume, undefined, startedAt);
-  }
-  const pilot = usage.pilot;
-  if (!pilot || !validId(pilot.id) || !isAbsolute(pilot.directory))
-    throw new Error(
-      "Pilot activity requires an absolute shared pilot directory",
-    );
-  if (resolve(pilot.directory) === resolve(options.directory))
-    throw new Error("Shared pilot directory must differ from invocation state");
-  await mkdir(pilot.directory, { recursive: true, mode: 0o700 });
-  assertHostDirectory(pilot.directory, options.worktrees);
-  await mkdir(lockPath(pilot.directory));
-  try {
-    await writeLockOwner(pilot.directory);
-    let budget: PilotBudgetState | undefined;
-    try {
-      budget = JSON.parse(
-        await readFile(pilotBudgetPath(pilot.directory), "utf8"),
-      ) as PilotBudgetState;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-    return await driveDurableWorkflow(
-      options,
-      resume,
-      { path: pilotBudgetPath(pilot.directory), startedAt, budget },
-      startedAt,
-    );
-  } finally {
-    await rm(lockPath(pilot.directory), { recursive: true, force: true });
-  }
-};
+): Promise<WorkflowSnapshot> =>
+  runControlEffect(
+    Effect.gen(function* () {
+      const usage = options.usage;
+      if (!usage || usage.activity === "library-proof") {
+        if (usage?.pilot)
+          return yield* Effect.fail(
+            new WorkflowControlError({
+              operation: "Validate pilot budget",
+              cause: undefined,
+              message: "Library proof cannot consume a pilot budget",
+            }),
+          );
+        return yield* controlStep("Drive durable workflow", () =>
+          driveDurableWorkflow(options, resume, undefined, startedAt),
+        );
+      }
+      const pilot = usage.pilot;
+      if (!pilot)
+        return yield* Effect.fail(
+          new WorkflowControlError({
+            operation: "Validate pilot budget",
+            cause: undefined,
+            message:
+              "Pilot activity requires an absolute shared pilot directory",
+          }),
+        );
+      yield* controlStep("Validate pilot budget", async () => {
+        if (!validId(pilot.id) || !isAbsolute(pilot.directory))
+          throw new Error(
+            "Pilot activity requires an absolute shared pilot directory",
+          );
+        if (resolve(pilot.directory) === resolve(options.directory))
+          throw new Error(
+            "Shared pilot directory must differ from invocation state",
+          );
+      });
+      yield* controlStep("Create pilot directory", () =>
+        mkdir(pilot.directory, { recursive: true, mode: 0o700 }),
+      );
+      yield* controlStep("Validate pilot host directory", async () =>
+        assertHostDirectory(pilot.directory, options.worktrees),
+      );
+      return yield* Effect.acquireUseRelease(
+        controlStep("Acquire pilot lock", () =>
+          mkdir(lockPath(pilot.directory)),
+        ),
+        () =>
+          Effect.gen(function* () {
+            yield* controlStep("Record pilot lock owner", () =>
+              writeLockOwner(pilot.directory),
+            );
+            let budget: PilotBudgetState | undefined;
+            const contents = yield* controlStep("Read pilot budget", () =>
+              readFile(pilotBudgetPath(pilot.directory), "utf8"),
+            ).pipe(
+              Effect.catchTag("WorkflowControlError", (error) =>
+                error.code === "ENOENT"
+                  ? Effect.succeed(undefined)
+                  : Effect.fail(error),
+              ),
+            );
+            if (contents !== undefined)
+              budget = yield* controlStep("Parse pilot budget", async () =>
+                JSON.parse(contents),
+              );
+            return yield* controlStep("Drive guarded workflow", () =>
+              driveDurableWorkflow(
+                options,
+                resume,
+                { path: pilotBudgetPath(pilot.directory), startedAt, budget },
+                startedAt,
+              ),
+            );
+          }),
+        () =>
+          controlStep("Release pilot lock", () =>
+            rm(lockPath(pilot.directory), { recursive: true, force: true }),
+          ).pipe(Effect.orDie),
+      );
+    }),
+  );
 
 /** Start selected tasks with a retained reservation and optional guarded usage. */
 export const runDurableWorkflow = async (
@@ -2507,8 +2780,27 @@ export const recoverDurableWorkflow = async (
     throw new Error("Recovery requires a stable runtime identity");
   assertHostDirectory(options.directory, options.worktrees);
   const recoveryLock = join(options.directory, "recovery.lock");
-  await mkdir(recoveryLock);
   let executionOwned = false;
+  const scope = await runControlEffect(Scope.make());
+  try {
+    await runControlEffect(
+      Scope.extend(
+        Effect.acquireRelease(
+          controlStep("Acquire workflow recovery lock", () =>
+            mkdir(recoveryLock),
+          ),
+          () =>
+            controlStep("Release workflow recovery lock", () =>
+              rm(recoveryLock, { recursive: true, force: true }),
+            ).pipe(Effect.orDie),
+        ),
+        scope,
+      ),
+    );
+  } catch (error) {
+    await runControlEffect(Scope.close(scope, Exit.succeed(undefined)));
+    throw error;
+  }
   try {
     let state = await readState(options.directory);
     if (
@@ -2703,19 +2995,35 @@ export const recoverDurableWorkflow = async (
       throw error;
     }
   } finally {
-    if (executionOwned)
-      await rm(lockPath(options.directory), { recursive: true, force: true });
-    await rm(recoveryLock, { recursive: true, force: true });
+    try {
+      if (executionOwned)
+        await rm(lockPath(options.directory), { recursive: true, force: true });
+    } finally {
+      await runControlEffect(Scope.close(scope, Exit.succeed(undefined)));
+    }
   }
 };
 
 /** Explicitly continue only ready or paused tasks after recovery checks. */
-export const resumeDurableWorkflow = async (
+export const resumeDurableWorkflow = (
   options: DurableWorkflowOptions,
-): Promise<WorkflowSnapshot> => {
-  const startedAt = Date.now();
-  const recovered = await recoverDurableWorkflow(options);
-  if (recovered.lifecycle !== "stopped")
-    throw new Error(recovered.failure ?? "Workflow requires recovery");
-  return driveWithPilotBudget(options, true, startedAt);
-};
+): Promise<WorkflowSnapshot> =>
+  runControlEffect(
+    Effect.gen(function* () {
+      const startedAt = Date.now();
+      const recovered = yield* controlStep("Recover stopped workflow", () =>
+        recoverDurableWorkflow(options),
+      );
+      if (recovered.lifecycle !== "stopped")
+        return yield* Effect.fail(
+          new WorkflowControlError({
+            operation: "Resume workflow",
+            cause: undefined,
+            message: recovered.failure ?? "Workflow requires recovery",
+          }),
+        );
+      return yield* controlStep("Continue durable workflow", () =>
+        driveWithPilotBudget(options, true, startedAt),
+      );
+    }),
+  );

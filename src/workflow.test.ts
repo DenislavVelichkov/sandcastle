@@ -289,6 +289,19 @@ describe("public workflow", () => {
         ).rejects.toThrow(/Unsupported workflow prompt option/);
         expect(invocations).toBe(0);
       }
+      await expect(
+        runWorkflow({
+          ...options,
+          project: { ...project, reserve: async () => undefined as never },
+        }),
+      ).rejects.toThrow("release function");
+      const stopped = new AbortController();
+      const reason = new Error("stop this invocation");
+      stopped.abort(reason);
+      await expect(
+        runWorkflow({ ...options, signal: stopped.signal }),
+      ).rejects.toBe(reason);
+      expect(invocations).toBe(0);
       const result = await runWorkflow(options);
       expect(result.status).toBe("blocked");
       expect(result.reason).toBe("project check failed");
