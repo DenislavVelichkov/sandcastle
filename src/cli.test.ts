@@ -35,7 +35,7 @@ describe("sandcastle CLI", () => {
     expect(stdout).toContain("sandcastle");
     expect(stdout).toContain("docker");
     expect(stdout).toContain("init");
-    expect(stdout).not.toContain("run");
+    expect(stdout).not.toMatch(/^\s*- run(?:\s|$)/m);
     expect(stdout).not.toContain("interactive");
     // build-image and remove-image are namespaced under docker, not top-level
     expect(stdout).toContain("docker build-image");
@@ -47,25 +47,21 @@ describe("sandcastle CLI", () => {
     expect(stdout).not.toContain("sync-out");
   });
 
-  it("requires an explicit Sol High arm before starting a benchmark", async () => {
+  it("shows generic ticket and model options", async () => {
     const { stdout } = await runCli("benchmark --help", process.cwd());
+    expect(stdout).toContain("--ticket");
     expect(stdout).toContain("--arm");
-    await expect(
-      runCli(
-        "benchmark --arm gpt-6-luna:max --arm gpt-6-astra:max",
-        process.cwd(),
-      ),
-    ).rejects.toMatchObject({
-      stdout: expect.stringContaining("explicit gpt-6-sol:high reference"),
-    });
+    expect(stdout).toContain("--dry-run");
   });
 
-  it("passes every selected model and effort to the project benchmark entry", async () => {
+  it("plans any number of explicit arms without model calls", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "cli-benchmark-"));
-    await mkdir(join(hostDir, ".sandcastle"));
-    await writeFile(
-      join(hostDir, ".sandcastle", "benchmark.mjs"),
-      "console.log(JSON.stringify(process.argv.slice(2)))\n",
+    await initRepo(hostDir);
+    await commitFile(
+      hostDir,
+      "ticket.md",
+      "# Fix streaming\n\nKeep chunks contiguous.\n",
+      "ticket",
     );
     const arms = [
       "gpt-6-luna:max",
@@ -75,12 +71,15 @@ describe("sandcastle CLI", () => {
       "gpt-6-sol:high",
     ];
     const { stdout } = await runCli(
-      `benchmark ${arms.map((arm) => `--arm ${arm}`).join(" ")}`,
+      `benchmark --ticket ticket.md --dry-run ${arms.map((arm) => `--arm ${arm}`).join(" ")}`,
       hostDir,
     );
-    expect(stdout).toContain(
-      JSON.stringify(arms.flatMap((arm) => ["--arm", arm])),
-    );
+    for (const arm of arms) {
+      const [model, effort] = arm.split(":");
+      expect(stdout).toContain(`"model": "${model}"`);
+      expect(stdout).toContain(`"effort": "${effort}"`);
+    }
+    expect(stdout).toContain('"slots": [');
   });
 
   it("docker --help shows build-image and remove-image subcommands", async () => {

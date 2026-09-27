@@ -103,18 +103,16 @@ The [issue #18 release adoption report](proofs/issue-18-release-adoption.md) rec
 
 ## Run the bounded benchmark
 
-For the fixed follow-up to [issue #26](https://github.com/DenislavVelichkov/sandcastle/issues/26), run this command from a clean committed Sandcastle checkout after `pnpm run build`. It uses the repository-owned protected host entry at `.sandcastle/benchmark.mjs`; other projects may provide their own entry at that path. Every arm, including the Sol High reference, is explicit:
+Run the generic benchmark from a clean committed project with a Docker image that contains Codex and the project's tools. `--ticket` accepts a local ticket file, a GitHub issue URL, or an issue number; repeat it for multiple tickets. If omitted, the command uses all tracked Markdown/text files under `tickets/`, `docs/tickets/`, or `.sandcastle/tickets/`, or open GitHub issues with the `Sandcastle` label. Review the frozen plan before model calls:
 
 ```sh
-pnpm exec tsx src/main.ts benchmark \
-  --arm gpt-6-luna:max \
-  --arm gpt-6-sol:xhigh \
-  --arm gpt-6-astra:medium \
-  --arm gpt-6-astra:max \
-  --arm gpt-6-sol:high
+sandcastle benchmark --ticket tickets/example.md --dry-run
+sandcastle benchmark --ticket tickets/example.md --check 'pnpm run typecheck && pnpm run build && pnpm test'
 ```
 
-The command freezes a 40-slot order (four historical cases, two repetitions, five arms), then runs calibration, protected preflight, development, held-out work and a local report. It can be restarted with the same arguments and committed build after a host interruption; an incomplete evaluation keeps recovery ownership and will not be skipped. The separate report command can render partial evidence. The host enforces a 12-hour active budget and a conservative 12-hour elapsed cap from preparation, a 20-percentage-point account rise cap, and the original per-evaluation and invocation caps. Successful completed grading failures are recorded as failed slots and the next slot may proceed. The protected first-candidate check can spend the second implementation attempt before final reviews; a failure in those final reviews is terminal for that evaluation. The fixed challenger is selected using development results and assessed using held-out results; an incomplete study retains Sol High without a ranking. Standard credit-equivalent cost uses verified role counters, while observed subscription percentage-point movement per active hour is shown separately with reading uncertainty and outside-activity confounding.
+The defaults are `gpt-6-sol:xhigh`, `gpt-6-astra:medium`, and `gpt-6-luna:max`, in that order. Repeat `--arm model:effort` to supply any number of distinct Codex configurations instead. The plan has one invocation per ticket and arm, a 15-minute invocation cap and a 60-minute overall cap by default. `--max-minutes` changes the latter. For account checks between calls, run with `--max-new-slots 1` and repeat the identical command to continue the saved ledger; completed slots never run again. An interrupted slot is retained as incomplete and blocks further calls. `--prepare` runs a setup command before each call, and `--check` runs an independent check afterward. Without `--check`, a committed candidate is marked unverified. The report and ledger live in the printed host directory outside the project and do not select or activate a routing policy.
+
+The previous five-arm, 40-slot study used the repository-owned protected entry at `.sandcastle/benchmark.mjs`. Its v3, v4, and v5 evidence remains historical. The older fixed and adaptive study APIs described below retain their original selection, account, grading and held-out rules; the generic command does not claim their model ranking or savings result.
 
 The original adaptive protocol below remains available to hosts that supply its own protected entry.
 
