@@ -5,6 +5,7 @@ import {
   discoverConfiguredModels,
   recordTokenCounter,
   finishWorkflowInvocation,
+  finishWorkflowTask,
   initialWorkflowUsage,
   startWorkflowInvocation,
   startWorkflowTask,
@@ -187,30 +188,54 @@ it("continues only an explicit reset and retains spent allowances and original b
     options,
     "worker",
     original,
-    [{ id: "task", requiredRoles: [] }],
+    [{ id: "task", requiredRoles: ["review"] }],
     2,
     {},
   );
+  let used = startWorkflowTask(initial, "task", now);
+  used = startWorkflowInvocation(used, "task", "implementation", original, now);
+  used = finishWorkflowInvocation(used, now + 100);
+  used = finishWorkflowTask(used, now + 100);
   const reset = {
     ...original,
     observedAt: now + 1_000,
     windows: {
       ...original.windows,
       short: { usedPercent: 1, resetsAt: now + 200_000 },
+      weekly: { ...original.windows.weekly!, usedPercent: 44 },
     },
   };
-  const stopped = observeWorkflowUsage(initial, reset, now + 1_000);
+  const stopped = observeWorkflowUsage(used, reset, now + 1_000);
   expect(stopped.stopReason).toMatch(/changed/);
   const continued = continueAfterAccountReset(stopped, reset, now + 1_000, {
     id: "owner-reset-1",
     reason: "Continue after recorded reset",
   });
   expect(continued.baseline).toBe(original);
-  expect(continued.guardBaseline).toBe(reset);
+  expect(continued.guardBaseline.windows).toEqual({
+    short: reset.windows.short,
+    weekly: original.windows.weekly,
+  });
   expect(continued.remaining).toEqual(stopped.remaining);
   expect(continued.activeMs).toBe(stopped.activeMs);
+  expect(continued.taskMs).toEqual(stopped.taskMs);
+  expect(continued.invocations).toBe(1);
+  expect(continued.tokens).toEqual(stopped.tokens);
   expect(continued.resetContinuations).toHaveLength(1);
   expect(continued.stopReason).toBeUndefined();
+  expect(
+    accountGuardReason(
+      continued.guardBaseline,
+      {
+        ...reset,
+        windows: {
+          ...reset.windows,
+          weekly: { ...reset.windows.weekly, usedPercent: 45 },
+        },
+      },
+      now + 1_000,
+    ),
+  ).toMatch(/weekly rose by 5 percentage points/);
   expect(() =>
     continueAfterAccountReset(continued, reset, now + 1_000, {
       id: "owner-reset-1",
@@ -228,6 +253,103 @@ it("continues only an explicit reset and retains spent allowances and original b
       },
     ),
   ).toThrow(/No account-window reset/);
+  const secondReset = {
+    ...reset,
+    observedAt: now + 101_000,
+    windows: {
+      ...reset.windows,
+      weekly: { usedPercent: 1, resetsAt: now + 500_000 },
+    },
+  };
+  const stoppedAgain = observeWorkflowUsage(
+    continued,
+    secondReset,
+    now + 101_000,
+  );
+  expect(stoppedAgain.stopReason).toMatch(/weekly changed/);
+  const twice = continueAfterAccountReset(
+    stoppedAgain,
+    secondReset,
+    now + 101_000,
+    { id: "owner-reset-2", reason: "Weekly window reset" },
+  );
+  expect(twice.guardBaseline.windows.short).toEqual(reset.windows.short);
+  expect(twice.guardBaseline.windows.weekly).toEqual(
+    secondReset.windows.weekly,
+  );
+  expect(twice.resetContinuations.map((item) => item.id)).toEqual([
+    "owner-reset-1",
+    "owner-reset-2",
+  ]);
+});
+
+it("keeps the short-window limit when the weekly window resets again", () => {
+  const now = Date.now();
+  const baseline: AccountObservation = {
+    accountId: "account-a",
+    observedAt: now,
+    denied: false,
+    windows: {
+      short: { usedPercent: 40, resetsAt: now + 100_000 },
+      weekly: { usedPercent: 30, resetsAt: now + 200_000 },
+    },
+  };
+  const options = {
+    policyId: "fixed",
+    activity: "library-proof" as const,
+    readAccount: async () => baseline,
+    listModels: async () => ({ data: [] }),
+  };
+  const initial = initialWorkflowUsage(
+    options,
+    "worker",
+    baseline,
+    [{ id: "task", requiredRoles: [] }],
+    2,
+    {},
+  );
+  const reset = {
+    ...baseline,
+    observedAt: now + 1_000,
+    windows: {
+      short: { ...baseline.windows.short!, usedPercent: 44 },
+      weekly: { usedPercent: 1, resetsAt: now + 300_000 },
+    },
+  };
+  const stopped = observeWorkflowUsage(initial, reset, now + 1_000);
+  expect(stopped.stopReason).toMatch(/changed/);
+  expect(() =>
+    continueAfterAccountReset(
+      stopped,
+      {
+        ...reset,
+        windows: {
+          ...reset.windows,
+          short: { ...reset.windows.short, usedPercent: 45 },
+        },
+      },
+      now + 1_000,
+      { id: "too-late", reason: "Already at the short-window limit" },
+    ),
+  ).toThrow(/No account-window reset|5 percentage points/);
+  const continued = continueAfterAccountReset(stopped, reset, now + 1_000, {
+    id: "weekly-reset",
+    reason: "Weekly window reset",
+  });
+  expect(continued.guardBaseline.windows.short).toEqual(baseline.windows.short);
+  expect(continued.resetContinuations[0]).toMatchObject({
+    id: "weekly-reset",
+    from: baseline,
+    to: reset,
+  });
+  expect(() =>
+    continueAfterAccountReset(
+      { ...stopped, stopReason: "Overall active-time limit reached" },
+      reset,
+      now + 1_000,
+      { id: "unrelated", reason: "Do not clear time limit" },
+    ),
+  ).toThrow(/new decision/);
 });
 
 it("deduplicates cumulative resumed counters and leaves overlap unknown", () => {

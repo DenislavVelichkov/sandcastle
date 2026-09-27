@@ -180,6 +180,7 @@ it("carries measurement time, calls and the original account baseline into score
     windows: {
       ...fresh.windows,
       short: { usedPercent: 0, resetsAt: now + 6 * 60 * 60_000 },
+      weekly: { ...fresh.windows.weekly!, usedPercent: 44 },
     },
   };
   const afterDecision = beginPilotInvocation(
@@ -201,10 +202,39 @@ it("carries measurement time, calls and the original account baseline into score
     now,
   );
   expect(afterDecision.budget.baseline).toBe(baseline);
-  expect(afterDecision.budget.guardBaseline).toBe(resetReading);
+  expect(afterDecision.budget.guardBaseline.windows).toEqual({
+    short: resetReading.windows.short,
+    weekly: baseline.windows.weekly,
+  });
   expect(afterDecision.budget.measurementCalls).toBe(1);
   expect(afterDecision.budget.activeMs).toBe(settled.activeMs + 1_000);
   expect(afterDecision.budget.resetContinuations).toHaveLength(1);
+  const later = settlePilotInvocation(
+    afterDecision.budget,
+    "after-reset",
+    afterDecision.usage,
+    true,
+  );
+  expect(() =>
+    beginPilotInvocation(
+      later,
+      pilot,
+      "later-score",
+      "worker-image-cli-home-account",
+      {
+        ...resetReading,
+        windows: {
+          ...resetReading.windows,
+          weekly: { ...resetReading.windows.weekly, usedPercent: 45 },
+        },
+      },
+      [{ id: "later", requiredRoles: [] }],
+      2,
+      requested,
+      now,
+      now,
+    ),
+  ).toThrow(/weekly rose by 5 percentage points/);
 });
 
 it("keeps a fixed study's 12-hour, 40-slot and 20-point guards across invocations", () => {

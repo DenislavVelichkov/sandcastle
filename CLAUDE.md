@@ -4,6 +4,7 @@ The role of this file is to describe common mistakes, critical rules (the correc
 
 Use `pnpm run typecheck` for type checking.
 Use `pnpm` for installs, scripts, and package executables in this repository; keep its pnpm lockfiles and generated worker commands aligned.
+Keep `@standard-schema/spec` as a direct dependency: exported `Output` types import it, and a fresh pnpm install does not expose the transitive copy to typecheck.
 Run the build before the full test suite, sequentially: the build clears `dist/`, which CLI tests execute.
 If Vitest fails before collecting tests with `/tmp` `ENOSPC`, check inode availability and set `TMPDIR` to a fresh directory on the project disk. Preserve retained pilot directories.
 
