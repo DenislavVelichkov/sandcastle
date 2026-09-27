@@ -2664,113 +2664,126 @@ const driveWithPilotBudget = (
   options: DurableWorkflowOptions,
   resume = false,
   startedAt = Date.now(),
-): Promise<WorkflowSnapshot> =>
-  runControlEffect(
-    Effect.gen(function* () {
-      const usage = options.usage;
-      if (!usage || usage.activity === "library-proof") {
-        if (usage?.pilot)
-          return yield* Effect.fail(
-            new WorkflowControlError({
-              operation: "Validate pilot budget",
-              cause: undefined,
-              message: "Library proof cannot consume a pilot budget",
-            }),
-          );
-        return yield* controlStep("Drive durable workflow", () =>
-          driveDurableWorkflow(options, resume, undefined, startedAt),
-        );
-      }
-      const pilot = usage.pilot;
-      if (!pilot)
+): Effect.Effect<WorkflowSnapshot, WorkflowControlError> =>
+  Effect.gen(function* () {
+    const usage = options.usage;
+    if (!usage || usage.activity === "library-proof") {
+      if (usage?.pilot)
         return yield* Effect.fail(
           new WorkflowControlError({
             operation: "Validate pilot budget",
             cause: undefined,
-            message:
-              "Pilot activity requires an absolute shared pilot directory",
+            message: "Library proof cannot consume a pilot budget",
           }),
         );
-      yield* controlStep("Validate pilot budget", async () => {
-        if (!validId(pilot.id) || !isAbsolute(pilot.directory))
-          throw new Error(
-            "Pilot activity requires an absolute shared pilot directory",
-          );
-        if (resolve(pilot.directory) === resolve(options.directory))
-          throw new Error(
-            "Shared pilot directory must differ from invocation state",
-          );
-      });
-      yield* controlStep("Create pilot directory", () =>
-        mkdir(pilot.directory, { recursive: true, mode: 0o700 }),
+      return yield* controlStep("Drive durable workflow", () =>
+        driveDurableWorkflow(options, resume, undefined, startedAt),
       );
-      yield* controlStep("Validate pilot host directory", async () =>
-        assertHostDirectory(pilot.directory, options.worktrees),
+    }
+    const pilot = usage.pilot;
+    if (!pilot)
+      return yield* Effect.fail(
+        new WorkflowControlError({
+          operation: "Validate pilot budget",
+          cause: undefined,
+          message: "Pilot activity requires an absolute shared pilot directory",
+        }),
       );
-      return yield* Effect.acquireUseRelease(
-        controlStep("Acquire pilot lock", () =>
-          mkdir(lockPath(pilot.directory)),
+    yield* controlStep("Validate pilot budget", async () => {
+      if (!validId(pilot.id) || !isAbsolute(pilot.directory))
+        throw new Error(
+          "Pilot activity requires an absolute shared pilot directory",
+        );
+      if (resolve(pilot.directory) === resolve(options.directory))
+        throw new Error(
+          "Shared pilot directory must differ from invocation state",
+        );
+    });
+    yield* controlStep("Create pilot directory", () =>
+      mkdir(pilot.directory, { recursive: true, mode: 0o700 }),
+    );
+    yield* controlStep("Validate pilot host directory", async () =>
+      assertHostDirectory(pilot.directory, options.worktrees),
+    );
+    return yield* Effect.acquireUseRelease(
+      controlStep("Acquire pilot lock", () => mkdir(lockPath(pilot.directory))),
+      () =>
+        Effect.gen(function* () {
+          yield* controlStep("Record pilot lock owner", () =>
+            writeLockOwner(pilot.directory),
+          );
+          let budget: PilotBudgetState | undefined;
+          const contents = yield* controlStep("Read pilot budget", () =>
+            readFile(pilotBudgetPath(pilot.directory), "utf8"),
+          ).pipe(
+            Effect.catchTag("WorkflowControlError", (error) =>
+              error.code === "ENOENT"
+                ? Effect.succeed(undefined)
+                : Effect.fail(error),
+            ),
+          );
+          if (contents !== undefined)
+            budget = yield* controlStep("Parse pilot budget", async () =>
+              JSON.parse(contents),
+            );
+          return yield* controlStep("Drive guarded workflow", () =>
+            driveDurableWorkflow(
+              options,
+              resume,
+              { path: pilotBudgetPath(pilot.directory), startedAt, budget },
+              startedAt,
+            ),
+          );
+        }),
+      () =>
+        controlStep("Release pilot lock", () =>
+          rm(lockPath(pilot.directory), { recursive: true, force: true }),
+        ).pipe(Effect.orDie),
+    );
+  });
+
+/** Start selected tasks with a retained reservation and optional guarded usage. */
+export const runDurableWorkflow = (
+  options: DurableWorkflowOptions,
+): Promise<WorkflowSnapshot> =>
+  runControlEffect(
+    Effect.gen(function* () {
+      const registered = yield* controlStep("Register workflow run", () =>
+        withWorkflowInstallationLock(options.project.root, () =>
+          registerWorkflowRun(options.project.root, options.directory),
         ),
-        () =>
+      );
+      return yield* driveWithPilotBudget(options).pipe(
+        Effect.catchTag("WorkflowControlError", (error) =>
           Effect.gen(function* () {
-            yield* controlStep("Record pilot lock owner", () =>
-              writeLockOwner(pilot.directory),
-            );
-            let budget: PilotBudgetState | undefined;
-            const contents = yield* controlStep("Read pilot budget", () =>
-              readFile(pilotBudgetPath(pilot.directory), "utf8"),
-            ).pipe(
-              Effect.catchTag("WorkflowControlError", (error) =>
-                error.code === "ENOENT"
-                  ? Effect.succeed(undefined)
-                  : Effect.fail(error),
-              ),
-            );
-            if (contents !== undefined)
-              budget = yield* controlStep("Parse pilot budget", async () =>
-                JSON.parse(contents),
+            if (registered) {
+              const exists = yield* controlStep(
+                "Check workflow state directory",
+                () => stat(options.directory),
+              ).pipe(
+                Effect.as(true),
+                Effect.catchTag("WorkflowControlError", (stateError) =>
+                  stateError.code === "ENOENT"
+                    ? Effect.succeed(false)
+                    : Effect.fail(stateError),
+                ),
               );
-            return yield* controlStep("Drive guarded workflow", () =>
-              driveDurableWorkflow(
-                options,
-                resume,
-                { path: pilotBudgetPath(pilot.directory), startedAt, budget },
-                startedAt,
-              ),
-            );
+              if (!exists)
+                yield* controlStep("Unregister workflow run", () =>
+                  withWorkflowInstallationLock(options.project.root, () =>
+                    unregisterWorkflowRun(
+                      options.project.root,
+                      options.directory,
+                    ),
+                  ),
+                );
+            }
+            return yield* Effect.fail(error);
           }),
-        () =>
-          controlStep("Release pilot lock", () =>
-            rm(lockPath(pilot.directory), { recursive: true, force: true }),
-          ).pipe(Effect.orDie),
+        ),
       );
     }),
   );
-
-/** Start selected tasks with a retained reservation and optional guarded usage. */
-export const runDurableWorkflow = async (
-  options: DurableWorkflowOptions,
-): Promise<WorkflowSnapshot> => {
-  const registered = await withWorkflowInstallationLock(
-    options.project.root,
-    () => registerWorkflowRun(options.project.root, options.directory),
-  );
-  try {
-    return await driveWithPilotBudget(options);
-  } catch (error) {
-    if (registered) {
-      try {
-        await stat(options.directory);
-      } catch (stateError) {
-        if ((stateError as NodeJS.ErrnoException).code === "ENOENT")
-          await withWorkflowInstallationLock(options.project.root, () =>
-            unregisterWorkflowRun(options.project.root, options.directory),
-          );
-      }
-    }
-    throw error;
-  }
-};
 
 /** Verify an interrupted invocation and restore only into a matching worktree. */
 export const recoverDurableWorkflow = async (
@@ -3022,8 +3035,6 @@ export const resumeDurableWorkflow = (
             message: recovered.failure ?? "Workflow requires recovery",
           }),
         );
-      return yield* controlStep("Continue durable workflow", () =>
-        driveWithPilotBudget(options, true, startedAt),
-      );
+      return yield* driveWithPilotBudget(options, true, startedAt);
     }),
   );
