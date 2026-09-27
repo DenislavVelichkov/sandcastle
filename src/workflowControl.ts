@@ -270,6 +270,8 @@ export interface WorkflowSnapshot {
       readonly {
         /** Role that owns the session. */
         role: string;
+        /** Rejected response that started this repair; absent for initial work. */
+        attemptId?: string;
         /** Provider session identity. */
         id: string;
         /** Host file holding the captured session. */
@@ -300,6 +302,16 @@ export interface WorkflowStatus extends WorkflowSnapshot {
   readonly observationAgeMs: number;
   /** Whether the recorded owner is still recently observable. */
   readonly liveness: "live" | "last-known";
+  /** Next phase for paused tasks, with any recovery blocker. */
+  readonly unfinished: Readonly<
+    Record<
+      string,
+      {
+        readonly phase: "roles" | "verification" | "acceptance";
+        readonly blocker?: string;
+      }
+    >
+  >;
 }
 
 /** Owner answer authenticated by the trusted host route. */
@@ -427,6 +439,9 @@ const sessionPath = (directory: string): string => join(directory, "sessions");
 const roleStartPath = (directory: string): string =>
   join(directory, "role-starts");
 const rolePath = (directory: string): string => join(directory, "roles");
+const checkPath = (directory: string): string => join(directory, "checks");
+const checkRecordPath = (directory: string, taskId: string): string =>
+  join(checkPath(directory), `${digest(taskId)}.json`);
 const cleanupPath = (directory: string): string => join(directory, "cleanup");
 
 const assertHostDirectory = (
@@ -637,11 +652,52 @@ export const workflowStatus = async (
       /* exited */
     }
   }
+  const unfinished = Object.fromEntries(
+    await Promise.all(
+      Object.entries(state.tasks)
+        .filter(([, task]) => ["active", "paused"].includes(task.status))
+        .map(async ([taskId]) => {
+          const task = state.selectedTasks?.find((item) => item.id === taskId);
+          const roles = task ? ["implementation", ...task.requiredRoles] : [];
+          const attemptId = rejectionFor(state, taskId)?.responseId;
+          const done = await completedRoles(directory, taskId, attemptId);
+          if (!task)
+            return [
+              taskId,
+              { phase: "roles", blocker: "Selected task contract is missing" },
+            ] as const;
+          if (roles.some((role) => !done.includes(role)))
+            return [taskId, { phase: "roles" }] as const;
+          const proof = await roleCompletionProof(
+            directory,
+            taskId,
+            roles.at(-1)!,
+            attemptId,
+          );
+          if (proof?.version !== 2 || !proof.head)
+            return [
+              taskId,
+              {
+                phase: "verification",
+                blocker: "Completed role has no candidate-bound proof",
+              },
+            ] as const;
+          const record = await readCheckPhase(directory, taskId);
+          const checked =
+            record?.version === 1 && record.candidate === proof.head;
+          return [
+            taskId,
+            { phase: checked ? "acceptance" : "verification" },
+          ] as const;
+        }),
+    ),
+  );
   return {
     ...state,
     ...(usage ? { usage } : {}),
     observationAgeMs,
     liveness: live ? "live" : "last-known",
+    unfinished,
   };
 };
 
@@ -1261,6 +1317,22 @@ const requestFrom = (
   };
 };
 
+const rejectionFor = (
+  state: WorkflowSnapshot,
+  taskId: string,
+): WorkflowResponseReceipt | undefined =>
+  state.responses
+    .filter(
+      (response) =>
+        response.status === "applied" &&
+        response.decision === "Reject" &&
+        state.requests.some(
+          (request) =>
+            request.id === response.requestId && request.taskId === taskId,
+        ),
+    )
+    .at(-1);
+
 const captureState = async (
   options: DurableWorkflowOptions,
   state: WorkflowSnapshot,
@@ -1280,13 +1352,17 @@ const captureState = async (
   let missingRequiredSession = sessions.some((session) => !session.path);
   if (options.project.capabilities.includes("recovery"))
     for (const taskId of unfinished) {
-      const done = await completedRoles(options.directory, taskId);
-      const started = await startedRoles(options.directory, taskId);
+      const attemptId = rejectionFor(state, taskId)?.responseId;
+      const done = await completedRoles(options.directory, taskId, attemptId);
+      const started = await startedRoles(options.directory, taskId, attemptId);
       if (
         started.some(
           (role) =>
             !done.includes(role) &&
-            !state.sessions?.[taskId]?.some((session) => session.role === role),
+            !state.sessions?.[taskId]?.some(
+              (session) =>
+                session.role === role && session.attemptId === attemptId,
+            ),
         )
       )
         missingRequiredSession = true;
@@ -1324,10 +1400,17 @@ const capturedSessions = async (
   directory: string,
   taskId: string,
 ): Promise<
-  { role: string; id: string; path?: string; capturedAt?: string }[]
+  {
+    role: string;
+    attemptId?: string;
+    id: string;
+    path?: string;
+    capturedAt?: string;
+  }[]
 > => {
   const result: {
     role: string;
+    attemptId?: string;
     id: string;
     path?: string;
     capturedAt?: string;
@@ -1339,6 +1422,7 @@ const capturedSessions = async (
     ) as {
       taskId: string;
       role: string;
+      attemptId?: string;
       id: string;
       path?: string;
       capturedAt?: string;
@@ -1353,6 +1437,7 @@ const capturedSessions = async (
 const recordedRoles = async (
   path: string,
   taskId: string,
+  attemptId?: string,
 ): Promise<string[]> => {
   const result: string[] = [];
   for (const name of await readdir(path)) {
@@ -1360,17 +1445,74 @@ const recordedRoles = async (
     const record = JSON.parse(await readFile(join(path, name), "utf8")) as {
       taskId: string;
       role: string;
+      attemptId?: string;
     };
-    if (record.taskId === taskId) result.push(record.role);
+    if (record.taskId === taskId && record.attemptId === attemptId)
+      result.push(record.role);
   }
   return result;
 };
 
-const startedRoles = (directory: string, taskId: string): Promise<string[]> =>
-  recordedRoles(roleStartPath(directory), taskId);
+const startedRoles = (
+  directory: string,
+  taskId: string,
+  attemptId?: string,
+): Promise<string[]> =>
+  recordedRoles(roleStartPath(directory), taskId, attemptId);
 
-const completedRoles = (directory: string, taskId: string): Promise<string[]> =>
-  recordedRoles(rolePath(directory), taskId);
+const completedRoles = (
+  directory: string,
+  taskId: string,
+  attemptId?: string,
+): Promise<string[]> => recordedRoles(rolePath(directory), taskId, attemptId);
+
+const roleCompletionProof = async (
+  directory: string,
+  taskId: string,
+  role: string,
+  attemptId?: string,
+): Promise<{ version?: number; head?: string } | undefined> => {
+  try {
+    const identity = { taskId, role, ...(attemptId ? { attemptId } : {}) };
+    const record = JSON.parse(
+      await readFile(
+        join(rolePath(directory), `${digest(identity)}.json`),
+        "utf8",
+      ),
+    ) as {
+      taskId?: string;
+      role?: string;
+      attemptId?: string;
+      version?: number;
+      head?: string;
+    };
+    return record.taskId === taskId &&
+      record.role === role &&
+      record.attemptId === attemptId
+      ? record
+      : undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+};
+
+const readCheckPhase = async (
+  directory: string,
+  taskId: string,
+): Promise<
+  | { version: number; candidate: string; acceptanceStarted?: boolean }
+  | undefined
+> => {
+  try {
+    return JSON.parse(
+      await readFile(checkRecordPath(directory, taskId), "utf8"),
+    ) as { version: number; candidate: string; acceptanceStarted?: boolean };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+};
 
 /** Runs exact selected tasks with durable human waits and independent worktrees. */
 const driveDurableWorkflow = async (
@@ -1551,6 +1693,7 @@ const driveDurableWorkflow = async (
     mode: 0o700,
   });
   await mkdir(rolePath(options.directory), { recursive: true, mode: 0o700 });
+  await mkdir(checkPath(options.directory), { recursive: true, mode: 0o700 });
   await mkdir(cleanupPath(options.directory), { recursive: true, mode: 0o700 });
   let reservation: Awaited<ReturnType<WorkflowProject["reserve"]>> | undefined;
   let state: WorkflowSnapshot | undefined;
@@ -1618,35 +1761,45 @@ const driveDurableWorkflow = async (
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
     }
-    reservation = await options.project.reserve({
-      tasks: admission.tasks,
-      branch: first.branch,
-      branches: Object.fromEntries(
-        admission.tasks.map((task) => [
-          task.id,
-          options.worktrees[task.id]!.branch,
-        ]),
-      ),
-      implementationIterations: options.policy.iterations,
-      ...(resume ? { resumeId: previous!.resources.reservationId } : {}),
-      roles: Object.fromEntries(
-        admission.tasks.map((task) => [
-          task.id,
-          ["implementation", ...task.requiredRoles],
-        ]),
-      ),
-    });
-    if (
-      typeof reservation === "function" ||
-      !reservation?.id ||
-      typeof reservation.retain !== "function" ||
-      typeof reservation.release !== "function"
-    )
-      throw new Error(
-        "Durable workflow requires a project-owned durable reservation",
-      );
-    if (resume && reservation.id !== previous!.resources.reservationId)
-      throw new Error("Project changed the retained reservation identity");
+    try {
+      reservation = await options.project.reserve({
+        tasks: admission.tasks,
+        branch: first.branch,
+        branches: Object.fromEntries(
+          admission.tasks.map((task) => [
+            task.id,
+            options.worktrees[task.id]!.branch,
+          ]),
+        ),
+        implementationIterations: options.policy.iterations,
+        ...(resume ? { resumeId: previous!.resources.reservationId } : {}),
+        roles: Object.fromEntries(
+          admission.tasks.map((task) => [
+            task.id,
+            ["implementation", ...task.requiredRoles],
+          ]),
+        ),
+      });
+      if (
+        typeof reservation === "function" ||
+        !reservation?.id ||
+        typeof reservation.retain !== "function" ||
+        typeof reservation.release !== "function"
+      )
+        throw new Error(
+          "Durable workflow requires a project-owned durable reservation",
+        );
+      if (resume && reservation.id !== previous!.resources.reservationId)
+        throw new Error("Project changed the retained reservation identity");
+    } catch (error) {
+      if (resume)
+        await update(options.directory, previous!, {
+          lifecycle: "recovery-required",
+          failure: `Project reservation refused resume: ${String(error)}`,
+          resources: { ...previous!.resources, retained: true },
+        });
+      throw error;
+    }
     if (resume) {
       try {
         usageState = JSON.parse(
@@ -1710,24 +1863,35 @@ const driveDurableWorkflow = async (
     if (resume) {
       await rm(stopPath(options.directory), { force: true });
       await syncDirectory(options.directory);
+      const tasks = { ...previous!.tasks };
+      if (recoveredGuardStop)
+        for (const task of admission.tasks) {
+          const prior = tasks[task.id];
+          if (
+            prior?.status !== "blocked" ||
+            !prior.reason?.includes(recoveredGuardStop)
+          )
+            continue;
+          const roles = ["implementation", ...task.requiredRoles];
+          const attemptId = rejectionFor(previous!, task.id)?.responseId;
+          const done = await completedRoles(
+            options.directory,
+            task.id,
+            attemptId,
+          );
+          const status = roles.every((role) => done.includes(role))
+            ? "paused"
+            : prior.remaining > 0
+              ? "ready"
+              : "blocked";
+          if (status !== "blocked")
+            tasks[task.id] = { ...prior, status, reason: undefined };
+        }
       state = await update(options.directory, previous!, {
         lifecycle: "running",
         owner: { pid: process.pid, start: ownerStart(process.pid) },
         processes: [],
-        ...(recoveredGuardStop
-          ? {
-              tasks: Object.fromEntries(
-                Object.entries(previous!.tasks).map(([id, task]) => [
-                  id,
-                  task.status === "blocked" &&
-                  task.remaining > 0 &&
-                  task.reason?.includes(recoveredGuardStop!)
-                    ? { ...task, status: "ready", reason: undefined }
-                    : task,
-                ]),
-              ),
-            }
-          : {}),
+        ...(recoveredGuardStop ? { tasks } : {}),
       });
     } else {
       state = {
@@ -1781,41 +1945,6 @@ const driveDurableWorkflow = async (
       state = await captureState(options, state);
     }
     for (const task of admission.tasks) {
-      const priorTask = state.tasks[task.id];
-      if (
-        resume &&
-        priorTask?.status !== "ready" &&
-        priorTask?.status !== "paused"
-      )
-        continue;
-      let resumed: WorkflowOptions["resume"];
-      if (resume && priorTask?.status === "paused") {
-        const roles = ["implementation", ...task.requiredRoles];
-        const done = await completedRoles(options.directory, task.id);
-        const role = roles.find((item) => !done.includes(item));
-        if (!role) continue;
-        if (role === "implementation" && priorTask.remaining < 1) continue;
-        const session = [...(state.sessions?.[task.id] ?? [])]
-          .reverse()
-          .find((item) => item.role === role);
-        if (
-          !session &&
-          (await startedRoles(options.directory, task.id)).includes(role)
-        )
-          throw new Error(
-            `Missing session for interrupted role ${task.id}/${role}`,
-          );
-        const baselineHead = state.baselineHeads?.[task.id];
-        if (!baselineHead)
-          throw new Error(`Missing baseline head for ${task.id}`);
-        resumed = {
-          taskId: task.id,
-          role,
-          ...(session ? { sessionId: session.id } : {}),
-          baselineHead,
-          completedRoles: roles.filter((item) => done.includes(item)),
-        };
-      }
       if (await stopRequested(options.directory)) {
         state = await update(options.directory, state, {
           lifecycle: "stopping",
@@ -1827,13 +1956,25 @@ const driveDurableWorkflow = async (
         state,
         options.project.validateHumanRequest,
       );
+      const priorTask = state.tasks[task.id];
+      const dependencyBlocked = task.dependencies.some(
+        (id) =>
+          state!.tasks[id]?.status !== "accepted" &&
+          admission.tasks.some((item) => item.id === id),
+      );
       if (
-        task.dependencies.some(
-          (id) =>
-            state!.tasks[id]?.status !== "accepted" &&
-            admission.tasks.some((item) => item.id === id),
+        resume &&
+        priorTask?.status !== "ready" &&
+        priorTask?.status !== "paused" &&
+        priorTask?.status !== "rework-requested" &&
+        !(
+          priorTask?.status === "blocked" &&
+          priorTask.reason === "Selected dependency has not been accepted" &&
+          !dependencyBlocked
         )
-      ) {
+      )
+        continue;
+      if (dependencyBlocked) {
         state = await update(options.directory, state, {
           tasks: {
             ...state.tasks,
@@ -1846,7 +1987,155 @@ const driveDurableWorkflow = async (
         });
         continue;
       }
+      const rejection = rejectionFor(state, task.id);
+      const attemptId = rejection?.responseId;
+      let resumed: WorkflowOptions["resume"];
+      if (resume && priorTask?.status === "rework-requested") {
+        const request = state.requests.find(
+          (item) => item.id === rejection?.requestId,
+        );
+        const session = [...(state.sessions?.[task.id] ?? [])]
+          .reverse()
+          .find((item) => item.role === "implementation" && item.path);
+        const unavailable = usageState
+          ? ["implementation", ...task.requiredRoles].find(
+              (role) => !usageState?.remaining[task.id]?.[role],
+            )
+          : undefined;
+        let reason: string | undefined;
+        if (!request || !rejection)
+          reason = "Requested rework has no applied rejection";
+        else if (!candidateCurrent(request))
+          reason = "Rejected candidate changed before rework";
+        else if (!session)
+          reason = "Requested rework has no captured implementation session";
+        else if (!state.baselineHeads?.[task.id])
+          reason = "Requested rework has no original baseline";
+        else if (unavailable)
+          reason = `No reserved invocation remains for ${task.id}/${unavailable}`;
+        if (reason) {
+          state = await update(options.directory, state, {
+            tasks: {
+              ...state.tasks,
+              [task.id]: { ...priorTask, status: "blocked", reason },
+            },
+          });
+          continue;
+        }
+        resumed = {
+          taskId: task.id,
+          role: "implementation",
+          sessionId: session!.id,
+          baselineHead: state.baselineHeads![task.id]!,
+          completedRoles: [],
+          rejectionFeedback: rejection!.originalText,
+        };
+      } else if (resume && priorTask?.status === "paused") {
+        const roles = ["implementation", ...task.requiredRoles];
+        const done = await completedRoles(
+          options.directory,
+          task.id,
+          attemptId,
+        );
+        const role = roles.find((item) => !done.includes(item));
+        if (role === "implementation" && priorTask.remaining < 1) {
+          state = await update(options.directory, state, {
+            tasks: {
+              ...state.tasks,
+              [task.id]: {
+                ...priorTask,
+                status: "blocked",
+                reason:
+                  "No implementation allowance remains for interrupted work",
+              },
+            },
+          });
+          continue;
+        }
+        const session = role
+          ? [...(state.sessions?.[task.id] ?? [])]
+              .reverse()
+              .find(
+                (item) => item.role === role && item.attemptId === attemptId,
+              )
+          : undefined;
+        if (
+          role &&
+          !session &&
+          (await startedRoles(options.directory, task.id, attemptId)).includes(
+            role,
+          )
+        )
+          throw new Error(
+            `Missing session for interrupted role ${task.id}/${role}`,
+          );
+        if (!role) {
+          const proof = await roleCompletionProof(
+            options.directory,
+            task.id,
+            roles.at(-1)!,
+            attemptId,
+          );
+          if (
+            proof?.version !== 2 ||
+            !proof.head ||
+            !candidateCurrent({
+              worktree: options.worktrees[task.id]!.worktreePath,
+              branch: options.worktrees[task.id]!.branch,
+              candidate: proof.head,
+            })
+          )
+            throw new Error(
+              `Task ${task.id} has no candidate-bound completed-role proof`,
+            );
+        }
+        const baselineHead = state.baselineHeads?.[task.id];
+        if (!baselineHead)
+          throw new Error(`Missing baseline head for ${task.id}`);
+        resumed = {
+          taskId: task.id,
+          ...(role ? { role } : {}),
+          ...(session ? { sessionId: session.id } : {}),
+          baselineHead,
+          completedRoles: roles.filter((item) => done.includes(item)),
+          ...(rejection ? { rejectionFeedback: rejection.originalText } : {}),
+        };
+      }
       const worktree = options.worktrees[task.id]!;
+      if (
+        resume &&
+        (priorTask?.status === "rework-requested" ||
+          priorTask?.reason === "Selected dependency has not been accepted")
+      ) {
+        const preflight = await inspectWorkflow({
+          ...options,
+          worktree,
+          selected: [{ id: task.id, reference: task.reference }],
+          ...(resumed ? { resume: resumed } : {}),
+          project: {
+            ...options.project,
+            getTask: async (id) => {
+              const found = await options.project.getTask(id);
+              return found && state!.tasks[id]?.status === "accepted"
+                ? { ...found, state: "complete" }
+                : found;
+            },
+          },
+        });
+        if (preflight.status === "blocked") {
+          state = await update(options.directory, state, {
+            tasks: {
+              ...state.tasks,
+              [task.id]: {
+                ...priorTask,
+                status: "blocked",
+                reason: preflight.reasons.join("; "),
+              },
+            },
+          });
+          continue;
+        }
+      }
       const activeAbort = new AbortController();
       const allowanceBefore = priorTask?.remaining ?? options.policy.iterations;
       if (usageState) {
@@ -1894,6 +2183,7 @@ const driveDurableWorkflow = async (
           },
         },
       });
+      await rm(checkRecordPath(options.directory, task.id), { force: true });
       const guardedUsage = options.usage;
       let activeSessionId: string | undefined;
       let activeAgent: AgentProvider | undefined;
@@ -2001,7 +2291,7 @@ const driveDurableWorkflow = async (
         onRoleStarted: async (taskId, role) => {
           await publish(
             join(roleStartPath(options.directory), `${randomUUID()}.json`),
-            { taskId, role },
+            { taskId, role, ...(attemptId ? { attemptId } : {}) },
             true,
           );
         },
@@ -2012,6 +2302,7 @@ const driveDurableWorkflow = async (
             capturedAt: new Date().toISOString(),
             taskId,
             role,
+            ...(attemptId ? { attemptId } : {}),
             id: session.sessionId,
             path: session.sessionFilePath,
           };
@@ -2027,12 +2318,29 @@ const driveDurableWorkflow = async (
             activeSessionId = session.sessionId;
         },
         onRoleCompleted: async (taskId, role) => {
-          const record = { taskId, role };
+          const record = { taskId, role, ...(attemptId ? { attemptId } : {}) };
           await publish(
             join(rolePath(options.directory), `${digest(record)}.json`),
-            record,
+            {
+              ...record,
+              version: 2,
+              head: git(worktree.worktreePath, "rev-parse", "HEAD"),
+            },
             true,
           );
+        },
+        onCheckPassed: async (taskId, candidate) => {
+          await publish(checkRecordPath(options.directory, taskId), {
+            version: 1,
+            candidate: candidate.head,
+          });
+        },
+        onAcceptanceStarted: async (taskId, candidate) => {
+          await publish(checkRecordPath(options.directory, taskId), {
+            version: 1,
+            candidate: candidate.head,
+            acceptanceStarted: true,
+          });
         },
         onCleanupFailure: async (taskId, error) => {
           await publish(
@@ -2176,15 +2484,57 @@ const driveDurableWorkflow = async (
           ),
         );
       }
+      if (failure && !result) {
+        const phase = await readCheckPhase(options.directory, task.id);
+        if (
+          phase?.acceptanceStarted &&
+          phase.candidate === git(worktree.worktreePath, "rev-parse", "HEAD")
+        ) {
+          if (usageState?.currentTask)
+            await mutateUsage((current) =>
+              finishWorkflowTask(current, Date.now()),
+            );
+          const sessions = await capturedSessions(options.directory, task.id);
+          const used = sessions.filter(
+            (session) => session.role === "implementation",
+          ).length;
+          const reason = `Acceptance outcome is uncertain for ${task.id}; owner recovery is required`;
+          state = await update(options.directory, state, {
+            active: [],
+            sessions: { ...state.sessions, [task.id]: sessions },
+            tasks: {
+              ...state.tasks,
+              [task.id]: {
+                status: "blocked",
+                remaining:
+                  usageState?.remaining[task.id]?.implementation ??
+                  Math.max(0, options.policy.iterations - used),
+                reason,
+              },
+            },
+          });
+          throw new Error(reason);
+        }
+      }
       if (stopAfterResult && failure) {
         if (usageState?.currentTask)
           await mutateUsage((current) =>
             finishWorkflowTask(current, Date.now()),
           );
         const sessions = await capturedSessions(options.directory, task.id);
+        const activeSessions = sessions.filter(
+          (session) => session.attemptId === attemptId,
+        );
         const used = sessions.filter(
           (session) => session.role === "implementation",
         ).length;
+        const roles = ["implementation", ...task.requiredRoles];
+        const done = await completedRoles(
+          options.directory,
+          task.id,
+          attemptId,
+        );
+        const unfinishedRole = roles.find((role) => !done.includes(role));
         state = await update(options.directory, state, {
           active: [],
           sessions: {
@@ -2195,10 +2545,14 @@ const driveDurableWorkflow = async (
             ...state.tasks,
             [task.id]: {
               ...state.tasks[task.id]!,
-              status: sessions.length ? "paused" : "blocked",
+              status:
+                !usageState?.stopReason &&
+                (activeSessions.length || !unfinishedRole)
+                  ? "paused"
+                  : "blocked",
               remaining:
                 usageState?.remaining[task.id]?.implementation ??
-                (sessions.length
+                (activeSessions.length
                   ? Math.max(0, options.policy.iterations - used)
                   : 0),
               reason: failure ? String(failure) : undefined,
@@ -2250,7 +2604,10 @@ const driveDurableWorkflow = async (
           ...state.sessions,
           [task.id]: [
             ...(state.sessions?.[task.id] ?? []),
-            ...(last?.sessions ?? []),
+            ...(last?.sessions ?? []).map((session) => ({
+              ...session,
+              ...(attemptId ? { attemptId } : {}),
+            })),
           ],
         },
       });
@@ -2260,13 +2617,13 @@ const driveDurableWorkflow = async (
             0,
             allowanceBefore -
               (resumed.role === "implementation"
-                ? (last?.usedImplementationIterations ?? 1)
+                ? (last?.usedImplementationIterations ?? 0)
                 : 0),
           )
         : Math.max(
             0,
             options.policy.iterations -
-              (last?.usedImplementationIterations ?? options.policy.iterations),
+              (last?.usedImplementationIterations ?? 0),
           );
       if (acceptance?.status === "waiting") {
         let request = requestFrom(
@@ -2356,9 +2713,14 @@ const driveDurableWorkflow = async (
       );
     const waiting =
       Object.values(state.tasks).some((task) =>
-        ["waiting", "rejected", "paused", "ready", "blocked"].includes(
-          task.status,
-        ),
+        [
+          "waiting",
+          "rejected",
+          "rework-requested",
+          "paused",
+          "ready",
+          "blocked",
+        ].includes(task.status),
       ) ||
       Object.values(state.integrations ?? {}).some(
         (intent) => intent.status !== "integrated",
@@ -2417,8 +2779,11 @@ const driveDurableWorkflow = async (
     try {
       await runControlEffect(Scope.close(scope, Exit.succeed(undefined)));
     } finally {
-      if (!state && reservation && typeof reservation !== "function")
-        await reservation.release();
+      if (!state && reservation) {
+        if (typeof reservation === "function") await reservation();
+        else if (typeof reservation.release === "function")
+          await reservation.release();
+      }
     }
   }
 };
@@ -2816,6 +3181,8 @@ export const recoverDurableWorkflow = async (
   }
   try {
     let state = await readState(options.directory);
+    if (state.failure?.includes("Acceptance outcome is uncertain"))
+      throw new Error(state.failure);
     if (
       state.projectId !== options.projectId ||
       state.invocationId !== options.invocationId ||

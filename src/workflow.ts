@@ -114,10 +114,11 @@ export interface WorkflowProject {
         retain(): Promise<void> | void;
       }
   >;
-  /** Supply exactly one prompt source for this task and role. */
+  /** Supply exactly one prompt source; include rejectionFeedback for a repair. */
   prompt(
     task: WorkflowTask,
     role: string,
+    context?: { readonly rejectionFeedback?: string },
   ):
     | string
     | Pick<
@@ -196,6 +197,16 @@ export interface WorkflowOptions {
   readonly onRoleStarted?: (taskId: string, role: string) => Promise<void>;
   /** Record that a required role completed. */
   readonly onRoleCompleted?: (taskId: string, role: string) => Promise<void>;
+  /** Record that the project check passed for an exact candidate. */
+  readonly onCheckPassed?: (
+    taskId: string,
+    candidate: WorkflowCandidate,
+  ) => Promise<void>;
+  /** Record an acceptance call before it can issue a host question. */
+  readonly onAcceptanceStarted?: (
+    taskId: string,
+    candidate: WorkflowCandidate,
+  ) => Promise<void>;
   /** Report cleanup failure so a durable owner can retain recovery state. */
   readonly onCleanupFailure?: (taskId: string, error: unknown) => Promise<void>;
   /** Reserve an invocation and guard the actual agent before provider dispatch. */
@@ -213,18 +224,20 @@ export interface WorkflowOptions {
       readonly usage?: import("./AgentProvider.js").IterationUsage;
     },
   ) => Promise<void>;
-  /** Verified interrupted role and candidate baseline to continue. */
+  /** Verified interrupted role or model-free project check to continue. */
   readonly resume?: {
     /** Task to resume. */
     readonly taskId: string;
-    /** First unfinished role. */
-    readonly role: string;
+    /** First unfinished role; absent when all roles are complete. */
+    readonly role?: string;
     /** Provider-owned filesystem session to resume, when present. */
     readonly sessionId?: string;
     /** Original commit before this task began. */
     readonly baselineHead: string;
     /** Roles already completed for the retained candidate. */
     readonly completedRoles: readonly string[];
+    /** Applied owner rejection passed to the project's repair prompt. */
+    readonly rejectionFeedback?: string;
   };
 }
 
@@ -648,7 +661,11 @@ export const runWorkflow = (
                 [];
               let usedImplementationIterations = 0;
               const roles = ["implementation", ...task.requiredRoles];
-              const startRole = resumed ? roles.indexOf(resumed.role) : 0;
+              const startRole = resumed
+                ? resumed.role
+                  ? roles.indexOf(resumed.role)
+                  : roles.length
+                : 0;
               if (startRole < 0)
                 return yield* Effect.fail(
                   new WorkflowOperationError({
@@ -670,7 +687,14 @@ export const runWorkflow = (
                 signal?.throwIfAborted();
                 const provided = yield* workflowSync(
                   `Read prompt for ${task.id}/${role}`,
-                  () => project.prompt(task, role),
+                  () =>
+                    project.prompt(
+                      task,
+                      role,
+                      role === "implementation" && resumed?.rejectionFeedback
+                        ? { rejectionFeedback: resumed.rejectionFeedback }
+                        : undefined,
+                    ),
                 );
                 const invocation =
                   typeof provided === "string"
@@ -856,10 +880,16 @@ export const runWorkflow = (
                   reason: check.reason ?? `Project check failed for ${task.id}`,
                 };
               }
+              yield* workflowStep("Record passed project check", async () =>
+                options.onCheckPassed?.(task.id, candidate),
+              );
+              signal?.throwIfAborted();
+              yield* workflowStep("Record project acceptance start", async () =>
+                options.onAcceptanceStarted?.(task.id, candidate),
+              );
               const acceptance = yield* workflowStep("Project acceptance", () =>
                 project.accept(candidate, check),
               );
-              signal?.throwIfAborted();
               completed.push({
                 candidate,
                 check,

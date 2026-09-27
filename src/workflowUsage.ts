@@ -701,7 +701,7 @@ export const continueAfterAccountReset = (
   if (reason) throw new Error(reason);
   return {
     ...state,
-    guardBaseline: reading,
+    guardBaseline: reconciled,
     latest: reading,
     accountHistory: [
       ...state.accountHistory,
