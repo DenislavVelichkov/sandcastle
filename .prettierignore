@@ -4,3 +4,6 @@ node_modules
 docs/proofs/issue-22-evidence/*.json
 docs/proofs/issue-22-evidence/durable/**/*.json
 docs/proofs/*-report/*.json
+docs/proofs/issue-31-three-model-pilot/*.json
+docs/proofs/issue-31-three-model-pilot/grades/*.json
+docs/proofs/issue-31-three-model-pilot/ticket.md

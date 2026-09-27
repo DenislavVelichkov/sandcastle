@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "cwd": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-three-model-pilot/fixture",
+  "runnerHash": "3bf72458875ceb7c0eb62491a934cb374f60929f51d447dc6237a38e50e179da",
+  "runnerCommit": "a43c4a67a1cfb202cdb93527289a8ea82c527545",
+  "baseCommit": "a43c4a67a1cfb202cdb93527289a8ea82c527545",
+  "tickets": [
+    {
+      "source": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-three-model-pilot/ticket.md",
+      "title": "Preserve streamed file-log chunks",
+      "text": "# Preserve streamed file-log chunks\n\nFix the file logger so raw streamed chunks stay contiguous. If a structured log entry follows streamed output, start that entry on a new line. Add focused regression coverage for both behaviors.\n\nFollow this repository's conventions: change only relevant source, tests, and the required patch changeset; use pnpm; do not add lockfile or workspace metadata. Commit the result. An independent host check will run typecheck, build, and tests. Work only in this answer-free repository.\n",
+      "sha256": "6c468f083a7883658219bdd26f3cfd24d2d94ebeb9f4a548c02ddb55249d8e74"
+    }
+  ],
+  "arms": [
+    {
+      "model": "gpt-6-sol",
+      "effort": "xhigh"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "medium"
+    },
+    {
+      "model": "gpt-6-luna",
+      "effort": "max"
+    }
+  ],
+  "slots": [
+    {
+      "id": "ticket-1-arm-1",
+      "ticket": 0,
+      "arm": 0
+    },
+    {
+      "id": "ticket-1-arm-2",
+      "ticket": 0,
+      "arm": 1
+    },
+    {
+      "id": "ticket-1-arm-3",
+      "ticket": 0,
+      "arm": 2
+    }
+  ],
+  "image": "sandcastle:issue26-pnpm",
+  "prepare": "pnpm import && pnpm install --frozen-lockfile --shamefully-hoist --ignore-scripts --config.confirmModulesPurge=false && rm -f pnpm-lock.yaml pnpm-workspace.yaml",
+  "check": "pnpm run typecheck && pnpm run build && pnpm test",
+  "overallLimitMs": 3600000,
+  "invocationLimitMs": 900000,
+  "id": "6a5b780f1f1ccec46305d51fb317119b76322ce4b0c4d7b32efc1b32c30df560",
+  "output": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-three-model-pilot/evidence"
+}

@@ -114,6 +114,8 @@ The defaults are `gpt-6-sol:xhigh`, `gpt-6-astra:medium`, and `gpt-6-luna:max`, 
 
 The previous five-arm, 40-slot study used the repository-owned protected entry at `.sandcastle/benchmark.mjs`. Its v3, v4, and v5 evidence remains historical. The older fixed and adaptive study APIs described below retain their original selection, account, grading and held-out rules; the generic command does not claim their model ranking or savings result.
 
+The [one-ticket three-model pilot](proofs/issue-31-three-model-pilot/findings.md) completed all three default arms and passed the protected stream-log regression for each candidate. It validates this command on that ticket only; it establishes no model ranking or subscription savings.
+
 The original adaptive protocol below remains available to hosts that supply its own protected entry.
 
 The original adaptive benchmark is a project API. A host entry supplies the task, grader, required reviews, acceptance functions, actual worker model catalog, account readings and installed package identity. Use the [bounded benchmark API](workflow.md#bounded-benchmark) to bind those functions. The four historical base and reference commits are in `benchmarkFixtures`; do not replace them after seeing outcomes. A protected grader and the reference patch stay outside each agent worktree. Exporting and preflighting these real fixtures starts the original pilot's four-hour clock, so the deterministic tests in this repository do not do that work.

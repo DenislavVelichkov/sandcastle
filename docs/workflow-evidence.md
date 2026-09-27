@@ -12,6 +12,8 @@ Issue #27 retains Sandcastle's existing fixed Sol High policy. No selected-proje
 | Later fixed comparison                        | Also incomplete. [Issue #31 v3 findings](proofs/issue-31-v3-report/findings.md), [HTML](proofs/issue-31-v3-report/report.html), [JSON](proofs/issue-31-v3-report/report.json) and [CSV](proofs/issue-31-v3-report/evaluations.csv) show six accepted, two failed, one incomplete and 31 unrun slots. It supplies no adaptive pair. |
 | Admission and route validation                | Deterministic source tests exercise qualifying synthetic evidence, fixed retention, changed evidence, both permitted task classes, required costs and the two-attempt rule. They establish no measured model savings or deployed adaptive policy.                                                                                  |
 
+The revised issue #31 [three-model ticket pilot](proofs/issue-31-three-model-pilot/findings.md) completed one historical stream-log ticket with Sol xHigh, Astra Medium, and Luna Max. All three candidates passed the configured and protected checks. That one-ticket result establishes no model ranking, savings claim, or routing change.
+
 ## Evidence behind fixed retention
 
 The retained adaptive policy identity is `issue26-seven-arm-v7`. Its manifest hash is `5851f4657c6a6964fed68afa23b9718303ddf384a0e6c60a7496b881fe927b43`; its ledger hash is `2dcf2d9f0f7da91e42d3a2437f13c324b6a70a55b04454b5d0a1eeecb7b211a4`. Calibration and all four historical preflights passed. The first candidate passed Standards review but failed specification review. The controller retained the slot as incomplete, including its unused second implementation allowance and recovery ownership.
