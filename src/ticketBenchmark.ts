@@ -1,7 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -344,34 +352,37 @@ const liveSlot = async (
     process.env.CODEX_HOME ?? join(homedir(), ".codex"),
     "auth.json",
   );
-  await readFile(auth); // Fail before model work if subscription authentication is unavailable.
-  const provider = docker({
-    imageName: plan.image,
-    mounts: [
-      {
-        hostPath: auth,
-        sandboxPath: "/home/agent/.codex-seed/auth.json",
-        readonly: true,
-      },
-    ],
-    env: {
-      CODEX_HOME: "/home/agent/.codex",
-      OPENAI_API_KEY: "",
-      OPENAI_KEY: "",
-    },
-  });
-  const setup = [
-    {
-      command:
-        "mkdir -p /home/agent/.codex && cp /home/agent/.codex-seed/auth.json /home/agent/.codex/auth.json && chmod 600 /home/agent/.codex/auth.json && printf '[features]\\nmulti_agent = false\\n' > /home/agent/.codex/config.toml",
-    },
-    ...(plan.prepare
-      ? [{ command: `timeout 300s sh -lc ${quote(plan.prepare)}` }]
-      : []),
-  ];
-  await mkdir(join(plan.output, "logs"), { recursive: true });
+  const authBytes = await readFile(auth); // Fail before model work if subscription authentication is unavailable.
+  const authSeedDir = await mkdtemp(join(plan.output, ".auth-"));
   let sandbox: Awaited<ReturnType<typeof createSandbox>> | undefined;
   try {
+    const authSeed = join(authSeedDir, "auth.json");
+    await writeFile(authSeed, authBytes, { mode: 0o600 });
+    const provider = docker({
+      imageName: plan.image,
+      mounts: [
+        {
+          hostPath: authSeed,
+          sandboxPath: "/home/agent/.codex-seed/auth.json",
+          readonly: true,
+        },
+      ],
+      env: {
+        CODEX_HOME: "/home/agent/.codex",
+        OPENAI_API_KEY: "",
+        OPENAI_KEY: "",
+      },
+    });
+    const setup = [
+      {
+        command:
+          "mkdir -p /home/agent/.codex && cp /home/agent/.codex-seed/auth.json /home/agent/.codex/auth.json && chmod 600 /home/agent/.codex/auth.json && printf '[features]\\nmulti_agent = false\\n' > /home/agent/.codex/config.toml",
+      },
+      ...(plan.prepare
+        ? [{ command: `timeout 300s sh -lc ${quote(plan.prepare)}` }]
+        : []),
+    ];
+    await mkdir(join(plan.output, "logs"), { recursive: true });
     sandbox = await createSandbox({
       cwd: plan.cwd,
       branch,
@@ -437,7 +448,11 @@ const liveSlot = async (
         : {}),
     };
   } finally {
-    await sandbox?.close();
+    try {
+      await sandbox?.close();
+    } finally {
+      await rm(authSeedDir, { recursive: true, force: true });
+    }
   }
 };
 
