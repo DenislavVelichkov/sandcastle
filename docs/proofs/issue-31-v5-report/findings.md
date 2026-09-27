@@ -1,0 +1,11 @@
+# Issue #31 v5 incomplete fixed study
+
+The owner authorized one isolated v5 run of the five-configuration, 40-slot study. Its manifest binds source commit `92c94dbc784d03aa2237b3fe9be0e93b191ca847` and has SHA-256 `81ded6f9a4fcfa5b544d8a19d30930216a59bc6d0a62808fba8b31fad8bc6b0d`. Calibration and protected preflight passed for all four historical cases before scoring.
+
+Eleven development slots started. Ten completed: five were accepted and five failed required review. The eleventh, `output-retry-1-0` with Luna Max, is **incomplete** because the candidate edited `README.md` outside its frozen `src` and `.changeset` scope. Nine development and all 20 held-out slots are unrun. No development selection, held-out comparison, final disposition, model ranking, or savings claim exists. Fixed Sol High remains selected.
+
+The shared budget recorded 8,555,957 active milliseconds (2:22:35.957). The same weekly account window moved from 33% to 35% used: an observed 2-percentage-point change, about 0.84 points per active hour. Readings resolve only to 1 point, and other account activity cannot be excluded. This is account-wide movement, not model-specific subscription consumption. All 11 attempted slots have complete attributable token coverage in the report, but the incomplete slot has no valid project outcome or comparable workflow cost. Credit equivalents remain separate from weekly account percentage.
+
+The [HTML](report.html), [JSON](report.json), [CSV](evaluations.csv), manifest, ledger, budget, calibration, fixture, accounting, and incomplete-slot records are byte-for-byte copies of the protected host files. The report's ledger hash is `7cf98c4b991657c3586059d63c7c30415279ab0543b0119da7c8788718175b5f`; its 40 JSON rows match the 40 planned slots and the CSV has 40 data rows. Report generation was passive and unmetered because the incomplete invocation retains its budget reservation. The controller has exited, and the retained v5 owner directory remains outside this repository.
+
+The owner subsequently revised the requested benchmark to use Sol xHigh, Astra Medium, and Luna Max with generic ticket inputs. V5's frozen evidence is historical and cannot be pooled into that new study. Issue #31 remains open until its revised scope is delivered and verified.

@@ -1,0 +1,865 @@
+{
+  "status": "passed",
+  "reason": null,
+  "first": {
+    "version": 1,
+    "revision": 31,
+    "projectId": "issue31-calibration",
+    "invocationId": "issue31-calibration",
+    "projectRoot": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/calibration",
+    "observedAt": "2026-09-27T12:59:53.363Z",
+    "lifecycle": "stopped",
+    "owner": {
+      "pid": 2514066,
+      "start": "20611553"
+    },
+    "processes": [
+      {
+        "pid": 2518343,
+        "start": "20612873"
+      },
+      {
+        "pid": 2521537,
+        "start": "20614242"
+      }
+    ],
+    "tasks": {
+      "calibration": {
+        "status": "paused",
+        "remaining": 1,
+        "reason": "Error: Workflow checkpoint stop requested"
+      }
+    },
+    "active": [],
+    "startedTasks": [
+      "calibration"
+    ],
+    "requests": [],
+    "responses": [],
+    "checksPassed": {},
+    "integrations": {},
+    "checkpoints": [],
+    "runtimeIdentity": "d63e4035e0c18a7a12f8edccbe48df890469c94a71c9f56e4ff8191e7b6937ae",
+    "targetHead": "be35bdd85d4c9d11185041669bfd7dc566aa1847",
+    "targetBranch": "main",
+    "selectedTasks": [
+      {
+        "id": "calibration",
+        "reference": "result.txt",
+        "state": "ready",
+        "dependencies": [],
+        "scope": [
+          "result.txt"
+        ],
+        "requiredRoles": [
+          "standards-review",
+          "specification-review"
+        ],
+        "requiredCapabilities": [
+          "checks",
+          "review",
+          "recovery"
+        ],
+        "prompt": "Replace result.txt with the single line ready. On the first turn, write the file, then sleep for 120 seconds before committing so the host can checkpoint the live session. After resuming, commit the change. Do not read files outside this repository."
+      }
+    ],
+    "baselineHeads": {
+      "calibration": "be35bdd85d4c9d11185041669bfd7dc566aa1847"
+    },
+    "evidence": {},
+    "sessions": {
+      "calibration": [
+        {
+          "eventId": "47a164e7-c4a0-4fbc-8d61-905a0c6f83e6",
+          "capturedAt": "2026-09-27T12:59:41.151Z",
+          "taskId": "calibration",
+          "role": "implementation",
+          "id": "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f",
+          "path": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/sessions/calibration/2026/09/27/rollout-2026-09-27T12-59-28-01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f.jsonl"
+        }
+      ]
+    },
+    "resources": {
+      "reservationId": "reservation-calibration",
+      "retained": true,
+      "scopes": {
+        "calibration": [
+          "result.txt"
+        ]
+      }
+    },
+    "allowances": {
+      "iterations": 2
+    },
+    "checkpoint": {
+      "id": "6b719456-741a-4732-af8e-5d8f6ebcf507",
+      "sha256": "6850467a86049ccafeb0884f00791ccb89262fc2fbdf4e57c797bec1dc9e2536"
+    },
+    "usage": {
+      "policyId": "issue31-fixed-v5",
+      "activity": "measurement",
+      "pilotLimits": {
+        "overallMs": 43200000,
+        "evaluations": 40,
+        "accountRisePercentPoints": 20
+      },
+      "runtimeIdentity": "d63e4035e0c18a7a12f8edccbe48df890469c94a71c9f56e4ff8191e7b6937ae",
+      "requested": {
+        "implementation": {
+          "model": "gpt-6-sol",
+          "effort": "high",
+          "serviceTier": "default"
+        },
+        "standards-review": {
+          "model": "gpt-6-sol",
+          "effort": "high",
+          "serviceTier": "default"
+        },
+        "specification-review": {
+          "model": "gpt-6-sol",
+          "effort": "high",
+          "serviceTier": "default"
+        }
+      },
+      "effective": null,
+      "observed": null,
+      "baseline": {
+        "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+        "observedAt": 1790513964153,
+        "denied": false,
+        "windows": {
+          "primary": {
+            "usedPercent": 33,
+            "resetsAt": 1791046690000
+          }
+        }
+      },
+      "guardBaseline": {
+        "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+        "observedAt": 1790513964153,
+        "denied": false,
+        "windows": {
+          "primary": {
+            "usedPercent": 33,
+            "resetsAt": 1791046690000
+          }
+        }
+      },
+      "latest": {
+        "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+        "observedAt": 1790513993083,
+        "denied": false,
+        "windows": {
+          "primary": {
+            "usedPercent": 33,
+            "resetsAt": 1791046690000
+          }
+        }
+      },
+      "accountHistory": [
+        {
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790513964153,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 33,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790513967376,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 33,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790513993083,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 33,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        }
+      ],
+      "resetContinuations": [],
+      "remaining": {
+        "calibration": {
+          "standards-review": 1,
+          "specification-review": 1,
+          "implementation": 1
+        }
+      },
+      "activeMs": 31405,
+      "activeUpdatedAt": 1790513993241,
+      "taskMs": {
+        "calibration": 28813
+      },
+      "roleMs": {
+        "calibration/implementation": 25753
+      },
+      "invocations": 1,
+      "tokens": {
+        "counters": {
+          "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f": {
+            "counterId": "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f",
+            "coverageId": "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f",
+            "sessionId": "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f",
+            "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/sessions/calibration/2026/09/27/rollout-2026-09-27T12-59-28-01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f.jsonl",
+            "usage": {
+              "inputTokens": 14620,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 0,
+              "outputTokens": 268
+            }
+          }
+        },
+        "deltas": {
+          "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f": {
+            "inputTokens": 14620,
+            "cacheCreationInputTokens": 0,
+            "cacheReadInputTokens": 0,
+            "outputTokens": 268
+          }
+        },
+        "estimates": {
+          "calibration/implementation/1": null
+        },
+        "unknown": [
+          "calibration/implementation/1"
+        ],
+        "invocations": {
+          "calibration/implementation/1": {
+            "taskId": "calibration",
+            "role": "implementation",
+            "sessionId": "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f",
+            "startedAt": 1790513967419,
+            "settledAt": 1790513993172,
+            "outcome": "failed",
+            "requiredSessionIds": [
+              "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f"
+            ],
+            "counterIds": [
+              "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f"
+            ],
+            "coverageComplete": false
+          }
+        },
+        "attributableTotal": null
+      }
+    },
+    "sourceRestoration": "verified",
+    "sessionRestoration": "verified"
+  },
+  "resumed": {
+    "version": 1,
+    "revision": 349,
+    "projectId": "issue31-calibration",
+    "invocationId": "issue31-calibration",
+    "projectRoot": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/calibration",
+    "observedAt": "2026-09-27T13:05:22.635Z",
+    "lifecycle": "stopped",
+    "owner": {
+      "pid": 2514066,
+      "start": "20611553"
+    },
+    "processes": [
+      {
+        "pid": 2597800,
+        "start": "20647173"
+      }
+    ],
+    "tasks": {
+      "calibration": {
+        "status": "accepted",
+        "remaining": 0
+      }
+    },
+    "active": [],
+    "startedTasks": [
+      "calibration"
+    ],
+    "requests": [],
+    "responses": [],
+    "checksPassed": {
+      "calibration": {
+        "candidate": "d893061b7cf2f316b866fd24a7826664fdf41663",
+        "check": {
+          "status": "passed",
+          "evidence": [
+            "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/calibration-state/grade-d893061b7cf2f316b866fd24a7826664fdf41663.json",
+            "standards-review:01a0e2f6-6e5c-7e83-a93a-ea72b75c8437:f6a000c85132bc2baa8773e21ea9b2e1d75bdd9294080cc2aed0606c29f66a17:d893061b7cf2f316b866fd24a7826664fdf41663",
+            "specification-review:01a0e2f7-8154-7310-888f-0ebcc26a58f1:973a696505ff303a42f09df947d916f23b799809cd6e7f27cecdbb51a74a613d:d893061b7cf2f316b866fd24a7826664fdf41663"
+          ]
+        }
+      }
+    },
+    "integrations": {},
+    "checkpoints": [],
+    "runtimeIdentity": "d63e4035e0c18a7a12f8edccbe48df890469c94a71c9f56e4ff8191e7b6937ae",
+    "targetHead": "be35bdd85d4c9d11185041669bfd7dc566aa1847",
+    "targetBranch": "main",
+    "selectedTasks": [
+      {
+        "id": "calibration",
+        "reference": "result.txt",
+        "state": "ready",
+        "dependencies": [],
+        "scope": [
+          "result.txt"
+        ],
+        "requiredRoles": [
+          "standards-review",
+          "specification-review"
+        ],
+        "requiredCapabilities": [
+          "checks",
+          "review",
+          "recovery"
+        ],
+        "prompt": "Replace result.txt with the single line ready. On the first turn, write the file, then sleep for 120 seconds before committing so the host can checkpoint the live session. After resuming, commit the change. Do not read files outside this repository."
+      }
+    ],
+    "baselineHeads": {
+      "calibration": "be35bdd85d4c9d11185041669bfd7dc566aa1847"
+    },
+    "evidence": {
+      "calibration": [
+        "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/calibration-state/grade-d893061b7cf2f316b866fd24a7826664fdf41663.json",
+        "standards-review:01a0e2f6-6e5c-7e83-a93a-ea72b75c8437:f6a000c85132bc2baa8773e21ea9b2e1d75bdd9294080cc2aed0606c29f66a17:d893061b7cf2f316b866fd24a7826664fdf41663",
+        "specification-review:01a0e2f7-8154-7310-888f-0ebcc26a58f1:973a696505ff303a42f09df947d916f23b799809cd6e7f27cecdbb51a74a613d:d893061b7cf2f316b866fd24a7826664fdf41663",
+        "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/calibration-state/grade-d893061b7cf2f316b866fd24a7826664fdf41663.json",
+        "standards-review:01a0e2f6-6e5c-7e83-a93a-ea72b75c8437:f6a000c85132bc2baa8773e21ea9b2e1d75bdd9294080cc2aed0606c29f66a17:d893061b7cf2f316b866fd24a7826664fdf41663",
+        "specification-review:01a0e2f7-8154-7310-888f-0ebcc26a58f1:973a696505ff303a42f09df947d916f23b799809cd6e7f27cecdbb51a74a613d:d893061b7cf2f316b866fd24a7826664fdf41663"
+      ]
+    },
+    "sessions": {
+      "calibration": [
+        {
+          "eventId": "47a164e7-c4a0-4fbc-8d61-905a0c6f83e6",
+          "capturedAt": "2026-09-27T12:59:41.151Z",
+          "taskId": "calibration",
+          "role": "implementation",
+          "id": "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f",
+          "path": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/sessions/calibration/2026/09/27/rollout-2026-09-27T12-59-28-01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f.jsonl"
+        },
+        {
+          "role": "implementation",
+          "id": "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f",
+          "path": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/sessions/calibration/2026/09/27/rollout-2026-09-27T12-59-28-01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f.jsonl"
+        },
+        {
+          "role": "standards-review",
+          "id": "01a0e2f6-6e5c-7e83-a93a-ea72b75c8437",
+          "path": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/sessions/calibration/2026/09/27/rollout-2026-09-27T13-03-16-01a0e2f6-6e5c-7e83-a93a-ea72b75c8437.jsonl"
+        },
+        {
+          "role": "specification-review",
+          "id": "01a0e2f7-8154-7310-888f-0ebcc26a58f1",
+          "path": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/sessions/calibration/2026/09/27/rollout-2026-09-27T13-04-26-01a0e2f7-8154-7310-888f-0ebcc26a58f1.jsonl"
+        }
+      ]
+    },
+    "resources": {
+      "reservationId": "reservation-calibration",
+      "retained": false,
+      "scopes": {
+        "calibration": [
+          "result.txt"
+        ]
+      }
+    },
+    "allowances": {
+      "iterations": 2
+    },
+    "checkpoint": {
+      "id": "6c977e2d-2c94-49df-81ba-56bef095383f",
+      "sha256": "c93dfa9e5fea48b8da5a56b7225ae7c04a30083956b0da1e2e6990fb170e8081"
+    },
+    "usage": {
+      "policyId": "issue31-fixed-v5",
+      "activity": "measurement",
+      "pilotLimits": {
+        "overallMs": 43200000,
+        "evaluations": 40,
+        "accountRisePercentPoints": 20
+      },
+      "runtimeIdentity": "d63e4035e0c18a7a12f8edccbe48df890469c94a71c9f56e4ff8191e7b6937ae",
+      "requested": {
+        "implementation": {
+          "model": "gpt-6-sol",
+          "effort": "high",
+          "serviceTier": "default"
+        },
+        "standards-review": {
+          "model": "gpt-6-sol",
+          "effort": "high",
+          "serviceTier": "default"
+        },
+        "specification-review": {
+          "model": "gpt-6-sol",
+          "effort": "high",
+          "serviceTier": "default"
+        }
+      },
+      "effective": null,
+      "observed": null,
+      "baseline": {
+        "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+        "observedAt": 1790513964153,
+        "denied": false,
+        "windows": {
+          "primary": {
+            "usedPercent": 33,
+            "resetsAt": 1791046690000
+          }
+        }
+      },
+      "guardBaseline": {
+        "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+        "observedAt": 1790513964153,
+        "denied": false,
+        "windows": {
+          "primary": {
+            "usedPercent": 33,
+            "resetsAt": 1791046690000
+          }
+        }
+      },
+      "latest": {
+        "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+        "observedAt": 1790514322207,
+        "denied": false,
+        "windows": {
+          "primary": {
+            "usedPercent": 34,
+            "resetsAt": 1791046690000
+          }
+        }
+      },
+      "accountHistory": [
+        {
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790513964153,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 33,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790513967376,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 33,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790513993083,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 33,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790513995283,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 33,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790513997737,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 33,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790514029008,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 33,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790514060237,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 33,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790514091500,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 33,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790514123356,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 33,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790514154570,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 34,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790514185707,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 34,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790514194924,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 34,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790514226148,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 34,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790514257435,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 34,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790514265317,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 34,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790514296566,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 34,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        },
+        {
+          "taskId": "calibration",
+          "reading": {
+            "accountId": "a89662db-edbc-4274-b9a1-04f5692d2d80",
+            "observedAt": 1790514322207,
+            "denied": false,
+            "windows": {
+              "primary": {
+                "usedPercent": 34,
+                "resetsAt": 1791046690000
+              }
+            }
+          }
+        }
+      ],
+      "resetContinuations": [],
+      "remaining": {
+        "calibration": {
+          "standards-review": 0,
+          "specification-review": 0,
+          "implementation": 0
+        }
+      },
+      "activeMs": 359058,
+      "activeUpdatedAt": 1790514322493,
+      "taskMs": {
+        "calibration": 355758
+      },
+      "roleMs": {
+        "calibration/implementation": 210190,
+        "calibration/standards-review": 57289,
+        "calibration/specification-review": 45090
+      },
+      "invocations": 4,
+      "tokens": {
+        "counters": {
+          "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f": {
+            "counterId": "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f",
+            "coverageId": "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f",
+            "sessionId": "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f",
+            "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/sessions/calibration/2026/09/27/rollout-2026-09-27T12-59-28-01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f.jsonl",
+            "usage": {
+              "inputTokens": 17370,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 121856,
+              "outputTokens": 1146
+            }
+          },
+          "01a0e2f6-6e5c-7e83-a93a-ea72b75c8437": {
+            "counterId": "01a0e2f6-6e5c-7e83-a93a-ea72b75c8437",
+            "coverageId": "01a0e2f6-6e5c-7e83-a93a-ea72b75c8437",
+            "sessionId": "01a0e2f6-6e5c-7e83-a93a-ea72b75c8437",
+            "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/sessions/calibration/2026/09/27/rollout-2026-09-27T13-03-16-01a0e2f6-6e5c-7e83-a93a-ea72b75c8437.jsonl",
+            "usage": {
+              "inputTokens": 18857,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 59008,
+              "outputTokens": 1685
+            }
+          },
+          "01a0e2f7-8154-7310-888f-0ebcc26a58f1": {
+            "counterId": "01a0e2f7-8154-7310-888f-0ebcc26a58f1",
+            "coverageId": "01a0e2f7-8154-7310-888f-0ebcc26a58f1",
+            "sessionId": "01a0e2f7-8154-7310-888f-0ebcc26a58f1",
+            "rawSource": "/home/dv8/Projects/context-engineering/mattpocock/sandcastle-issue31-run-v5/sessions/calibration/2026/09/27/rollout-2026-09-27T13-04-26-01a0e2f7-8154-7310-888f-0ebcc26a58f1.jsonl",
+            "usage": {
+              "inputTokens": 4270,
+              "cacheCreationInputTokens": 0,
+              "cacheReadInputTokens": 57856,
+              "outputTokens": 1546
+            }
+          }
+        },
+        "deltas": {
+          "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f": {
+            "inputTokens": 17370,
+            "cacheCreationInputTokens": 0,
+            "cacheReadInputTokens": 121856,
+            "outputTokens": 1146
+          },
+          "01a0e2f6-6e5c-7e83-a93a-ea72b75c8437": {
+            "inputTokens": 18857,
+            "cacheCreationInputTokens": 0,
+            "cacheReadInputTokens": 59008,
+            "outputTokens": 1685
+          },
+          "01a0e2f7-8154-7310-888f-0ebcc26a58f1": {
+            "inputTokens": 4270,
+            "cacheCreationInputTokens": 0,
+            "cacheReadInputTokens": 57856,
+            "outputTokens": 1546
+          }
+        },
+        "estimates": {
+          "calibration/implementation/1": null,
+          "calibration/implementation/2": {
+            "inputTokens": 17370,
+            "cacheCreationInputTokens": 0,
+            "cacheReadInputTokens": 121856,
+            "outputTokens": 1146
+          },
+          "calibration/standards-review/3": {
+            "inputTokens": 18857,
+            "cacheCreationInputTokens": 0,
+            "cacheReadInputTokens": 59008,
+            "outputTokens": 1685
+          },
+          "calibration/specification-review/4": {
+            "inputTokens": 4270,
+            "cacheCreationInputTokens": 0,
+            "cacheReadInputTokens": 57856,
+            "outputTokens": 1546
+          }
+        },
+        "unknown": [
+          "calibration/implementation/1"
+        ],
+        "invocations": {
+          "calibration/implementation/1": {
+            "taskId": "calibration",
+            "role": "implementation",
+            "sessionId": "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f",
+            "startedAt": 1790513967419,
+            "settledAt": 1790513993172,
+            "outcome": "failed",
+            "requiredSessionIds": [
+              "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f"
+            ],
+            "counterIds": [
+              "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f"
+            ],
+            "coverageComplete": false
+          },
+          "calibration/implementation/2": {
+            "taskId": "calibration",
+            "role": "implementation",
+            "sessionId": "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f",
+            "startedAt": 1790513997763,
+            "settledAt": 1790514182200,
+            "outcome": "completed",
+            "requiredSessionIds": [
+              "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f"
+            ],
+            "counterIds": [
+              "01a0e2f2-f6e2-78c0-a8ce-f312eabfc36f"
+            ],
+            "coverageComplete": true
+          },
+          "calibration/standards-review/3": {
+            "taskId": "calibration",
+            "role": "standards-review",
+            "sessionId": "01a0e2f6-6e5c-7e83-a93a-ea72b75c8437",
+            "startedAt": 1790514194963,
+            "settledAt": 1790514252252,
+            "outcome": "completed",
+            "requiredSessionIds": [
+              "01a0e2f6-6e5c-7e83-a93a-ea72b75c8437"
+            ],
+            "counterIds": [
+              "01a0e2f6-6e5c-7e83-a93a-ea72b75c8437"
+            ],
+            "coverageComplete": true
+          },
+          "calibration/specification-review/4": {
+            "taskId": "calibration",
+            "role": "specification-review",
+            "sessionId": "01a0e2f7-8154-7310-888f-0ebcc26a58f1",
+            "startedAt": 1790514265357,
+            "settledAt": 1790514310447,
+            "outcome": "completed",
+            "requiredSessionIds": [
+              "01a0e2f7-8154-7310-888f-0ebcc26a58f1"
+            ],
+            "counterIds": [
+              "01a0e2f7-8154-7310-888f-0ebcc26a58f1"
+            ],
+            "coverageComplete": true
+          }
+        },
+        "attributableTotal": null
+      }
+    },
+    "sourceRestoration": "verified",
+    "sessionRestoration": "verified"
+  }
+}
