@@ -4,17 +4,19 @@ This guide covers the maintained `@ai-hero/sandcastle` release and its independe
 
 ## Contents
 
-1. [Install the published release](#install-the-published-release)
-2. [Run the first library task](#run-the-first-library-task)
-3. [Verify the web fixture](#verify-the-web-fixture)
-4. [Use the daily controls](#use-the-daily-controls)
-5. [Check evidence and limits](#check-evidence-and-limits)
-6. [Run the bounded benchmark](#run-the-bounded-benchmark)
-7. [Review the routing decision](#review-the-routing-decision)
-8. [Open and interpret the benchmark report](#open-and-interpret-the-benchmark-report)
-9. [Prepare the native diagnostic](#prepare-the-native-diagnostic)
-10. [Change an installation](#change-an-installation)
-11. [Troubleshoot](#troubleshoot)
+- [Workflow user guide](#workflow-user-guide)
+  - [Contents](#contents)
+  - [Install the published release](#install-the-published-release)
+  - [Run the first library task](#run-the-first-library-task)
+  - [Verify the web fixture](#verify-the-web-fixture)
+  - [Use the daily controls](#use-the-daily-controls)
+  - [Check evidence and limits](#check-evidence-and-limits)
+  - [Run the bounded benchmark](#run-the-bounded-benchmark)
+  - [Review the routing decision](#review-the-routing-decision)
+  - [Open and interpret the benchmark report](#open-and-interpret-the-benchmark-report)
+  - [Prepare the native diagnostic](#prepare-the-native-diagnostic)
+  - [Change an installation](#change-an-installation)
+  - [Troubleshoot](#troubleshoot)
 
 ## Install the published release
 

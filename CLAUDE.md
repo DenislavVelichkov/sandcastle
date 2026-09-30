@@ -18,6 +18,7 @@ If Vitest fails before collecting tests with `/tmp` `ENOSPC`, check inode availa
 - **CRITICAL**: Issue #26's pilot may stop on a failed required review before using its second permitted implementation iteration. Retain that slot as incomplete; do not infer that another iteration ran or replace the frozen case.
 - **CRITICAL**: Fixed benchmark task scopes must include `.changeset`; historical candidates follow this repository's changeset rule, and a `src`-only scope rejects them after reviews.
 - In-flight benchmark activities reserve their maximum time in `budget.json`; the ledger replaces that reservation with elapsed time when the activity finishes.
+- **CRITICAL**: Retaining large test environments after each ticket/issue completion are taking too much disk space. Cleanup what is not used and keep your test environment lean!
 
 Check [./CONTEXT.md](./CONTEXT.md) for terminology questions.
 
