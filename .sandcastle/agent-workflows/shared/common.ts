@@ -52,12 +52,8 @@ export const writeText = (filename: string, value: string): void => {
   fs.writeFileSync(path.join(outputDir(), filename), value);
 };
 
-export const claudeAgent = () =>
-  sandcastle.claudeCode("claude-opus-4-8", {
-    env: {
-      CLAUDE_CODE_OAUTH_TOKEN: required("CLAUDE_CODE_OAUTH_TOKEN"),
-    },
-  });
+export const codexAgent = () =>
+  sandcastle.codex("gpt-6.1-sol", { effort: "high" });
 
 export const standardSchema = <T>(
   validate: (value: unknown) => T,

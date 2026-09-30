@@ -34,7 +34,10 @@ try {
     policy: {
       iterations: 2,
       roles: {
-        implementation: { agent: codex("gpt-6-sol"), sandbox: docker() },
+        implementation: {
+          agent: codex("gpt-6.1-sol", { effort: "high" }),
+          sandbox: docker(),
+        },
         review: { agent: codex("gpt-6-astra"), sandbox: docker() },
       },
     },
@@ -78,9 +81,11 @@ The bounded activities allow at most two implementation attempts per task and on
 
 `workflowStatus().usage` separates requested configuration, unavailable effective/observed proof, account windows, reservations, elapsed time, and tokens. `IterationResult.usage` is recorded under `tokens.estimates` as a nullable last snapshot. Captured Codex rollouts provide cumulative root and descendant counters by default. Forked or inherited history and compacted sessions remain unknown because their cumulative totals may include copied history or omit compaction work. Other hosts may supply `readTokenCounters()` when they can verify every required descendant. For `complete: true`, return `requiredSessionIds` containing the root and every descendant; give each counter its owning `sessionId`, `parentSessionId` for descendants, and a host-verifiable `rawSource`. Missing or inconsistent lineage remains unknown even if the callback claims completeness. An active invocation is unknown from the moment its allowance is reserved, so an interrupted process cannot expose a complete token total. `tokens.invocations` records settled roles, sessions, timestamps and failure outcomes. `tokens.deltas` includes verified same-counter increments; `tokens.attributableTotal` is null whenever any invocation or coverage is incomplete or overlapping. Checkpoints include captured host rollout sources. Unknown costs do not alone block a guarded fixed iteration. The workflow does not buy credits, redeem resets, switch to API billing, or infer savings from incomplete coverage.
 
+New guarded workflows may use `codex("gpt-6.1-sol", { effort: "high" })` for implementation, fallback and review roles. The original seven pilot configurations and `gpt-6-sol:high` library proof configuration remain accepted for replaying existing policies. Frozen studies retain their original model identities and rates.
+
 ## Bounded benchmark
 
-`sandcastle benchmark` now runs a generic ticket study. It accepts repeated `--ticket` file paths, GitHub issue URLs or issue numbers; without them it selects one tracked local ticket or open `Sandcastle`-labeled issue and prints the choice before model work. Its default arms are Sol xHigh, Astra Medium and Luna Max; repeated `--arm model:effort` permits any number of Codex arms. It freezes one slot per ticket and arm, runs each in a fresh Docker worktree and Codex session, and writes a host-only ledger and HTML, JSON and CSV report. `--check` supplies the project's independent check; without it, completed slots are unverified. `--max-new-slots 1` permits an operator to inspect account usage between calls. See the [operator guide](workflow-user-guide.md#run-the-bounded-benchmark).
+`sandcastle benchmark` now runs a generic ticket study. It accepts repeated `--ticket` file paths, GitHub issue URLs or issue numbers; without them it selects one tracked local ticket or open `Sandcastle`-labeled issue and prints the choice before model work. Its default arms are GPT-6.1 Sol High, Astra Medium and Luna Max; repeated `--arm model:effort` permits any number of Codex arms. It freezes one slot per ticket and arm, runs each in a fresh Docker worktree and Codex session, and writes a host-only ledger and HTML, JSON and CSV report. `--check` supplies the project's independent check; without it, completed slots are unverified. `--max-new-slots 1` permits an operator to inspect account usage between calls. See the [operator guide](workflow-user-guide.md#run-the-bounded-benchmark).
 
 The historical fixed follow-up study remains a separate API. It uses `makeFixedBenchmarkPlan(arms)` and `initializeFixedBenchmark(directory, policyId, arms)` with an explicit `gpt-6-sol:high` reference. With five arms, its frozen plan creates 40 slots: four historical cases times two repetitions times five arms, reversing arm order in repetition two. `freezeFixedBenchmarkSelection()` chooses a qualifying challenger from development slots before held-out work; `assessFixedBenchmark()` checks it against held-out slots. It retains Sol High unless all technical, project and review gates pass, token coverage is complete, verified credit-equivalent workflow cost saves at least 20%, and both repetitions have the same cheaper direction. The incomplete v3–v5 studies do not support a routing change.
 

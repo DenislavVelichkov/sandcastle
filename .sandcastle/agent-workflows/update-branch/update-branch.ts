@@ -6,7 +6,7 @@ import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import {
   asRecord,
   asString,
-  claudeAgent,
+  codexAgent,
   fail,
   required,
   sh,
@@ -66,7 +66,7 @@ try {
 
   const result = await runWithExtraction({
     name: `update-branch-pr-${PR_NUMBER}`,
-    agent: claudeAgent(),
+    agent: codexAgent(),
     sandbox: noSandbox(),
     logging: { type: "stdout" },
     promptFile: path.join(import.meta.dirname, "prompt.md"),
@@ -103,8 +103,7 @@ try {
 }
 
 function tryMerge():
-  | { status: "clean" }
-  | { status: "conflict"; conflicts: string[] } {
+  { status: "clean" } | { status: "conflict"; conflicts: string[] } {
   try {
     execFileSync("git", ["merge", `origin/${BASE_REF}`, "--no-edit"], {
       stdio: "inherit",

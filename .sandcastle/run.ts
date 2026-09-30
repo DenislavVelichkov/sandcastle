@@ -1,6 +1,17 @@
 import * as sandcastle from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
+const agent = sandcastle.codex("gpt-6.1-sol", { effort: "high" });
+const provider = docker({
+  mounts: [
+    {
+      hostPath: "~/.codex/auth.json",
+      sandboxPath: "/home/agent/.codex/auth.json",
+      readonly: true,
+    },
+  ],
+});
+
 const MAX_ITERATIONS = 10;
 const MAX_PARALLEL = 4;
 
@@ -9,9 +20,9 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
 
   // Phase 1: Plan — orchestrator agent analyzes issues and picks parallelizable work
   const plan = await sandcastle.run({
-    sandbox: docker(),
+    sandbox: provider,
     name: "Planner",
-    agent: sandcastle.claudeCode("claude-opus-4-8"),
+    agent,
     promptFile: "./.sandcastle/plan-prompt.md",
   });
 
@@ -59,7 +70,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
       await acquire();
       try {
         await using sandbox = await sandcastle.createSandbox({
-          sandbox: docker(),
+          sandbox: provider,
           branch: issue.branch,
           copyToWorktree: ["node_modules"],
           hooks: {
@@ -73,7 +84,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
 
         const result = await sandbox.run({
           name: "Implementer #" + issue.number,
-          agent: sandcastle.claudeCode("claude-opus-4-8"),
+          agent,
           promptFile: "./.sandcastle/implement-prompt.md",
           promptArgs: {
             TASK_ID: String(issue.number),
@@ -85,7 +96,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
         if (result.commits.length > 0) {
           await sandbox.run({
             name: "Reviewer #" + issue.number,
-            agent: sandcastle.claudeCode("claude-opus-4-8"),
+            agent,
             promptFile: "./.sandcastle/review-prompt.md",
             promptArgs: {
               TASK_ID: String(issue.number),
@@ -142,10 +153,10 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
 
   // Phase 3: Merge — one agent merges all branches together
   await sandcastle.run({
-    sandbox: docker(),
+    sandbox: provider,
     name: "Merger",
     maxIterations: 10,
-    agent: sandcastle.claudeCode("claude-opus-4-8"),
+    agent,
     promptFile: "./.sandcastle/merge-prompt.md",
     promptArgs: {
       BRANCHES: completedBranches.map((b) => `- ${b}`).join("\n"),

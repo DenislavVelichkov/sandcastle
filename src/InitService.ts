@@ -458,7 +458,7 @@ ANTHROPIC_API_KEY=`,
   {
     name: "codex",
     label: "Codex",
-    defaultModel: "gpt-5.4",
+    defaultModel: "gpt-6.1-sol",
     factoryImport: "codex",
     dockerfileTemplate: CODEX_DOCKERFILE,
     envExample: `# OpenAI API key
@@ -886,7 +886,9 @@ const rewriteMainTs = (
     );
     content = content.replace(
       factoryCallRe,
-      `${agent.factoryImport}("${model}")`,
+      agent.name === "codex"
+        ? `codex("${model}", { effort: "high" })`
+        : `${agent.factoryImport}("${model}")`,
     );
 
     // Replace the sandbox provider. Templates always use `docker` as the

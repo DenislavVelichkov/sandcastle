@@ -879,13 +879,16 @@ describe("InitService scaffold", () => {
 
   it("scaffolds main.mts with codex factory import when codex agent selected", async () => {
     const dir = await makeDir();
-    await runScaffold(dir, { agent: codexAgent, model: "gpt-5.4-mini" });
+    await runScaffold(dir, {
+      agent: codexAgent,
+      model: codexAgent.defaultModel,
+    });
 
     const mainTs = await readFile(
       join(dir, ".sandcastle", "main.mts"),
       "utf-8",
     );
-    expect(mainTs).toContain('codex("gpt-5.4-mini")');
+    expect(mainTs).toContain('codex("gpt-6.1-sol", { effort: "high" })');
     expect(mainTs).not.toContain("claudeCode");
   });
 

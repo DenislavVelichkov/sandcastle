@@ -1,5 +1,13 @@
 # @ai-hero/sandcastle
 
+## 0.12.0-dv8.24.0
+
+### Patch Changes
+
+- Default new Codex scaffolds, the local runner, GitHub agents and the first ticket benchmark arm to GPT-6.1 Sol with high reasoning. Interactive initialization selects Codex. GitHub agents require the `CODEX_AUTH_JSON` Actions secret.
+- Accept dotted model names, admit GPT-6.1 Sol High in guarded workflows, and honor explicit reasoning effort in interactive Codex sessions.
+- Include workflow recovery fixes since the previous maintained release, including account-window guards, verification-only continuation, requested rework and repaired-candidate resume.
+
 ## 0.12.0
 
 ### Minor Changes

@@ -1082,6 +1082,8 @@ export const codex = (
 
   buildInteractiveArgs({ prompt }: AgentCommandOptions): string[] {
     const args = ["codex", "--model", model];
+    if (options?.effort)
+      args.push("-c", `model_reasoning_effort="${options.effort}"`);
     if (prompt) args.push(prompt);
     return args;
   },

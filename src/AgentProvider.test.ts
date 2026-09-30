@@ -649,6 +649,30 @@ describe("pi factory", () => {
 // ---------------------------------------------------------------------------
 
 describe("codex factory", () => {
+  it("uses GPT-6.1 Sol High in print, resume and interactive commands", () => {
+    const provider = codex("gpt-6.1-sol", { effort: "high" });
+    expect(provider.codexConfiguration).toMatchObject({
+      model: "gpt-6.1-sol",
+      effort: "high",
+    });
+    for (const resumeSession of [undefined, "session-1"]) {
+      const { command } = provider.buildPrintCommand({
+        ...opts("test"),
+        resumeSession,
+      });
+      expect(command).toContain("-m 'gpt-6.1-sol'");
+      expect(command).toContain(`-c 'model_reasoning_effort="high"'`);
+    }
+    expect(provider.buildInteractiveArgs!(opts("test"))).toEqual([
+      "codex",
+      "--model",
+      "gpt-6.1-sol",
+      "-c",
+      'model_reasoning_effort="high"',
+      "test",
+    ]);
+  });
+
   it("returns a provider with name 'codex'", () => {
     const provider = codex("gpt-5.4-mini");
     expect(provider.name).toBe("codex");

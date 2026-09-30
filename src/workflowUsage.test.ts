@@ -69,6 +69,23 @@ it("admits only the seven named pilot implementation choices", () => {
   ).toThrow(/Sol High/);
 });
 
+it("admits GPT-6.1 Sol High without changing the historical pilot choices", () => {
+  for (const activity of ["library-proof", "pilot", "measurement"] as const)
+    for (const role of ["implementation", "implementation-fallback", "review"])
+      expect(() =>
+        validateActivityConfiguration(activity, role, {
+          model: "gpt-6.1-sol",
+          effort: "high",
+        }),
+      ).not.toThrow();
+  expect(() =>
+    validateActivityConfiguration("pilot", "implementation", {
+      model: "gpt-6.1-sol",
+      effort: "xhigh",
+    }),
+  ).toThrow(/gpt-6.1-sol\/high/);
+});
+
 it("rejects a role set that cannot fit the activity call allowance", () => {
   const now = Date.now();
   const reading: AccountObservation = {

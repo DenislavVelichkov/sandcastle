@@ -21,7 +21,7 @@ import { createSandbox } from "./createSandbox.js";
 import { defaultImageName, docker } from "./sandboxes/docker.js";
 
 export const defaultTicketBenchmarkArms = [
-  "gpt-6-sol:xhigh",
+  "gpt-6.1-sol:high",
   "gpt-6-astra:medium",
   "gpt-6-luna:max",
 ] as const;
@@ -125,7 +125,7 @@ const parseArms = (values: readonly string[]): Arm[] => {
   const arms = (values.length ? values : defaultTicketBenchmarkArms).map(
     (value) => {
       const [model, effort, extra] = value.split(":");
-      if (!model || !effort || extra || !/^[a-z0-9-]+$/.test(model))
+      if (!model || !effort || extra || !/^[a-z0-9.-]+$/.test(model))
         throw new Error(
           `Invalid benchmark arm: ${value}; expected model:effort`,
         );

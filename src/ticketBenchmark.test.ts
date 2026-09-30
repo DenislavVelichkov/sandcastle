@@ -37,7 +37,7 @@ it("discovers one ticket, runs each default arm once, and retains its report", a
       "tickets/stream.md",
     ]);
     expect(plan.arms.map((arm) => `${arm.model}:${arm.effort}`)).toEqual([
-      "gpt-6-sol:xhigh",
+      "gpt-6.1-sol:high",
       "gpt-6-astra:medium",
       "gpt-6-luna:max",
     ]);

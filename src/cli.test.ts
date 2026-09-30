@@ -64,6 +64,7 @@ describe("sandcastle CLI", () => {
       "ticket",
     );
     const arms = [
+      "gpt-6.1-sol:high",
       "gpt-6-luna:max",
       "gpt-6-sol:xhigh",
       "gpt-6-astra:medium",

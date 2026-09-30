@@ -214,19 +214,23 @@ export const validateActivityConfiguration = (
   role: string,
   requested: { model: string; effort: string },
 ): void => {
-  const fixed = requested.model === "gpt-6-sol" && requested.effort === "high";
+  const current =
+    requested.model === "gpt-6.1-sol" && requested.effort === "high";
+  const fixed =
+    current || (requested.model === "gpt-6-sol" && requested.effort === "high");
   if (activity === "library-proof" && !fixed)
     throw new Error("Library recovery proof requires Sol High for every role");
   if (
     (role === "implementation" || role === "implementation-fallback") &&
     activity !== "library-proof" &&
+    !current &&
     !pilotConfigurations.some(
       (item) =>
         item.model === requested.model && item.effort === requested.effort,
     )
   )
     throw new Error(
-      `Implementation configuration is outside the seven-policy pilot: ${requested.model}/${requested.effort}`,
+      `Implementation configuration must be gpt-6.1-sol/high or a seven-policy pilot choice: ${requested.model}/${requested.effort}`,
     );
 };
 
