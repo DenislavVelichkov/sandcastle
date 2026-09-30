@@ -1,5 +1,11 @@
 # @ai-hero/sandcastle
 
+## 0.12.0-dv8.25.0
+
+### Patch Changes
+
+- Keep GPT-6.1 Sol High defaults and existing authentication behavior while simplifying internal setup and configuration validation.
+
 ## 0.12.0-dv8.24.0
 
 ### Patch Changes
