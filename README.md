@@ -6,74 +6,108 @@
   </picture>
 </div>
 
-## What Is Sandcastle?
+# Sandcastle for Codex
 
-A TypeScript library for orchestrating AI coding agents in isolated sandboxes:
+I admire [Matt Pocock](https://github.com/mattpocock)'s work, especially [Sandcastle](https://github.com/mattpocock/sandcastle)'s composable TypeScript API for running coding agents in isolated environments. Thank you, Matt, for building and sharing it.
 
-1. You invoke agents with a single `sandcastle.run()`.
-2. Sandcastle handles sandboxing the agent with a configurable branch strategy.
-3. The commits made on the branches get merged back.
+The purpose of this fork is to make Sandcastle work with Codex for everyday development. Upstream already includes a Codex provider. This fork makes Codex the default agent and adds task workflows, recovery, and usage controls around it.
 
-Sandcastle is provider-agnostic — it ships with built-in providers for Docker, Podman, and Vercel, and you can create your own. Great for parallelizing multiple AFK agents, creating review pipelines, or even just orchestrating your own agents.
+- [What changed from upstream](#what-changed-from-upstream)
+- [Quick start with Codex](#quick-start-with-codex)
+- [API](#api)
+- [CLI commands](#cli-commands)
+- [Configuration](#configuration)
+- [Development](#development)
 
-For an existing project with its own task tracker and acceptance rules, use the opt-in [selected-task workflow](docs/workflow.md). It validates exact task references, dependencies, scopes, roles, and capabilities before running a fixed policy on a named-branch worktree.
-The workflow also supports [durable owner answers, checkpoint recovery, and accepted-candidate integration](docs/workflow.md) through host-only control operations. A verified stopped receipt is the safe-to-quit signal.
-Guarded durable runs can also [check worker model availability, account windows, and finite invocation allowances](docs/workflow.md#guarded-codex-usage) before and during dispatch.
-The [ticket benchmark command](docs/workflow-user-guide.md#run-the-bounded-benchmark) accepts ticket files or GitHub issues, discovers project tickets when none are given, and defaults to GPT-6.1 Sol High, Astra Medium, and Luna Max. It writes local HTML, JSON, and CSV evidence. The earlier fixed and adaptive study APIs remain documented in the [bounded benchmark reference](docs/workflow.md#bounded-benchmark).
-For release installation and daily operation, see the [workflow user guide](docs/workflow-user-guide.md).
+## What is Sandcastle?
 
-Interactive initialization selects Codex by default. Codex scaffolds, this repository's local runner and GitHub label-triggered agents use `gpt-6.1-sol` with `effort: "high"`. Configure the repository's `CODEX_AUTH_JSON` Actions secret with the contents of an authenticated Codex Home's `auth.json`; the workflows install Codex and write that file with owner-only permissions. The account must offer `gpt-6.1-sol` with high reasoning. The local Docker runner mounts `~/.codex/auth.json` read-only and needs its image rebuilt from `.sandcastle/Dockerfile`.
-The [routing decision](docs/workflow-user-guide.md#review-the-routing-decision) retains fixed Sol High. The incomplete studies support no adaptive activation or savings claim; the [capability evidence index](docs/workflow-evidence.md) records the limits and deterministic admission checks.
-Managed installations share a host installation lock with new-run admission, so a personal updater can defer changes while saved work remains unfinished.
+Sandcastle is a TypeScript library for orchestrating AI coding agents in isolated sandboxes. You provide an agent, a sandbox provider, and a prompt to `run()`. Sandcastle manages the environment, iterations, output, sessions, and commits. Your branch strategy determines whether those commits stay on a named branch or merge back to the host.
+
+Matt's original supplies the core APIs, Docker, Podman, and Vercel providers, custom providers, reusable sandboxes, worktrees, prompt templates, structured output, and session capture, resume, and fork. Those APIs remain available, along with Claude Code, Pi, Cursor, OpenCode, and Copilot providers.
+
+## What changed from upstream
+
+This comparison uses [upstream commit `e99f832`](https://github.com/mattpocock/sandcastle/commit/e99f832f26dc9d245c019a9ddd19fa5dee792427), the shared base of this fork. See the [source diff](https://github.com/DenislavVelichkov/sandcastle/compare/e99f832f26dc9d245c019a9ddd19fa5dee792427...4374de8) for the changes through September 30, 2026.
+
+| Area                     | Matt's original                                                                                                                   | This fork's changes                                                                                                                                                                                                                                                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex setup              | Codex is one of several providers, with `gpt-5.4` as its scaffold default. The quick start and repository agents use Claude Code. | Interactive init selects Codex. New Codex scaffolds, the local runner, and GitHub agents use `gpt-6.1-sol` with high reasoning. Interactive Codex sessions honor the requested effort.                                                                                                              |
+| Selected tasks           | `run()` and templates let callers define their orchestration.                                                                     | An opt-in [task workflow](docs/workflow.md) validates exact task references, dependencies, edit scopes, required review roles, and project capabilities before dispatch.                                                                                                                            |
+| Durable control          | Run results expose session resume and fork.                                                                                       | [Host controls](docs/workflow-user-guide.md#use-the-daily-controls) add persisted status, authenticated owner answers, verified checkpoints, recovery, explicit rework, and guarded integration of accepted commits. Completed roles can resume at project verification without another model call. |
+| Codex sessions and usage | Captures and restores provider sessions.                                                                                          | Captures and restores Codex descendant sessions, verifies counter lineage, and retains unknown token coverage. [Usage guards](docs/workflow.md#guarded-codex-usage) check worker models and account windows and preserve call and time allowances across recovery and account resets.               |
+| Benchmarks               | No ticket benchmark command.                                                                                                      | [Ticket benchmarks](docs/workflow-user-guide.md#run-the-bounded-benchmark) compare configurable Codex models in fresh Docker worktrees and export HTML, JSON, and CSV. Earlier fixed and adaptive study APIs retain their frozen evidence and admission rules.                                      |
+| Project proof            | Callers provide checks through scripts and hooks.                                                                                 | [Native proof](docs/workflow.md#project-owned-native-proof) reserves shared project devices and binds diagnostic results to source and capture hashes. Retained library, browser, and native proof reports document the tested configurations.                                                      |
+| Distribution and updates | Publishes `@ai-hero/sandcastle` with npm-based repository tooling.                                                                | Uses pnpm, publishes versioned fork archives with package identity receipts, and adds a [shared installation lock](docs/workflow.md#managed-installation-admission) so updates can account for unfinished runs.                                                                                     |
+| Errors and cleanup       | The core engine already uses Effect.                                                                                              | Durable execution and recovery use that runtime for resource ownership and cleanup. Initialization errors preserve their tags and identify failed file operations and paths.                                                                                                                        |
+
+The task workflow remains opt-in. Projects own their tracker, prompts, checks, approval route, and Git target. Use the [workflow API reference](docs/workflow.md) and [daily operating guide](docs/workflow-user-guide.md) when you need those controls.
+
+The [routing decision](docs/workflow-user-guide.md#review-the-routing-decision) retains fixed Sol High. The completed three-model pilot validates one ticket; the incomplete historical studies establish no model ranking, adaptive activation, or subscription savings. The [capability evidence index](docs/workflow-evidence.md) records the tested limits. Owner answers use a project-authenticated host route; Codex Desktop chat answer delivery and automatic app-close shutdown remain disabled.
 
 ## Prerequisites
 
-- [Git](https://git-scm.com/)
-- A sandbox provider — Sandcastle needs an isolated environment to run agents in. Built-in options:
-  - [Docker Desktop](https://www.docker.com/) — most common for local development
-  - [Podman](https://podman.io/) — rootless alternative to Docker
-  - [Vercel](https://vercel.com/) — cloud-based Firecracker microVMs via `@vercel/sandbox`
-  - Or [create your own](#custom-sandbox-providers) using `createBindMountSandboxProvider` or `createIsolatedSandboxProvider`
+- Node.js and [pnpm](https://pnpm.io/). This repository uses pnpm 11.19.0.
+- [Git](https://git-scm.com/) and a Git repository for the agent to edit.
+- An authenticated Codex CLI on the host and access to the model you select.
+- A sandbox provider. The quick start uses [Docker](https://www.docker.com/). [Podman](https://podman.io/), [Vercel](https://vercel.com/), and [custom providers](#custom-sandbox-providers) are also available.
 
-## Quick start
+## Quick start with Codex
 
-1. Install the package:
+1. Install this fork's [published `v0.12.0-dv8.25.0` archive](https://github.com/DenislavVelichkov/sandcastle/releases/tag/v0.12.0-dv8.25.0) and `tsx` in your project:
 
 ```bash
-pnpm add --save-dev @ai-hero/sandcastle
+pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.25.0/ai-hero-sandcastle-0.12.0-dv8.25.0.tgz tsx
 ```
 
-2. Run `pnpm exec sandcastle init`. This scaffolds a `.sandcastle` directory with all the files needed.
+The fork keeps the `@ai-hero/sandcastle` package name and import paths. Installing that name from the npm registry selects the upstream package. Use the fork archive and retain your lockfile to pin these changes.
+
+2. Initialize a blank Codex project and build its Docker image. Choose a built-in issue tracker when prompted. The custom tracker needs additional setup before it can run:
 
 ```bash
-pnpm exec sandcastle init
+pnpm exec sandcastle init --agent codex --sandbox docker --template blank --build-image true
 ```
 
-3. Edit `.sandcastle/.env` and fill in your default values for `CLAUDE_CODE_OAUTH_TOKEN` (run `claude setup-token` on your host to get one). To use an Anthropic API key instead, uncomment and fill in `ANTHROPIC_API_KEY`.
+3. Sign in to Codex on the host if needed. Copy the environment template and fill in any credentials your issue tracker requires:
 
 ```bash
+pnpm add --global @openai/codex
+codex login
 cp .sandcastle/.env.example .sandcastle/.env
 ```
 
-4. Run the `.sandcastle/main.ts` (or `main.mts`) file with `pnpm exec tsx`
-
-```bash
-pnpm exec tsx .sandcastle/main.ts
-```
+4. Edit `.sandcastle/prompt.md` with your task. Update the generated `.sandcastle/main.ts`, or `main.mts` for a project without `"type": "module"`, to mount your Codex authentication file:
 
 ```typescript
-// 3. Run the agent via the JS API
-import { run, claudeCode } from "@ai-hero/sandcastle";
+import { run, codex } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 await run({
-  agent: claudeCode("claude-opus-4-8"),
-  sandbox: docker(), // or podman(), vercel(), or your own provider
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
+  sandbox: docker({
+    mounts: [
+      {
+        hostPath: "~/.codex/auth.json",
+        sandboxPath: "/home/agent/.codex/auth.json",
+        readonly: true,
+      },
+    ],
+  }),
+  branchStrategy: { type: "branch", branch: "codex/first-task" },
   promptFile: ".sandcastle/prompt.md",
 });
 ```
 
-## Sandbox Providers
+If you use a custom Codex Home, set `hostPath` to its `auth.json`. This example writes commits to `codex/first-task` for review.
+
+5. Run the generated entry. Use its actual extension:
+
+```bash
+pnpm exec tsx .sandcastle/main.ts
+# For a main.mts scaffold:
+# pnpm exec tsx .sandcastle/main.mts
+```
+
+## Sandbox providers
 
 Sandcastle uses a `SandboxProvider` to create isolated environments. The `sandbox` option on `run()`, `interactive()`, and `createSandbox()` accepts any provider, including `noSandbox()` — opt in to running the agent directly on the host when container isolation is undesired. Built-in providers:
 
@@ -87,6 +121,7 @@ Sandcastle uses a `SandboxProvider` to create isolated environments. The `sandbo
 Worktree methods (`wt.run()`, `wt.interactive()`, `wt.createSandbox()`) accept the same providers as their top-level counterparts. `wt.interactive()` defaults to `noSandbox()` when no sandbox is specified.
 
 ```typescript
+import { run, interactive, codex } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 import { podman } from "@ai-hero/sandcastle/sandboxes/podman";
 import { vercel } from "@ai-hero/sandcastle/sandboxes/vercel";
@@ -94,7 +129,7 @@ import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 
 // Docker, Podman, and Vercel are interchangeable in run() and createSandbox():
 await run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   sandbox: docker(),
   prompt: "...",
 });
@@ -102,7 +137,7 @@ await run({
 // No-sandbox runs the agent directly on the host — accepted by run(),
 // createSandbox(), and interactive(). Skips container isolation entirely:
 await interactive({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   sandbox: noSandbox(),
   prompt: "...", // optional — omit to launch the TUI with no initial prompt
   cwd: "/path/to/other-repo", // optional — defaults to process.cwd()
@@ -113,14 +148,14 @@ You can also [create your own provider](#custom-sandbox-providers) using `create
 
 ## API
 
-Sandcastle exports a programmatic `run()` function for use in scripts, CI pipelines, or custom tooling. The examples below use `docker()`, but any `SandboxProvider` works in its place.
+Sandcastle exports a programmatic `run()` function for scripts, CI pipelines, and custom tooling. The examples below use Codex and assume you have built an image and configured sandbox authentication as in the quick start. Apply that authentication mount to each Docker or Podman provider you create. Any `SandboxProvider` can replace `docker()`.
 
 ```typescript
-import { run, claudeCode } from "@ai-hero/sandcastle";
+import { run, codex } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 const result = await run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   sandbox: docker(),
   promptFile: ".sandcastle/prompt.md",
 });
@@ -134,13 +169,13 @@ console.log(result.branch); // target branch name
 ### All options
 
 ```typescript
-import { run, claudeCode } from "@ai-hero/sandcastle";
+import { run, codex } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 const result = await run({
-  // Agent provider — required. Pass a model string to claudeCode().
+  // Agent provider — required. Pass a model string to codex().
   // Optional second arg for provider-specific options like effort level.
-  agent: claudeCode("claude-opus-4-8", { effort: "high" }),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
 
   // Sandbox provider — required. Any SandboxProvider works (docker, podman, vercel, or custom).
   // Provider-specific config (like imageName, mounts) lives inside the provider factory call.
@@ -268,7 +303,7 @@ console.log(result.commits); // array of { sha } for commits created
 console.log(result.branch); // target branch name
 ```
 
-### `createSandbox()` — reusable sandbox
+### Reusable sandboxes with `createSandbox()`
 
 Use `createSandbox()` when you need to run multiple agents (or multiple rounds of the same agent) inside a single sandbox. It creates the sandbox once, and you call `sandbox.run()` as many times as you need. This avoids repeated container startup costs and keeps all runs on the same branch.
 
@@ -277,7 +312,7 @@ Use `run()` instead when you only need a single one-shot invocation — it handl
 #### Basic single-run usage
 
 ```typescript
-import { createSandbox, claudeCode } from "@ai-hero/sandcastle";
+import { createSandbox, codex } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 await using sandbox = await createSandbox({
@@ -286,7 +321,7 @@ await using sandbox = await createSandbox({
 });
 
 const result = await sandbox.run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   prompt: "Fix issue #42 in this repo.",
 });
 
@@ -296,7 +331,7 @@ console.log(result.commits); // [{ sha: "abc123" }]
 #### Multi-run implement-then-review
 
 ```typescript
-import { createSandbox, claudeCode } from "@ai-hero/sandcastle";
+import { createSandbox, codex } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 await using sandbox = await createSandbox({
@@ -307,14 +342,14 @@ await using sandbox = await createSandbox({
 
 // Step 1: implement
 const implResult = await sandbox.run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   promptFile: ".sandcastle/implement.md",
   maxIterations: 5,
 });
 
 // Step 2: review on the same branch, same container
 const reviewResult = await sandbox.run({
-  agent: claudeCode("claude-sonnet-4-6"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   prompt: "Review the changes and fix any issues.",
 });
 ```
@@ -331,7 +366,7 @@ await using sandbox = await createSandbox({
 });
 
 await sandbox.run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   promptFile: ".sandcastle/implement.md",
   maxIterations: 5,
 });
@@ -343,7 +378,7 @@ if (tests.exitCode !== 0) {
 }
 
 await sandbox.run({
-  agent: claudeCode("claude-sonnet-4-6"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   prompt: "Review the changes and fix any issues.",
 });
 ```
@@ -395,7 +430,7 @@ if (closeResult.preservedWorktreePath) {
 
 | Option                     | Type               | Default                       | Description                                                                                                                          |
 | -------------------------- | ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `agent`                    | AgentProvider      | —                             | **Required.** Agent provider (e.g. `claudeCode("claude-opus-4-8")`)                                                                  |
+| `agent`                    | AgentProvider      | —                             | **Required.** Agent provider (e.g. `codex("gpt-6.1-sol", { effort: "high" })`)                                                       |
 | `prompt`                   | string             | —                             | Inline prompt (mutually exclusive with `promptFile`)                                                                                 |
 | `promptFile`               | string             | —                             | Path to prompt file (mutually exclusive with `prompt`)                                                                               |
 | `promptArgs`               | PromptArgs         | —                             | Key-value map for `{{KEY}}` placeholder substitution                                                                                 |
@@ -426,7 +461,7 @@ if (closeResult.preservedWorktreePath) {
 | ----------------------- | ------- | ------------------------------------------------------------------------ |
 | `preservedWorktreePath` | string? | Host path to the preserved worktree, set when it had uncommitted changes |
 
-### `createWorktree()` — independent worktree lifecycle
+### Independent worktrees with `createWorktree()`
 
 Use `createWorktree()` when you need a worktree (git worktree) as an independent, first-class concept — separate from any sandbox. This is useful when you want to run an interactive session first and then hand the same worktree to a sandboxed AFK agent.
 
@@ -435,7 +470,7 @@ Only `branch` and `merge-to-head` strategies are accepted; `head` is a compile-t
 Pass `cwd` to target a repo other than `process.cwd()`. Relative paths resolve against `process.cwd()`; absolute paths pass through. A `CwdError` is thrown if the path does not exist or is not a directory.
 
 ```typescript
-import { createWorktree } from "@ai-hero/sandcastle";
+import { createWorktree, codex } from "@ai-hero/sandcastle";
 
 await using wt = await createWorktree({
   branchStrategy: { type: "branch", branch: "agent/fix-42" },
@@ -448,13 +483,13 @@ console.log(wt.branch); // "agent/fix-42"
 
 // Run an interactive session in the worktree (defaults to noSandbox)
 await wt.interactive({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   prompt: "Explore the codebase and understand the bug.",
 });
 
 // Run an AFK agent in the worktree (sandbox is required)
 const result = await wt.run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   sandbox: docker({ imageName: "sandcastle:myrepo" }),
   prompt: "Fix issue #42.",
   maxIterations: 3,
@@ -557,7 +592,7 @@ With `branchStrategy: { type: "merge-to-head" }`, each `wt.run()` / `wt.interact
 
 ## How it works
 
-Sandcastle uses a **branch strategy** configured on the sandbox provider to control how the agent's changes relate to branches. There are three strategies:
+Sandcastle uses a `branchStrategy` option on `run()`, `interactive()`, or `createWorktree()` to control where the agent's commits land. There are three strategies:
 
 - **Head** (`{ type: "head" }`) — The agent writes directly to the host working directory. No worktree, no branch indirection. This is the default for bind-mount providers like `docker()`.
 - **Merge-to-head** (`{ type: "merge-to-head" }`) — Sandcastle creates a temporary branch in a git worktree. The agent works on the temp branch, and changes are merged back to HEAD when done. The temp branch is cleaned up after merge.
@@ -609,9 +644,12 @@ If any command exits with a non-zero code, the run fails immediately with an err
 Use `{{KEY}}` placeholders in your prompt to inject values from the `promptArgs` option. This is useful for reusing the same prompt file across multiple runs with different parameters.
 
 ```typescript
-import { run } from "@ai-hero/sandcastle";
+import { run, codex } from "@ai-hero/sandcastle";
+import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 await run({
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
+  sandbox: docker(),
   promptFile: "./my-prompt.md",
   promptArgs: { ISSUE_NUMBER: 42, PRIORITY: "high" },
 });
@@ -697,16 +735,16 @@ This is independent of `idleTimeoutSeconds`. They cover different phases: `idleT
 Use `Output.object()` to extract a typed, schema-validated JSON payload from the agent's stdout. The agent emits its answer inside an XML tag you specify, and Sandcastle parses, validates, and returns it on `result.output`. The schema can be any [Standard Schema](https://standardschema.dev) validator — the examples below use [Zod](https://zod.dev), but Valibot, ArkType, and others work identically. See [ADR 0010](docs/adr/0010-structured-output.md) for design rationale.
 
 ```ts
-import { run, Output, claudeCode } from "@ai-hero/sandcastle";
+import { run, Output, codex } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 import { z } from "zod";
 
 const result = await run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   sandbox: docker(),
   prompt: `Analyze the code, and output the result as JSON inside <result> tags.
     The result must match this schema:
-    { summary: string; score: string }
+    { summary: string; score: number }
   `,
   output: Output.object({
     tag: "result",
@@ -726,7 +764,7 @@ Pass `maxRetries` to have Sandcastle handle the retry loop for you. Each retry r
 
 ```ts
 const result = await run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   sandbox: docker(),
   prompt: "Analyze the code and emit JSON inside <result> tags.",
   output: Output.object({
@@ -775,7 +813,7 @@ Select a template during `sandcastle init` when prompted, or re-run init in a fr
 
 ### `sandcastle init`
 
-Scaffolds the `.sandcastle/` config directory and builds the container image. This is the first command you run in a new repo. You choose a sandbox provider (Docker or Podman) during init — selecting Podman writes a `Containerfile` instead of `Dockerfile` and uses `sandcastle podman build-image` for the build step.
+Scaffolds the `.sandcastle/` config directory and optionally builds the container image. Interactive init selects Codex by default. You choose a sandbox provider, Docker or Podman. Selecting Podman writes a `Containerfile` instead of `Dockerfile` and uses `sandcastle podman build-image` for the build step.
 
 Init detects your host package manager (npm, pnpm, yarn, or bun) from a `packageManager` field or lockfile, defaulting to pnpm. Templates whose `main` file imports a host dependency — the planner templates import [Zod](https://zod.dev) for their `<plan>` output schema — prompt you to install it with that package manager when it isn't already in your `package.json`, so the first `pnpm exec tsx .sandcastle/main.ts` doesn't fail with `ERR_MODULE_NOT_FOUND`.
 
@@ -783,23 +821,24 @@ Every interactive prompt has a paired `--flag` so the entire init can run non-in
 
 If initialization cannot read a template or write a scaffolded file, the error names the failed operation and path so you can fix the missing file or permissions.
 
-| Option                    | Required | Default                      | Description                                                                                                    |
-| ------------------------- | -------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `--image-name`            | No       | `sandcastle:<repo-dir-name>` | Docker image name                                                                                              |
-| `--agent`                 | No       | Interactive prompt           | Agent to use (`claude-code`, `pi`, `codex`, `cursor`, `opencode`, `copilot`)                                   |
-| `--model`                 | No       | Agent's default model        | Model to use (e.g. `claude-sonnet-4-6`). Defaults to agent's default                                           |
-| `--sandbox`               | No       | Interactive prompt           | Sandbox provider to use (`docker`, `podman`)                                                                   |
-| `--template`              | No       | Interactive prompt           | Template to scaffold (e.g. `blank`, `simple-loop`)                                                             |
-| `--issue-tracker`         | No       | Interactive prompt           | Issue tracker to use (`github-issues`, `beads`, `custom`)                                                      |
-| `--create-label`          | No       | Interactive prompt           | `true` / `false` — whether to create the `Sandcastle` GitHub label (only with `--issue-tracker github-issues`) |
-| `--build-image`           | No       | Interactive prompt           | `true` / `false` — whether to build the sandbox image now (silently ignored with `--issue-tracker custom`)     |
-| `--install-template-deps` | No       | Interactive prompt           | `true` / `false` — whether to install template host deps (e.g. `zod` for the planner templates)                |
+| Option                    | Required | Default                            | Description                                                                                                    |
+| ------------------------- | -------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `--image-name`            | No       | `sandcastle:<repo-dir-name>`       | Docker image name                                                                                              |
+| `--agent`                 | No       | Interactive prompt, Codex selected | Agent to use (`codex`, `claude-code`, `pi`, `cursor`, `opencode`, `copilot`)                                   |
+| `--model`                 | No       | Agent's default model              | Model to use, such as `gpt-6.1-sol` for Codex. New Codex scaffolds use high reasoning.                         |
+| `--sandbox`               | No       | Interactive prompt                 | Sandbox provider to use (`docker`, `podman`)                                                                   |
+| `--template`              | No       | Interactive prompt                 | Template to scaffold (e.g. `blank`, `simple-loop`)                                                             |
+| `--issue-tracker`         | No       | Interactive prompt                 | Issue tracker to use (`github-issues`, `beads`, `custom`)                                                      |
+| `--create-label`          | No       | Interactive prompt                 | `true` / `false` — whether to create the `Sandcastle` GitHub label (only with `--issue-tracker github-issues`) |
+| `--build-image`           | No       | Interactive prompt                 | `true` / `false` — whether to build the sandbox image now (silently ignored with `--issue-tracker custom`)     |
+| `--install-template-deps` | No       | Interactive prompt                 | `true` / `false` — whether to install template host deps (e.g. `zod` for the planner templates)                |
 
 Creates the following files:
 
 ```
 .sandcastle/
 ├── Dockerfile      # Sandbox environment (customize as needed)
+├── main.ts         # Entry, or main.mts without type: module
 ├── prompt.md       # Agent instructions
 ├── .env.example    # Token placeholders
 └── .gitignore      # Ignores .env, logs/
@@ -908,7 +947,7 @@ Pass `resumeSession` to `run()` to continue a prior Claude Code, Codex, or Pi co
 
 ```typescript
 const result = await run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   sandbox: docker(),
   prompt: "Continue where you left off",
   resumeSession: "abc-123-def",
@@ -946,7 +985,7 @@ Fork enables fan-out workflows where a single parent run is the starting point f
 
 ```typescript
 const parent = await run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   sandbox: docker(),
   prompt: "Read the codebase and summarise the data model",
 });
@@ -1016,8 +1055,9 @@ Both **agent providers** and **sandbox providers** accept an optional `env: Reco
 
 ```typescript
 await run({
-  agent: claudeCode("claude-opus-4-8", {
-    env: { ANTHROPIC_API_KEY: "sk-ant-..." },
+  agent: codex("gpt-6.1-sol", {
+    effort: "high",
+    env: { CODEX_HOME: "/home/agent/.codex" },
   }),
   sandbox: docker({
     env: { DOCKER_SPECIFIC_VAR: "value" },
@@ -1034,7 +1074,7 @@ await run({
 
 Environment variables are also resolved automatically from `.sandcastle/.env` and `process.env` — no need to pass them to the API. The required variables depend on the **agent provider** (see `sandcastle init` output for details).
 
-## Custom Sandbox Providers
+## Custom sandbox providers
 
 Sandcastle ships with built-in providers for Docker, Podman, and Vercel, but you can create your own. A sandbox provider tells Sandcastle how to execute commands in an isolated environment. There are two kinds:
 
@@ -1178,7 +1218,7 @@ import {
   type ExecResult,
 } from "@ai-hero/sandcastle";
 import { execFile, spawn } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -1275,7 +1315,7 @@ const tempDir = () =>
 
 ### Branch strategies
 
-A branch strategy controls where the agent's commits land. Configure it when constructing the provider:
+A branch strategy controls where the agent's commits land. Pass it as `branchStrategy` to `run()`, `interactive()`, or `createWorktree()`:
 
 | Strategy        | Behavior                                                                 | Bind-mount | Isolated  |
 | --------------- | ------------------------------------------------------------------------ | ---------- | --------- |
@@ -1289,27 +1329,25 @@ A branch strategy controls where the agent's commits land. Configure it when con
 - **`merge-to-head`** — safe default for automation. The agent works on a throwaway branch; if something goes wrong, HEAD is untouched. Use this for CI or unattended runs.
 - **`branch`** — when you want commits on a specific branch (e.g. for a PR). Pass `{ type: "branch", branch: "agent/fix-42" }`.
 
-Branch strategy is now configured on `run()`, not on the provider:
-
 ```typescript
-import { run, claudeCode } from "@ai-hero/sandcastle";
+import { run, codex } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 // head — direct write, bind-mount only (default for bind-mount providers)
 await run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   sandbox: docker(),
   prompt: "…",
 });
 // merge-to-head — temp branch, merge back (default for isolated providers)
 await run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   sandbox: tempDir(),
   prompt: "…",
 });
 // branch — explicit named branch
 await run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   sandbox: docker(),
   branchStrategy: { type: "branch", branch: "agent/fix-42" },
   prompt: "…",
@@ -1321,10 +1359,10 @@ await run({
 Pass your custom provider via the `sandbox` option — it works the same as the built-in `docker()` provider:
 
 ```typescript
-import { run, claudeCode } from "@ai-hero/sandcastle";
+import { run, codex } from "@ai-hero/sandcastle";
 
 const result = await run({
-  agent: claudeCode("claude-opus-4-8"),
+  agent: codex("gpt-6.1-sol", { effort: "high" }),
   sandbox: localProcess(), // your custom provider
   prompt: "Fix issue #42 in this repo.",
 });
@@ -1347,22 +1385,21 @@ All per-repo sandbox configuration lives in `.sandcastle/`. Run `sandcastle init
 
 ### Custom Dockerfile
 
-The `.sandcastle/Dockerfile` controls the sandbox environment. The default template installs:
+The `.sandcastle/Dockerfile` controls the sandbox environment. The Codex template installs:
 
-- **Node.js 22** (base image)
-- **git**, **curl**, **jq** (system dependencies)
-- **GitHub CLI** (`gh`)
-- **Claude Code CLI**
-- A non-root `agent` user (required — Claude runs as this user)
+- Node.js 22 and pnpm 11.19.0
+- `git`, `curl`, and `jq`
+- The selected issue tracker's tools, including `gh` for GitHub Issues
+- Codex CLI
+- A non-root `agent` user
 
-When customizing the Dockerfile, ensure you keep:
+When customizing the image, keep the `agent` user, Git, the selected agent CLI on `PATH`, and the tools your prompts require. Add your project's language runtimes and build tools as needed. Other agent selections install their own CLI.
 
-- A non-root user (the default `agent` user) for Claude to run as
-- `git` (required for commits and branch operations)
-- `gh` (required for issue fetching)
-- Claude Code CLI installed and on PATH
+### Repository automation
 
-Add your project-specific dependencies (e.g., language runtimes, build tools) to the Dockerfile as needed.
+This repository's `.sandcastle/run.ts` uses `gpt-6.1-sol` with high reasoning and mounts `~/.codex/auth.json` read-only. Rebuild its image with `pnpm exec sandcastle docker build-image` after changing `.sandcastle/Dockerfile`. `pnpm run sandcastle` builds the package and starts that runner.
+
+For the GitHub label-triggered agents, configure the `CODEX_AUTH_JSON` Actions secret with the contents of an authenticated Codex Home's `auth.json`. The workflows call `scripts/setup-codex.sh` to install Codex and write the file with owner-only permissions. That account must offer `gpt-6.1-sol` with high reasoning.
 
 ### Hooks
 
@@ -1406,6 +1443,8 @@ pnpm run build    # Bundle with tsup
 pnpm test         # Run tests with vitest
 pnpm run typecheck # Type-check
 ```
+
+Run the build before the full test suite, sequentially. The build clears `dist/`, which CLI tests execute.
 
 ## License
 
