@@ -50,7 +50,7 @@ export interface Ticket {
 export interface Arm {
   readonly model: string;
   readonly requested?: string;
-  readonly effort: NonNullable<CodexOptions["effort"]>;
+  readonly effort: string;
 }
 
 interface Slot {
@@ -387,7 +387,7 @@ const liveSlot = async (
       throw new Error("Model-call window expired before invocation");
     const result = await sandbox.run({
       agent: codex(arm.model, {
-        effort: arm.effort,
+        effort: arm.effort as NonNullable<CodexOptions["effort"]>,
         serviceTier: "default",
         sessionStorage: {
           hostSessionsDir: join(plan.output, "sessions", slot.id),

@@ -239,6 +239,58 @@ it("checks the actual worker catalog for both roles and preserves execution gaps
   );
 });
 
+it("accepts catalog-advertised effort values without a fixed host allowlist", async () => {
+  const { repo } = await project();
+  const plan = await planTicketBenchmark(
+    {
+      cwd: repo,
+      prompt: "Task",
+      arms: ["gpt-6.1-sol:ultra"],
+      preflight: true,
+      check: "true",
+    },
+    {
+      inspectWorker: async (request) => ({
+        ...worker(request),
+        models: [
+          {
+            model: "gpt-6.1-sol",
+            supportedReasoningEfforts: [
+              { reasoningEffort: "ultra" },
+              { reasoningEffort: "xhigh" },
+            ],
+          },
+        ],
+      }),
+    },
+  );
+  expect(plan.arms[0]?.effort).toBe("ultra");
+  expect(plan.readiness?.workerStatus).toBe("ready");
+});
+
+it("requires local prerequisite status metadata rather than a quoted completion example", async () => {
+  const { repo } = await project();
+  await writeFile(
+    join(repo, "prerequisite.md"),
+    "# Pending prerequisite\n\nExample:\n```yaml\nstatus: closed\n```\n",
+  );
+  await writeFile(
+    join(repo, "launch.json"),
+    JSON.stringify({ version: 1, prerequisites: ["prerequisite.md"] }),
+  );
+  const options = { cwd: repo, prompt: "Task", contract: "launch.json" };
+  expect(
+    (await planTicketBenchmark(options)).launch?.prerequisites[0]?.state,
+  ).toBe("unknown");
+  await writeFile(
+    join(repo, "prerequisite.md"),
+    "---\nstatus: completed\n---\n# Completed prerequisite\n",
+  );
+  expect(
+    (await planTicketBenchmark(options)).launch?.prerequisites[0]?.state,
+  ).toBe("satisfied");
+});
+
 it("reports environment, authentication, capacity, grading and dependency blockers without credential exports", async () => {
   const { repo } = await project();
   await writeFile(

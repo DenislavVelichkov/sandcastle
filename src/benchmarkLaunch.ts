@@ -213,10 +213,10 @@ export const parseBenchmarkIdentity = (value: string): Arm => {
   const normalized = raw.toLowerCase();
   const effort = ["extrahigh", "extra-high", "extra_high"].includes(normalized)
     ? "xhigh"
-    : normalized;
-  if (!["low", "medium", "high", "xhigh", "max"].includes(effort))
+    : raw;
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(effort))
     throw new Error(`Unsupported reasoning effort: ${raw}`);
-  return { model, effort: effort as Arm["effort"], requested: value };
+  return { model, effort, requested: value };
 };
 
 const issueIdentity = (
@@ -339,6 +339,14 @@ export const projectRepository = (
   }
 };
 
+const completedLocalTask = (text: string) => {
+  const metadata = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1];
+  return (
+    metadata !== undefined &&
+    /^status:\s*(closed|done|completed)\s*$/im.test(metadata)
+  );
+};
+
 export const resolveLaunchPrerequisites = async (
   cwd: string,
   sources: readonly string[],
@@ -360,8 +368,7 @@ export const resolveLaunchPrerequisites = async (
         if ((error as NodeJS.ErrnoException).code !== "ENOENT")
           throw new Error(`Prerequisite ${source} is inaccessible`);
       }
-      const satisfied =
-        text !== null && /^status:\s*(closed|done|completed)\s*$/im.test(text);
+      const satisfied = text !== null && completedLocalTask(text);
       prerequisites.push({
         source,
         state: satisfied ? "satisfied" : "unknown",
@@ -491,8 +498,7 @@ export const resolveBenchmarkInputs = async (
       }
       if (text !== null) {
         await scanPrerequisites(text, repository);
-        if (/^status:\s*(closed|done|completed)\s*$/im.test(text))
-          state = "CLOSED";
+        if (completedLocalTask(text)) state = "CLOSED";
       }
       title = text?.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? value;
     }

@@ -206,7 +206,7 @@ const observeWorker = async (request: WorkerRequest) => {
         const page = await rpc("model/list", {
           cursor,
           limit: 100,
-          includeHidden: false,
+          includeHidden: true,
         });
         if (!Array.isArray(page.data))
           throw new Error("Invalid worker catalog");

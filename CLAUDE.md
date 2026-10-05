@@ -49,3 +49,5 @@ that records either obligation. Only then create and validate an initiative
 manifest before drafting implementation tickets or editing production code. UI
 work without that comparison uses no manifest. See
 `docs/agents/visual-acceptance.md`.
+
+Benchmark reasoning efforts are open-ended worker catalog strings. Validate capabilities against model/list, including hidden entries, instead of a fixed effort allowlist.
