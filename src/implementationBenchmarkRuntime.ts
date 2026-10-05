@@ -21,13 +21,15 @@ const docker = (
       signal,
       stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
+    child.stdout!.setEncoding("utf8");
+    child.stderr!.setEncoding("utf8");
     let stdout = "";
     let stderr = "";
     let pending = "";
     let overflow = false;
-    child.stdout!.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-      pending += chunk.toString();
+    child.stdout!.on("data", (chunk: string) => {
+      stdout += chunk;
+      pending += chunk;
       const lines = pending.split("\n");
       pending = lines.pop()!;
       for (const line of lines) onLine?.(line);
@@ -36,8 +38,8 @@ const docker = (
         child.kill("SIGKILL");
       }
     });
-    child.stderr!.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
+    child.stderr!.on("data", (chunk: string) => {
+      stderr += chunk;
       if (stderr.length > 2 * 1024 * 1024) {
         overflow = true;
         child.kill("SIGKILL");

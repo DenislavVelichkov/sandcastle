@@ -6,6 +6,7 @@ import {
   open,
   readFile,
   readlink,
+  readdir,
   realpath,
   rename,
   rm,
@@ -359,6 +360,7 @@ export const runImplementationBenchmark = async (
       limitMs: allowances.overallMs,
       elapsedMs: 0,
       judgeReservedMs: 0,
+      cleanupReservedMs: allowances.cleanupMs,
       activeReservedMs: 0,
       maxCalls: allowances.maxCalls,
       implementationCalls: 0,
@@ -391,7 +393,8 @@ export const runImplementationBenchmark = async (
   const remaining = () =>
     allowances.overallMs -
     Math.max(0, now() - started) -
-    ledger.budget.judgeReservedMs;
+    ledger.budget.judgeReservedMs -
+    ledger.budget.cleanupReservedMs;
   const phase = async <T>(
     name: string,
     limitMs: number,
@@ -591,6 +594,10 @@ export const runImplementationBenchmark = async (
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+    if ((await readdir(plan.output)).some((name) => name !== "benchmark.lock"))
+      throw new Error(
+        "Benchmark output is not empty; select a fresh external directory",
+      );
     await save(join(plan.output, "manifest.json"), plan);
     await persist();
     initialized = true;
@@ -1185,6 +1192,7 @@ export const runImplementationBenchmark = async (
   } finally {
     try {
       if (initialized) {
+        ledger.budget.cleanupReservedMs = 0;
         try {
           await phase(
             "remove-protected-base",

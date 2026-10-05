@@ -624,16 +624,25 @@ export const freezeLaunch = async (input: {
     judge,
     contract: { config, frozen },
   } = input;
-  const baseFiles = git(cwd, "ls-tree", "-r", "--name-only", "-z", baseCommit)
+  const baseFiles = command(cwd, "git", [
+    "ls-tree",
+    "-r",
+    "--name-only",
+    "-z",
+    baseCommit,
+  ])
     .split("\0")
     .filter(Boolean);
   const modes = new Map(
-    git(cwd, "ls-tree", "-r", "-z", baseCommit)
+    command(cwd, "git", ["ls-tree", "-r", "-z", baseCommit])
       .split("\0")
       .filter(Boolean)
       .map((row) => {
-        const [metadata, path] = row.split("\t");
-        return [path!, metadata!.split(" ")[0]!] as const;
+        const separator = row.indexOf("\t");
+        return [
+          row.slice(separator + 1),
+          row.slice(0, separator).split(" ")[0]!,
+        ] as const;
       }),
   );
   const files = (names: string[]): FrozenFile[] =>

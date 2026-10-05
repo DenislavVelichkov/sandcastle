@@ -1,6 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -43,6 +50,9 @@ else {
   if (command.startsWith('codex exec')) {
     fs.writeFileSync(path.join(cwd, 'value.txt'), 'correct\\n');
     process.stdout.write(JSON.stringify({type:'turn.completed', usage:{input_tokens:20, cached_input_tokens:5, output_tokens:7}}) + '\\nprivate-token-sentinel\\n');
+    const unicode = Buffer.from('привет\\n');
+    process.stdout.write(unicode.subarray(0, 1));
+    setTimeout(() => process.stdout.write(unicode.subarray(1)), 50);
   } else {
     const checked = spawnSync('sh', ['-c', command], {cwd, encoding:'utf8'});
     process.stdout.write(checked.stdout || '');
@@ -76,6 +86,7 @@ else {
   );
   expect(stream).not.toContain("private-token-sentinel");
   expect(stream).toContain("[redacted]");
+  expect(stream).toContain("привет");
 });
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, {
@@ -86,7 +97,9 @@ const git = (cwd: string, ...args: string[]) =>
 const fixture = async (
   options: Partial<TicketBenchmarkOptions> = {},
   contract?: Partial<LaunchContract>,
-  frozenFiles: Readonly<Record<string, string>> = {},
+  frozenFiles: Readonly<
+    Record<string, string | { text: string; mode: number }>
+  > = {},
 ) => {
   const root = await mkdtemp(join(tmpdir(), "private-benchmark-"));
   roots.push(root);
@@ -102,9 +115,11 @@ const fixture = async (
     'test "$(cat value.txt)" = correct\n',
   );
   await writeFile(join(repo, ".gitignore"), "node_modules/\ndist/\n");
-  for (const [path, text] of Object.entries(frozenFiles)) {
+  for (const [path, value] of Object.entries(frozenFiles)) {
+    const file =
+      typeof value === "string" ? { text: value, mode: undefined } : value;
     await mkdir(dirname(join(repo, path)), { recursive: true });
-    await writeFile(join(repo, path), text);
+    await writeFile(join(repo, path), file.text, { mode: file.mode });
   }
   if (contract)
     await writeFile(
@@ -467,6 +482,27 @@ it("records failed owned cleanup, stops admission and refuses to overwrite an ex
   );
 });
 
+it("preserves pre-existing historical evidence in a selected output directory", async () => {
+  const { plan } = await fixture();
+  await mkdir(plan.output);
+  const bytes = '{ "historical": true, "receipt": "byte-bound" }';
+  await writeFile(join(plan.output, "manifest.json"), bytes);
+  let calls = 0;
+  await expect(
+    runTicketBenchmark(plan, undefined, 1, {
+      createRuntime: async () => {
+        calls++;
+        throw new Error("Must not start beside retained evidence");
+      },
+    }),
+  ).rejects.toThrow("not empty");
+  expect(calls).toBe(0);
+  expect(await readFile(join(plan.output, "manifest.json"), "utf8")).toBe(
+    bytes,
+  );
+  await expect(readFile(join(plan.output, "execution.json"))).rejects.toThrow();
+});
+
 it("checks and retains an unchanged but inspectable candidate instead of inferring failure from no commits", async () => {
   const { plan } = await fixture();
   await runTicketBenchmark(plan, undefined, 1, {
@@ -539,6 +575,25 @@ it("retains unrun slots when the remaining allowance cannot cover implementation
   );
   expect(ledger.unrun).toEqual(plan.slots.map((slot) => slot.id));
   expect(ledger.budget.judgeReservedMs).toBe(0);
+});
+
+it("holds final protected-base cleanup before admitting an otherwise exactly funded attempt", async () => {
+  const { plan } = await fixture({ maxMinutes: 42 });
+  const instant = Date.now();
+  let calls = 0;
+  const result = await runTicketBenchmark(plan, undefined, 1, {
+    now: () => instant,
+    createRuntime: async (request) => {
+      calls++;
+      return {
+        id: request.worktree,
+        exec: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+        stop: async () => {},
+      };
+    },
+  });
+  expect(result).toMatchObject({ status: "budget-exhausted", completed: 0 });
+  expect(calls).toBe(0);
 });
 
 it("grades sealed code with the frozen check script even when the worker replaces it", async () => {
@@ -677,10 +732,12 @@ it("keeps disposable checker installations and build output outside source appli
 });
 
 it("freezes and restores Unicode grading paths as actual Git paths", async () => {
-  const path = "tests/проверка.sh";
-  const { plan } = await fixture({}, undefined, { [path]: "frozen grader\n" });
+  const path = "tests/проверка\t.sh";
+  const { plan } = await fixture({}, undefined, {
+    [path]: { text: "frozen grader\n", mode: 0o755 },
+  });
   expect(plan.launch!.checking.files).toContainEqual(
-    expect.objectContaining({ path, text: "frozen grader\n" }),
+    expect.objectContaining({ path, text: "frozen grader\n", mode: "100755" }),
   );
   await runTicketBenchmark(plan, undefined, 1, {
     createRuntime: async (request) => ({
@@ -688,10 +745,14 @@ it("freezes and restores Unicode grading paths as actual Git paths", async () =>
       exec: async ({ command }) => {
         if (command.startsWith("codex exec"))
           await writeFile(join(request.worktree, path), "worker replacement\n");
-        else
+        else {
           expect(await readFile(join(request.worktree, path), "utf8")).toBe(
             "frozen grader\n",
           );
+          expect((await lstat(join(request.worktree, path))).mode & 0o100).toBe(
+            0o100,
+          );
+        }
         return { stdout: "", stderr: "", exitCode: 0 };
       },
       stop: async () => {},
