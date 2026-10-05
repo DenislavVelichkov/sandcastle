@@ -381,15 +381,35 @@ export async function prepare(c) {
         };
         // Preferences can retain enabled values in airplane mode. Verify the
         // live Wi-Fi service and every guest cellular radio instead.
-        return (
-          network.airplaneMode === "1" &&
-          /^Wifi is disabled$/m.test(network.wifi) &&
+        const cellularOff =
           network.cellular.length > 0 &&
           network.cellular.every(
             (line) =>
               line.includes("mVoiceRegState=3(POWER_OFF)") &&
               line.includes("mDataRegState=3(POWER_OFF)"),
-          )
+          );
+        // Android can restore its saved Wi-Fi choice during the asynchronous
+        // airplane-mode transition. Apply the offline policy after radio-off.
+        if (
+          network.airplaneMode === "1" &&
+          cellularOff &&
+          /^Wifi is enabled$/m.test(network.wifi)
+        ) {
+          await adb(
+            c,
+            s,
+            "shell",
+            "cmd",
+            "wifi",
+            "set-wifi-enabled",
+            "disabled",
+          );
+          return false;
+        }
+        return (
+          network.airplaneMode === "1" &&
+          cellularOff &&
+          /^Wifi is disabled$/m.test(network.wifi)
         );
       },
       "offline guest networking",
