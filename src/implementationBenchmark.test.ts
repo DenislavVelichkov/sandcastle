@@ -423,7 +423,13 @@ it("resumes only unrun slots with the original plan, identities, call counts and
   expect(calls).toBe(2);
 });
 
-it.each(["interrupted", "cancelled", "unresponsive-recovery"] as const)(
+it.each([
+  "interrupted",
+  "cancelled",
+  "unresponsive-recovery",
+  "failed-stop",
+  "cancel-recovery",
+] as const)(
   "recovers a killed controller with %s work without replaying completed calls",
   async (scenario) => {
     const { plan: original } = await fixture({}, { maxCalls: 6 });
@@ -459,13 +465,14 @@ await runTicketBenchmark(plan, undefined, Infinity, {
         calls++;
         await writeFile(join(request.worktree, 'value.txt'), 'partial\\n');
         onLine?.('{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}');
-        if (calls === 2) await new Promise(() => {});
+        if (calls === 2 && ${JSON.stringify(scenario)} !== 'failed-stop') await new Promise(() => {});
       }
       return {stdout:'', stderr:'', exitCode:0};
     },
-    stop: async () => {},
+    stop: async () => { if (${JSON.stringify(scenario)} === 'failed-stop' && calls === 2 && request.role === 'implementation') throw new Error('Owned runtime stop failed'); },
   }),
 });
+if (${JSON.stringify(scenario)} === 'failed-stop') await new Promise(() => { setInterval(() => {}, 1000); });
 `,
     );
     const child = spawn("pnpm", ["exec", "tsx", script], {
@@ -487,6 +494,10 @@ await runTicketBenchmark(plan, undefined, Infinity, {
           const { snapshot } = await readBenchmarkProgress(plan.output);
           expect(snapshot.counts.implementationCalls).toBe(2);
           expect(snapshot.attempts[1]?.usage?.outputTokens).toBe(3);
+          if (scenario === "failed-stop") {
+            expect(snapshot.status).toBe("cleanup-failed");
+            expect(snapshot.phase).toBe("idle");
+          }
           ownerPid = snapshot.owner!.pid;
         },
         { timeout: 4000 },
@@ -524,6 +535,39 @@ await runTicketBenchmark(plan, undefined, Infinity, {
       await writeFile(join(plan.output, "status.json"), '{"obsolete":true}');
       await appendFile(join(plan.output, "events.jsonl"), '{"torn":');
       let calls = 0;
+      if (scenario === "cancel-recovery") {
+        let entered!: () => void;
+        const ready = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const recovering = resumeTicketBenchmark(
+          plan.output,
+          {},
+          {
+            recoverResource: async (_resource, _runId, signal) => {
+              entered();
+              return new Promise<never>((_, reject) => {
+                signal.addEventListener("abort", () => reject(signal.reason), {
+                  once: true,
+                });
+              });
+            },
+            createRuntime: async () => {
+              calls++;
+              throw new Error("Must not dispatch");
+            },
+          },
+        );
+        await ready;
+        await cancelBenchmark(plan.output, "Cancel resource recovery");
+        await expect(recovering).rejects.toThrow("Cancel resource recovery");
+        const cancelled = await readBenchmarkProgress(plan.output);
+        expect(cancelled.snapshot.status).toBe("cancelled");
+        expect(cancelled.snapshot.cancellation?.reason).toBe(
+          "Cancel resource recovery",
+        );
+        expect(calls).toBe(0);
+      }
       if (scenario === "unresponsive-recovery") {
         await expect(
           resumeTicketBenchmark(
@@ -585,7 +629,13 @@ await runTicketBenchmark(plan, undefined, Infinity, {
       });
       expect(reconciled.length).toBeGreaterThan(0);
       expect(after.snapshot.attempts[0]?.status).toBe("judge-pending");
-      expect(after.snapshot.attempts[1]?.status).toBe(scenario);
+      expect(after.snapshot.attempts[1]?.status).toBe(
+        scenario === "failed-stop"
+          ? "cleanup-failed"
+          : scenario === "cancel-recovery"
+            ? "interrupted"
+            : scenario,
+      );
       if (scenario === "cancelled")
         expect(after.snapshot.cancellation?.reason).toBe(
           "Cancellation retained after controller loss",

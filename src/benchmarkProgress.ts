@@ -244,25 +244,41 @@ const commitRecord = async (directory: string, record: RecordEntry) => {
 const boundedRecovery = async (
   operation: () => Promise<void>,
   signal: AbortSignal,
+  graceMs: number,
 ) => {
   signal.throwIfAborted();
   let abort!: () => void;
   let settled = false;
+  let pending: Promise<void> | undefined;
   const interrupted = new Promise<never>((_, reject) => {
     abort = () =>
-      reject(new Error("Owned recovery exceeded its bounded allowance"));
+      reject(
+        new Error(
+          typeof signal.reason === "string"
+            ? signal.reason
+            : "Owned recovery exceeded its bounded allowance",
+        ),
+      );
     signal.addEventListener("abort", abort, { once: true });
   });
   try {
-    await Promise.race([
-      operation().finally(() => {
-        settled = true;
-      }),
-      interrupted,
-    ]);
+    pending = operation().finally(() => {
+      settled = true;
+    });
+    await Promise.race([pending, interrupted]);
   } catch (error) {
-    if (!settled && error && typeof error === "object")
-      Object.assign(error, { unsettled: true });
+    if (pending && signal.aborted && !settled) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        pending.catch(() => {}),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, graceMs);
+        }),
+      ]);
+      if (timer) clearTimeout(timer);
+      if (!settled && error && typeof error === "object")
+        Object.assign(error, { unsettled: true });
+    }
     throw error;
   } finally {
     signal.removeEventListener("abort", abort);
@@ -416,6 +432,27 @@ const readCancellation = async (
     throw error;
   }
 };
+const signalCancellationReason = (signal: AbortSignal) =>
+  typeof signal.reason === "string" && signal.reason.trim()
+    ? signal.reason.slice(0, 2048)
+    : "Execution signal requested cancellation";
+const ownerCancellation = async (
+  directory: string,
+  runId: string,
+  ownerToken: string,
+  now: () => number,
+  signal?: AbortSignal,
+) => {
+  if (signal?.aborted)
+    await onceJson(join(directory, `cancel-${ownerToken}.json`), {
+      version: 1,
+      runId,
+      ownerToken,
+      at: new Date(now()).toISOString(),
+      reason: signalCancellationReason(signal),
+    } satisfies BenchmarkCancellation);
+  return readCancellation(directory, runId, ownerToken);
+};
 
 /** Passive reads never acquire execution ownership or dispatch worker work. */
 export const readBenchmarkProgress = async (
@@ -437,12 +474,9 @@ export const readBenchmarkProgress = async (
   const { latest, events } = await records(directory, after, limit);
   if (after > latest.event.sequence)
     throw new Error("Progress cursor is ahead of this run");
-  const request = latest.snapshot.owner
-    ? await readCancellation(
-        directory,
-        latest.event.runId,
-        latest.snapshot.owner.token,
-      )
+  const controlOwner = latest.snapshot.recoveryOwner ?? latest.snapshot.owner;
+  const request = controlOwner
+    ? await readCancellation(directory, latest.event.runId, controlOwner.token)
     : null;
   const pendingCancellation =
     request?.ownerToken !== latest.snapshot.cancellation?.ownerToken
@@ -470,7 +504,12 @@ export async function* watchBenchmarkProgress(
     const progress = await readBenchmarkProgress(directory, { after });
     if (progress.events.length || after === 0) yield progress;
     after = progress.cursor;
-    if (!progress.hasMore && !progress.snapshot.owner) return;
+    if (
+      !progress.hasMore &&
+      !progress.snapshot.owner &&
+      !progress.snapshot.recoveryOwner
+    )
+      return;
     if (progress.hasMore) continue;
     await new Promise<void>((accept) => {
       const done = () => {
@@ -549,21 +588,22 @@ export const cancelBenchmark = async (
       "Cancellation requires a reason of at most 2048 characters",
     );
   const { snapshot } = await readBenchmarkProgress(directory);
-  if (!snapshot.owner)
+  const controlOwner = snapshot.recoveryOwner ?? snapshot.owner;
+  if (!controlOwner)
     throw new Error(
       "Benchmark has no active execution owner; inspect status before recovery",
     );
   const existing = await readCancellation(
     directory,
     snapshot.runId,
-    snapshot.owner.token,
+    controlOwner.token,
   );
   if (existing) return existing;
-  const path = join(directory, `cancel-${snapshot.owner.token}.json`);
+  const path = join(directory, `cancel-${controlOwner.token}.json`);
   const request: BenchmarkCancellation = {
     version: 1,
     runId: snapshot.runId,
-    ownerToken: snapshot.owner.token,
+    ownerToken: controlOwner.token,
     at: new Date().toISOString(),
     reason,
   };
@@ -571,7 +611,7 @@ export const cancelBenchmark = async (
   return (await readCancellation(
     directory,
     snapshot.runId,
-    snapshot.owner.token,
+    controlOwner.token,
   ))!;
 };
 
@@ -615,6 +655,28 @@ export const openBenchmarkProgress = async (
     await claimRecovery(plan.output, ownership);
     let reconciling = false;
     let retainRecoveryOwner = false;
+    let recoveryRequest: BenchmarkCancellation | null = null;
+    const recoveryCancellation = new AbortController();
+    const recoverySignal = options.signal
+      ? AbortSignal.any([options.signal, recoveryCancellation.signal])
+      : recoveryCancellation.signal;
+    let recoveryTimer: ReturnType<typeof setInterval> | undefined;
+    let recoveryPoll: Promise<void> | undefined;
+    const checkRecoveryCancellation = async () => {
+      if (recoveryRequest) return;
+      const request = await ownerCancellation(
+        plan.output,
+        execution.runId,
+        ownership.token,
+        options.now,
+        options.signal,
+      );
+      if (request && !recoveryRequest) {
+        recoveryRequest = request;
+        execution.reason = request.reason;
+        recoveryCancellation.abort(request.reason);
+      }
+    };
     const checkpoint = async (kind: string, finished = false) => {
       const at = new Date(options.now()).toISOString();
       execution.budget.elapsedMs = Math.max(
@@ -643,7 +705,10 @@ export const openBenchmarkProgress = async (
           status: saved.status,
           phase: "cleanup",
           controllerHeartbeat: at,
+          owner:
+            kind === "recovery-finished" ? ownership : previous!.snapshot.owner,
           recoveryOwner: finished ? null : ownership,
+          cancellation: recoveryRequest ?? previous!.snapshot.cancellation,
         },
       };
       await commitRecord(plan.output, record);
@@ -722,8 +787,24 @@ export const openBenchmarkProgress = async (
       reconciling = true;
       execution.status = "recovering";
       await checkpoint("recovery-started");
+      await checkRecoveryCancellation();
+      recoverySignal.throwIfAborted();
+      recoveryTimer = setInterval(() => {
+        if (recoveryPoll) return;
+        recoveryPoll = checkRecoveryCancellation()
+          .catch((error) => {
+            recoveryCancellation.abort(error);
+          })
+          .finally(() => {
+            recoveryPoll = undefined;
+          });
+      }, 100);
+      recoveryTimer.unref();
       const cleanupStarted = Date.now();
-      const signal = AbortSignal.timeout(plan.launch!.allowances.cleanupMs);
+      const signal = AbortSignal.any([
+        AbortSignal.timeout(plan.launch!.allowances.cleanupMs),
+        recoverySignal,
+      ]);
       for (const resource of execution.resources
         .filter(
           (item) => item.status !== "released" && item.kind !== "directory",
@@ -737,6 +818,7 @@ export const openBenchmarkProgress = async (
                 reconcileBenchmarkDocker(item, runId, signal))
             )(resource, execution.runId, signal),
           signal,
+          plan.launch!.allowances.cleanupMs,
         );
         signal.throwIfAborted();
         resource.status = "released";
@@ -744,21 +826,33 @@ export const openBenchmarkProgress = async (
       }
       const cleanupRemainingMs =
         plan.launch!.allowances.cleanupMs - (Date.now() - cleanupStarted);
-      const captureSignal = AbortSignal.timeout(plan.launch!.allowances.sealMs);
+      const captureSignal = AbortSignal.any([
+        AbortSignal.timeout(plan.launch!.allowances.sealMs),
+        recoverySignal,
+      ]);
       for (const attempt of execution.attempts.filter(
         (attempt) =>
-          !attempt.finishedAt && attempt.implementation && !attempt.candidate,
+          attempt.implementation &&
+          !attempt.candidate &&
+          execution.resources.some(
+            (resource) =>
+              resource.kind === "directory" &&
+              resource.attemptId === attempt.id &&
+              resource.status !== "released",
+          ),
       )) {
         if (options.sealInterrupted)
           await boundedRecovery(
             () => options.sealInterrupted!(attempt, captureSignal),
             captureSignal,
+            plan.launch!.allowances.cleanupMs,
           );
         await checkpoint("interrupted-evidence-sealed");
       }
-      const directorySignal = AbortSignal.timeout(
-        Math.max(1, cleanupRemainingMs),
-      );
+      const directorySignal = AbortSignal.any([
+        AbortSignal.timeout(Math.max(1, cleanupRemainingMs)),
+        recoverySignal,
+      ]);
       for (const resource of execution.resources
         .filter(
           (item) => item.status !== "released" && item.kind === "directory",
@@ -788,19 +882,26 @@ export const openBenchmarkProgress = async (
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
-        await boundedRecovery(async () => {
-          await rm(resource.id, { recursive: true, force: true });
-          try {
-            await lstat(resource.id);
-            throw new Error("Owned directory removal was not verified");
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-          }
-        }, directorySignal);
+        await boundedRecovery(
+          async () => {
+            await rm(resource.id, { recursive: true, force: true });
+            try {
+              await lstat(resource.id);
+              throw new Error("Owned directory removal was not verified");
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+                throw error;
+            }
+          },
+          directorySignal,
+          plan.launch!.allowances.cleanupMs,
+        );
         directorySignal.throwIfAborted();
         resource.status = "released";
         await checkpoint("resource-reconciled");
       }
+      await checkRecoveryCancellation();
+      recoverySignal.throwIfAborted();
       for (const attempt of execution.attempts) {
         if (!attempt.finishedAt) {
           attempt.status = priorCancellation ? "cancelled" : "interrupted";
@@ -845,13 +946,18 @@ export const openBenchmarkProgress = async (
         (error as { unsettled?: boolean })?.unsettled,
       );
       if (reconciling) {
-        execution.status = "recovery-required";
-        execution.reason =
-          "Resource reconciliation or interrupted candidate capture failed; no replacement execution was dispatched";
+        await checkRecoveryCancellation();
+        execution.status = recoveryRequest ? "cancelled" : "recovery-required";
+        execution.reason = recoveryRequest
+          ? (recoveryRequest as BenchmarkCancellation).reason
+          : "Resource reconciliation or interrupted candidate capture failed; no replacement execution was dispatched";
+        if (recoveryRequest) await checkpoint("cancellation-requested");
         await checkpoint("recovery-stopped", !retainRecoveryOwner);
       }
       throw error;
     } finally {
+      if (recoveryTimer) clearInterval(recoveryTimer);
+      await recoveryPoll;
       if (!retainRecoveryOwner)
         await rm(join(plan.output, "benchmark-recovery.lock"), {
           recursive: true,
@@ -948,30 +1054,13 @@ export const openBenchmarkProgress = async (
   };
   const checkCancellation = async () => {
     if (cancellationHandled) return;
-    const path = join(plan.output, `cancel-${ownership.token}.json`);
-    if (options.signal?.aborted) {
-      const reason =
-        typeof options.signal.reason === "string"
-          ? options.signal.reason
-          : "Execution signal requested cancellation";
-      try {
-        await readFile(path);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        await onceJson(path, {
-          version: 1,
-          runId: execution.runId,
-          ownerToken: ownership.token,
-          at: new Date(options.now()).toISOString(),
-          reason: reason.slice(0, 2048),
-        } satisfies BenchmarkCancellation);
-      }
-    }
     try {
-      const request = await readCancellation(
+      const request = await ownerCancellation(
         plan.output,
         execution.runId,
         ownership.token,
+        options.now,
+        options.signal,
       );
       if (cancellationHandled || !request) return;
       cancellationRequest = request;

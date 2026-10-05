@@ -452,7 +452,7 @@ export const runImplementationBenchmark = async (
         join(root, "controller-auth", "auth.json"),
         join(root, "implementation", "home", ".codex", "auth.json"),
       ]);
-      const evidenceId = attempt.retryOf ? attempt.id : attempt.slotId;
+      const evidenceId = `${attempt.id}-recovered-${randomUUID()}`;
       const sessions = await captureSessions(
         root,
         plan.output,
@@ -463,7 +463,7 @@ export const runImplementationBenchmark = async (
       Object.assign(attempt.implementation!, sessions);
       attempt.candidate = await seal(
         plan,
-        `${attempt.id}-recovered-${randomUUID()}`,
+        evidenceId,
         join(root, "implementation", "worktree"),
         join(plan.output, "protected", "storage.git"),
         redact,
@@ -1404,23 +1404,34 @@ export const runImplementationBenchmark = async (
     try {
       if (initialized) {
         ledger.budget.cleanupReservedMs = 0;
-        try {
-          await phase(
-            "remove-protected-base",
-            allowances.cleanupMs,
-            ledger.phases,
-            () =>
-              rm(join(plan.output, "protected"), {
-                recursive: true,
-                force: true,
-              }),
-            true,
-          );
-          await progress.releaseResource(join(plan.output, "protected"));
-        } catch {
+        const retainBase = attempts.some(
+          (attempt) =>
+            attempt.implementation &&
+            !attempt.candidate &&
+            attempt.cleanup.status === "failed",
+        );
+        if (retainBase) {
           ledger.cleanup.status = "failed";
           ledger.cleanup.resources.push(join(plan.output, "protected"));
-        }
+          await persist("protected-base-retained", "cleanup");
+        } else
+          try {
+            await phase(
+              "remove-protected-base",
+              allowances.cleanupMs,
+              ledger.phases,
+              () =>
+                rm(join(plan.output, "protected"), {
+                  recursive: true,
+                  force: true,
+                }),
+              true,
+            );
+            await progress.releaseResource(join(plan.output, "protected"));
+          } catch {
+            ledger.cleanup.status = "failed";
+            ledger.cleanup.resources.push(join(plan.output, "protected"));
+          }
         if (ledger.cleanup.status === "failed")
           ledger.status = "cleanup-failed";
         await report();
