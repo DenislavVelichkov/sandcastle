@@ -1334,16 +1334,10 @@ export const runImplementationBenchmark = async (
   };
   let initialized = false;
   const report = async () => {
-    await persist("report", "report-generation");
     await writeImplementationBenchmarkReport({
       directory: plan.output,
       outputDirectory: plan.output,
     });
-    return {
-      output: plan.output,
-      status: ledger.status,
-      completed: attempts.length,
-    };
   };
   try {
     if (!dependencies.resume)
@@ -2179,10 +2173,10 @@ export const runImplementationBenchmark = async (
           }
         if (ledger.cleanup.status === "failed")
           ledger.status = "cleanup-failed";
-        await report();
+        await persist("report", "report-generation");
       }
     } finally {
-      await progress.close();
+      await progress.close(initialized ? report : undefined);
     }
   }
   return {

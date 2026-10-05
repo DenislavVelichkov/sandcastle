@@ -345,11 +345,21 @@ export const writeImplementationBenchmarkReport = async (input: {
   const report = await readReport(input);
   const rows = report.rows;
   const jsonText = `${JSON.stringify(report, null, 2)}\n`;
-  const fields = Object.keys(rows[0] ?? { slotId: null });
+  const bindings = {
+    manifestSha256: report.identities.manifestSha256,
+    ledgerSha256: report.identities.ledgerSha256,
+    planId: report.identities.planId,
+    runId: report.identities.runId,
+    graderProtocol: report.identities.grader,
+    generatorVersion: report.identities.generator.version,
+    generatorSha256: report.identities.generator.sha256,
+  };
+  const csvRows = rows.map((row) => ({ ...row, ...bindings }));
+  const fields = Object.keys(csvRows[0] ?? { slotId: null, ...bindings });
   const csvText =
     [
       fields.map(csvCell).join(","),
-      ...rows.map((row) =>
+      ...csvRows.map((row) =>
         fields
           .map((field) => csvCell(row[field as keyof typeof row]))
           .join(","),

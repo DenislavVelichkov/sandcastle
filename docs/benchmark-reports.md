@@ -160,7 +160,8 @@ API-equivalent dollars are not an actual bill.
 JSON preserves the frozen plan, execution records, assessments, applicability
 decisions, raw usage, valuation inputs, assumptions and report rows. Manifest,
 ledger, candidate, assessment, grader protocol, rate-card and generator identities
-bind the snapshot. CSV contains every scheduled slot plus linked retries, with
-explicit states and empty unknown values. It quotes text and protects leading
+bind the snapshot. CSV repeats the manifest, ledger, grader and generator
+bindings on every scheduled slot and linked retry, with explicit states and
+empty unknown values. It quotes text and protects leading
 spreadsheet formula characters. JSON retains the original text. Embedded
 downloads contain the same evidence as the generated files.

@@ -1223,6 +1223,12 @@ it("regenerates an offline judge-score report and exports without changing retai
   const sources = await Promise.all(
     sourcePaths.map((path) => readFile(join(plan.output, path), "utf8")),
   );
+  const automatic = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  expect(automatic.identities.ledgerSha256).toBe(
+    createHash("sha256").update(sources[1]!).digest("hex"),
+  );
   const files = await writeBenchmarkReport({
     directory: plan.output,
     outputDirectory: join(plan.output, "regenerated"),
@@ -1525,6 +1531,17 @@ it("renders accessible point details and escapes hostile task and judge text in 
   const csv = await readFile(join(plan.output, "evaluations.csv"), "utf8");
   expect(csv).toContain("\"'=HYPERLINK");
   expect(/(?:^|,)"[=+\-@]/m.test(csv)).toBe(false);
+  const report = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  expect(csv).toContain('"generatorSha256"');
+  for (const identity of [
+    report.identities.manifestSha256,
+    report.identities.ledgerSha256,
+    report.identities.grader,
+    report.identities.generator.sha256,
+  ])
+    expect(csv).toContain(identity);
 });
 
 it("regenerates implementation reports through the built CLI without a historical policy or model call", async () => {

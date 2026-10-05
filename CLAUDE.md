@@ -12,6 +12,7 @@ Use NUL-separated Git path discovery for frozen benchmark inputs; line-oriented 
 Run the build before the full test suite, sequentially: the build clears `dist/`, which CLI tests execute.
 If Vitest fails before collecting tests with `/tmp` `ENOSPC`, check inode availability and set `TMPDIR` to a fresh directory on the project disk. Preserve retained pilot directories.
 Implementation `finishedAt` precedes independent judging and cleanup. Report end-to-end duration from retained `settledAt`; older ledgers without it must remain unknown.
+Generate final benchmark exports after the terminal controller snapshot is persisted and before releasing its ownership lock; closing progress changes the ledger hash.
 
 - **CRITICAL**: Native proof receipts and applicability records are bound by byte hashes. Preserve exported evidence JSON exactly; formatting changes invalidate their recorded hashes.
 - **CRITICAL**: Issue #26's protected historical grader must commit its isolated shadow before focused tests that exercise Git worktrees; an archive without `.git` makes known corrections fail preflight.

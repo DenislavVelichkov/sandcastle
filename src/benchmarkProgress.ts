@@ -719,7 +719,8 @@ interface BenchmarkProgressController {
   ): void;
   ownResource(resource: BenchmarkResource): Promise<BenchmarkResource>;
   releaseResource(id: string): Promise<void>;
-  close(): Promise<void>;
+  /** Finalize exports against the settled snapshot while retaining the ownership lock. */
+  close(beforeRelease?: () => Promise<void>): Promise<void>;
 }
 export const openBenchmarkProgress = async (
   plan: TicketBenchmarkPlan,
@@ -1283,7 +1284,7 @@ export const openBenchmarkProgress = async (
         resource.status = "released";
       await publish("resource-released");
     },
-    close: async () => {
+    close: async (beforeRelease) => {
       clearInterval(timer);
       clearInterval(cancellationTimer);
       await checkCancellation();
@@ -1294,8 +1295,12 @@ export const openBenchmarkProgress = async (
         ) &&
         execution.resources.every((resource) => resource.status === "released");
       await publish(released ? "owner-released" : "owner-retained", "idle");
-      if (released)
-        await rm(join(plan.output, "benchmark.lock"), { recursive: true });
+      try {
+        await beforeRelease?.();
+      } finally {
+        if (released)
+          await rm(join(plan.output, "benchmark.lock"), { recursive: true });
+      }
     },
   };
 };
