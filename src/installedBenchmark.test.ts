@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +8,7 @@ import { expect, it } from "vitest";
 it("launches and recovers fixture benchmarks through an unrelated installed consumer", async () => {
   const output = await mkdtemp(join(tmpdir(), "installed-benchmark-proof-"));
   // Own the whole fixture group so a timeout cannot strand CLI/worker children.
-  let child: ReturnType<typeof execFile> | undefined;
+  let child: ReturnType<typeof spawn> | undefined;
   const stop = () => {
     if (!child?.pid) return;
     try {
@@ -20,12 +20,24 @@ it("launches and recovers fixture benchmarks through an unrelated installed cons
   const timer = setTimeout(stop, 110_000);
   try {
     await new Promise<void>((resolve, reject) => {
-      child = execFile(
+      child = spawn(
         process.execPath,
         ["scripts/prove-installed-benchmark.mjs", output],
-        { detached: true, maxBuffer: 2 * 1024 * 1024 },
-        (error, stdout, stderr) =>
-          error ? reject(Object.assign(error, { stdout, stderr })) : resolve(),
+        { detached: true, stdio: ["ignore", "ignore", "pipe"] },
+      );
+      let stderr = "";
+      child.stderr!.on("data", (chunk) => {
+        stderr = (stderr + chunk).slice(-2 * 1024 * 1024);
+      });
+      child.once("error", reject);
+      child.once("close", (code, signal) =>
+        code === 0
+          ? resolve()
+          : reject(
+              new Error(
+                `Installed fixture exited ${code ?? signal}: ${stderr}`,
+              ),
+            ),
       );
     });
     const proof = JSON.parse(
