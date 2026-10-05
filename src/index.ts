@@ -34,6 +34,32 @@ export type {
 } from "./benchmark.js";
 export { writeBenchmarkReport } from "./benchmarkReport.js";
 export type { BenchmarkReportRow } from "./benchmarkReport.js";
+export { planTicketBenchmark, runTicketBenchmark } from "./ticketBenchmark.js";
+export type {
+  TicketBenchmarkPlan,
+  TicketBenchmarkOptions,
+} from "./ticketBenchmark.js";
+export type {
+  BenchmarkRuntime,
+  BenchmarkRuntimeRequest,
+  ImplementationBenchmarkDependencies,
+} from "./implementationBenchmark.js";
+export {
+  readBenchmarkProgress,
+  watchBenchmarkProgress,
+  readBenchmarkLog,
+  cancelBenchmark,
+  resumeTicketBenchmark,
+} from "./benchmarkProgress.js";
+export type {
+  BenchmarkProgressRead,
+  BenchmarkSnapshot,
+  BenchmarkEvent,
+  BenchmarkPhase,
+  BenchmarkOwner,
+  BenchmarkResource,
+  BenchmarkCancellation,
+} from "./benchmarkProgress.js";
 export { inspectWorkflow, runWorkflow } from "./workflow.js";
 export {
   runNativeProof,

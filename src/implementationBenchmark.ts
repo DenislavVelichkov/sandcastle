@@ -1,12 +1,9 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   lstat,
   mkdir,
-  mkdtemp,
-  open,
   readFile,
   readlink,
-  readdir,
   realpath,
   rename,
   rm,
@@ -36,7 +33,14 @@ import {
   workspaceFingerprint,
   type Candidate,
 } from "./benchmarkCandidate.js";
-import { createBenchmarkRuntime } from "./implementationBenchmarkRuntime.js";
+import {
+  createBenchmarkRuntime,
+  benchmarkCredentialRedactor,
+} from "./implementationBenchmarkRuntime.js";
+import {
+  openBenchmarkProgress,
+  type BenchmarkResource,
+} from "./benchmarkProgress.js";
 
 const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
@@ -49,6 +53,9 @@ const save = async (path: string, value: unknown) => {
 };
 
 export interface BenchmarkRuntimeRequest {
+  readonly id: string;
+  readonly runId: string;
+  readonly attemptId: string | null;
   readonly plan: TicketBenchmarkPlan;
   readonly root: string;
   readonly worktree: string;
@@ -72,8 +79,19 @@ export interface ImplementationBenchmarkDependencies {
   ) => Promise<BenchmarkRuntime>;
   readonly signal?: AbortSignal;
   readonly now?: () => number;
+  readonly resume?: boolean;
+  readonly retryAttemptId?: string;
+  /** Stop the exact recorded resource and verify its absence before returning. */
+  readonly recoverResource?: (
+    resource: BenchmarkResource,
+    runId: string,
+    signal: AbortSignal,
+  ) => Promise<void>;
 }
-interface Attempt {
+export interface ImplementationAttempt {
+  id: string;
+  armId: string;
+  retryOf?: string;
   slotId: string;
   status: string;
   startedAt: string;
@@ -82,7 +100,7 @@ interface Attempt {
   implementation?: {
     exitCode: number | null;
     usage: IterationUsage | null;
-    streamSha256: string;
+    streamSha256: string | null;
     requested: unknown;
     observed:
       | readonly {
@@ -111,6 +129,44 @@ interface Attempt {
   candidate?: Candidate;
   cleanup: { status: "passed" | "failed"; resources: string[] };
   judge: { status: "pending" | "no-candidate"; model: string; effort: string };
+}
+type Attempt = ImplementationAttempt;
+
+export interface ImplementationExecution {
+  version: 2;
+  runId: string;
+  planId: string;
+  startedAt: string;
+  status: string;
+  budget: {
+    limitMs: number;
+    elapsedMs: number;
+    judgeReservedMs: number;
+    cleanupReservedMs: number;
+    activeReservedMs: number;
+    maxCalls: number;
+    implementationCalls: number;
+    judgeCalls: number;
+    judgeReservedCalls: number;
+  };
+  controls: {
+    status: string;
+    results: {
+      kind: string;
+      commit: string;
+      exitCode: number | null;
+      status: string;
+      outputSha256: string | null;
+      phases: Attempt["phases"];
+    }[];
+  };
+  attempts: Attempt[];
+  unrun: string[];
+  phases: Attempt["phases"];
+  resources: BenchmarkResource[];
+  cleanup: { status: "passed" | "failed"; resources: string[] };
+  reason: string | null;
+  blockers: readonly string[];
 }
 
 const captureSessions = async (
@@ -348,11 +404,12 @@ export const runImplementationBenchmark = async (
   const launch = plan.launch!;
   const allowances = launch.allowances;
   const now = dependencies.now ?? Date.now;
-  const started = now();
+  let started = now();
   const create = dependencies.createRuntime ?? createBenchmarkRuntime;
-  const attempts: Attempt[] = [];
-  const ledger = {
+  let attempts: Attempt[] = [];
+  const ledger: ImplementationExecution = {
     version: 2,
+    runId: "",
     planId: plan.id,
     startedAt: new Date(started).toISOString(),
     status: "running",
@@ -364,35 +421,71 @@ export const runImplementationBenchmark = async (
       activeReservedMs: 0,
       maxCalls: allowances.maxCalls,
       implementationCalls: 0,
+      judgeCalls: 0,
       judgeReservedCalls: 0,
     },
     controls: {
       status: launch.checking.controls.length ? "pending" : "absent",
-      results: [] as {
-        kind: string;
-        commit: string;
-        exitCode: number;
-        status: string;
-        outputSha256: string;
-        phases: Attempt["phases"];
-      }[],
+      results: [],
     },
     attempts,
     unrun: plan.slots.map((slot) => slot.id),
     phases: [] as Attempt["phases"],
+    resources: [],
     cleanup: { status: "passed", resources: [] as string[] },
     reason: null as string | null,
     blockers: plan.readiness?.blockers ?? [],
   };
-  await mkdir(plan.output, { recursive: true, mode: 0o700 });
-  const lock = await open(join(plan.output, "benchmark.lock"), "wx", 0o600);
-  const persist = async () => {
-    ledger.budget.elapsedMs = Math.max(0, now() - started);
-    await save(join(plan.output, "execution.json"), ledger);
+  if (dependencies.retryAttemptId && !dependencies.resume)
+    throw new Error(
+      "Explicit retries require durable recovery of an existing attempt",
+    );
+  const progress = await openBenchmarkProgress(plan, ledger, {
+    now,
+    signal: dependencies.signal,
+    resume: dependencies.resume,
+    retryAttemptId: dependencies.retryAttemptId,
+    recoverResource: dependencies.recoverResource,
+    sealInterrupted: async (attempt, signal) => {
+      const root = join(plan.output, "runtime", attempt.id);
+      const redact = benchmarkCredentialRedactor([
+        join(root, "controller-auth", "auth.json"),
+        join(root, "implementation", "home", ".codex", "auth.json"),
+      ]);
+      const evidenceId = attempt.retryOf ? attempt.id : attempt.slotId;
+      const sessions = await captureSessions(
+        root,
+        plan.output,
+        evidenceId,
+        redact,
+        signal,
+      );
+      Object.assign(attempt.implementation!, sessions);
+      attempt.candidate = await seal(
+        plan,
+        `${attempt.id}-recovered-${randomUUID()}`,
+        join(root, "implementation", "worktree"),
+        join(plan.output, "protected", "storage.git"),
+        redact,
+        signal,
+      );
+      if (attempt.candidate) attempt.judge.status = "pending";
+    },
+  });
+  attempts = ledger.attempts;
+  started = Date.parse(ledger.startedAt);
+  const signal = progress.signal;
+  const persist = async (kind = "checkpoint", phase?: string) => {
+    ledger.budget.elapsedMs = Math.max(
+      ledger.budget.elapsedMs,
+      0,
+      now() - started,
+    );
+    await progress.publish(kind, phase);
   };
   const remaining = () =>
     allowances.overallMs -
-    Math.max(0, now() - started) -
+    Math.max(ledger.budget.elapsedMs, 0, now() - started) -
     ledger.budget.judgeReservedMs -
     ledger.budget.cleanupReservedMs;
   const phase = async <T>(
@@ -429,29 +522,26 @@ export const runImplementationBenchmark = async (
         controller.abort(new PhaseFailure("timed-out", `${name} timed out`)),
       admittedMs,
     );
-    const signal =
-      cleanup || !dependencies.signal
-        ? controller.signal
-        : AbortSignal.any([controller.signal, dependencies.signal]);
+    const signal = cleanup
+      ? controller.signal
+      : AbortSignal.any([controller.signal, progress.signal]);
     const begin = now();
     let outcome = "passed";
     ledger.budget.activeReservedMs = admittedMs;
     let abort: (() => void) | undefined;
     let pending: Promise<T> | undefined;
     try {
-      await persist();
+      await persist("phase-started", name);
       if (signal.aborted)
         throw new PhaseFailure(
-          dependencies.signal?.aborted && !cleanup ? "cancelled" : "timed-out",
+          progress.signal.aborted && !cleanup ? "cancelled" : "timed-out",
           `${name} interrupted`,
         );
       const interrupted = new Promise<never>((_, reject) => {
         abort = () =>
           reject(
             new PhaseFailure(
-              dependencies.signal?.aborted && !cleanup
-                ? "cancelled"
-                : "timed-out",
+              progress.signal.aborted && !cleanup ? "cancelled" : "timed-out",
               `${name} interrupted`,
             ),
           );
@@ -467,15 +557,20 @@ export const runImplementationBenchmark = async (
         let drainTimer: ReturnType<typeof setTimeout> | undefined;
         const settled = await Promise.race([
           pending.then(
-            () => null,
-            (failure: unknown) => failure,
+            () => ({ settled: true, failure: null }),
+            (failure: unknown) => ({ settled: true, failure }),
           ),
-          new Promise<null>((accept) => {
-            drainTimer = setTimeout(() => accept(null), allowances.cleanupMs);
+          new Promise<{ settled: false; failure: null }>((accept) => {
+            drainTimer = setTimeout(
+              () => accept({ settled: false, failure: null }),
+              allowances.cleanupMs,
+            );
           }),
         ]);
         if (drainTimer) clearTimeout(drainTimer);
-        const resources = (settled as { resources?: string[] } | null)
+        if (!settled.settled && error && typeof error === "object")
+          Object.assign(error, { unsettled: true });
+        const resources = (settled.failure as { resources?: string[] } | null)
           ?.resources;
         if (resources?.length && error && typeof error === "object")
           Object.assign(error, { resources });
@@ -492,33 +587,74 @@ export const runImplementationBenchmark = async (
         outcome,
       });
       ledger.budget.activeReservedMs = 0;
-      await persist();
+      await persist("phase-finished", name);
     }
   };
   let protectedBase: Awaited<ReturnType<typeof privateWorktree>> | undefined;
+  const runtimeResources = new Map<BenchmarkRuntime, BenchmarkResource>();
   const setup = async (
-    request: Omit<BenchmarkRuntimeRequest, "signal">,
+    request: Omit<
+      BenchmarkRuntimeRequest,
+      "signal" | "id" | "runId" | "attemptId"
+    >,
     phases: Attempt["phases"],
-  ): Promise<BenchmarkRuntime> =>
-    phase(
-      request.role === "checks" ? "checker-setup" : "setup",
-      allowances.setupMs,
-      phases,
-      async (signal) => {
-        const runtime = await create({ ...request, signal });
-        if (signal.aborted) {
-          try {
-            await runtime.stop(AbortSignal.timeout(allowances.cleanupMs));
-          } catch {
-            throw Object.assign(new Error("Late runtime cleanup failed"), {
-              resources: [runtime.id],
-            });
+  ): Promise<BenchmarkRuntime> => {
+    const attemptId =
+      [...attempts].reverse().find((attempt) => !attempt.finishedAt)?.id ??
+      null;
+    const id = `sandcastle-benchmark-${ledger.runId.slice(0, 8)}-${randomUUID()}`;
+    const resource = await progress.ownResource({
+      id,
+      kind: dependencies.createRuntime ? "runtime" : "docker",
+      attemptId,
+      status: "owned",
+    });
+    try {
+      return await phase(
+        request.role === "checks" ? "checker-setup" : "setup",
+        allowances.setupMs,
+        phases,
+        async (signal) => {
+          const runtime = await create({
+            ...request,
+            id,
+            runId: ledger.runId,
+            attemptId,
+            signal,
+          });
+          resource.runtimeId = runtime.id;
+          runtimeResources.set(runtime, resource);
+          await persist("resource-ready");
+          if (signal.aborted) {
+            try {
+              await runtime.stop(AbortSignal.timeout(allowances.cleanupMs));
+            } catch {
+              throw Object.assign(new Error("Late runtime cleanup failed"), {
+                resources: [runtime.id],
+              });
+            }
+            throw signal.reason;
           }
-          throw signal.reason;
-        }
-        return runtime;
-      },
-    );
+          return runtime;
+        },
+      );
+    } catch (error) {
+      if (
+        (error as { resources?: string[]; unsettled?: boolean }).resources
+          ?.length ||
+        (error as { unsettled?: boolean }).unsettled
+      ) {
+        resource.status = "cleanup-failed";
+        Object.assign(error as object, {
+          resources: [
+            resource.id,
+            ...((error as { resources?: string[] }).resources ?? []),
+          ],
+        });
+      } else await progress.releaseResource(id);
+      throw error;
+    }
+  };
   const prepareRuntime = async (
     runtime: BenchmarkRuntime,
     phases: Attempt["phases"],
@@ -550,24 +686,32 @@ export const runImplementationBenchmark = async (
         }
       },
     );
-  const stop = async (runtime: BenchmarkRuntime, phases: Attempt["phases"]) =>
-    phase(
-      "cleanup",
-      allowances.cleanupMs,
-      phases,
-      (signal) => runtime.stop(signal),
-      true,
-    );
+  const stop = async (runtime: BenchmarkRuntime, phases: Attempt["phases"]) => {
+    const resource = runtimeResources.get(runtime)!;
+    try {
+      await phase(
+        "cleanup",
+        allowances.cleanupMs,
+        phases,
+        (signal) => runtime.stop(signal),
+        true,
+      );
+      await progress.releaseResource(resource.id);
+    } catch (error) {
+      resource.status = "cleanup-failed";
+      throw error;
+    }
+  };
   let initialized = false;
   const report = async () => {
-    await persist();
+    await persist("report", "report-generation");
     await save(join(plan.output, "report.json"), {
       status: ledger.status,
       evaluated: 0,
       judge: "pending #49",
       projectAcceptance: "not assessed",
       scheduled: plan.slots.length,
-      attempted: attempts.length,
+      attempted: new Set(attempts.map((attempt) => attempt.slotId)).size,
       unrun: ledger.unrun,
       controls: ledger.controls,
       budget: ledger.budget,
@@ -576,7 +720,7 @@ export const runImplementationBenchmark = async (
     });
     await writeFile(
       join(plan.output, "report.html"),
-      `<!doctype html><html lang="en"><meta charset="utf-8"><title>Implementation benchmark</title><h1>Implementation benchmark</h1><p>${attempts.length}/${plan.slots.length} slots attempted. ${ledger.status}. 0 candidates evaluated. Independent judging is pending #49. Project acceptance is not assessed.</p>`,
+      `<!doctype html><html lang="en"><meta charset="utf-8"><title>Implementation benchmark</title><h1>Implementation benchmark</h1><p>${new Set(attempts.map((attempt) => attempt.slotId)).size}/${plan.slots.length} slots attempted, ${attempts.length} attempts including retries. ${ledger.status}. 0 candidates evaluated. Independent judging is pending #49. Project acceptance is not assessed.</p>`,
       { mode: 0o600 },
     );
     return {
@@ -586,20 +730,11 @@ export const runImplementationBenchmark = async (
     };
   };
   try {
-    try {
-      await readFile(join(plan.output, "execution.json"));
-      throw new Error(
-        "An existing execution is retained; durable recovery requires #48",
-      );
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-    if ((await readdir(plan.output)).some((name) => name !== "benchmark.lock"))
-      throw new Error(
-        "Benchmark output is not empty; select a fresh external directory",
-      );
-    await save(join(plan.output, "manifest.json"), plan);
-    await persist();
+    if (!dependencies.resume)
+      await save(join(plan.output, "manifest.json"), plan);
+    ledger.status = "running";
+    ledger.reason = null;
+    await persist(dependencies.resume ? "resumed" : "run-started");
     initialized = true;
     const attemptMs =
       allowances.setupMs +
@@ -612,7 +747,26 @@ export const runImplementationBenchmark = async (
       maxNewSlots,
       allowances.maxSlotsPerDispatch ?? Infinity,
     );
-    if (
+    const retry = attempts.find(
+      (attempt) => attempt.id === dependencies.retryAttemptId,
+    );
+    const scheduled = retry
+      ? plan.slots.filter((slot) => slot.id === retry.slotId)
+      : plan.slots.filter((slot) => ledger.unrun.includes(slot.id));
+    if (!scheduled.length)
+      ledger.status = attempts.some(
+        (attempt) => attempt.judge.status === "pending",
+      )
+        ? "judge-pending"
+        : "partial";
+    else if (ledger.controls.status === "failed")
+      ledger.status = "control-failed";
+    else if (
+      ledger.controls.status === "unavailable" &&
+      ledger.controls.results.length
+    )
+      ledger.status = "control-unavailable";
+    else if (
       remaining() < attemptMs + allowances.controlsMs + allowances.setupMs ||
       allowances.maxCalls < 2
     )
@@ -623,8 +777,14 @@ export const runImplementationBenchmark = async (
       plan.readiness.blockers.length
     )
       ledger.status = "environment-unavailable";
-    else if (dependencies.signal?.aborted) ledger.status = "cancelled";
+    else if (signal.aborted) ledger.status = "cancelled";
     else {
+      await progress.ownResource({
+        id: join(plan.output, "protected"),
+        kind: "directory",
+        attemptId: null,
+        status: "owned",
+      });
       protectedBase = await phase(
         "freeze-base",
         allowances.setupMs,
@@ -637,11 +797,31 @@ export const runImplementationBenchmark = async (
             signal,
           ),
       );
-      for (const control of launch.checking.controls) {
-        const root = await mkdtemp(
-          join(dirname(plan.output), ".benchmark-control-"),
-        );
+      for (const control of launch.checking.controls.filter(
+        (control) =>
+          !ledger.controls.results.some(
+            (result) =>
+              result.kind === control.kind && result.status === "passed",
+          ),
+      )) {
+        const root = join(plan.output, "runtime", `control-${control.kind}`);
+        await progress.ownResource({
+          id: root,
+          kind: "directory",
+          attemptId: null,
+          status: "owned",
+        });
+        await mkdir(root, { recursive: true, mode: 0o700 });
         const controlPhases: Attempt["phases"] = [];
+        const result: ImplementationExecution["controls"]["results"][number] = {
+          ...control,
+          exitCode: null,
+          status: "running",
+          outputSha256: null,
+          phases: controlPhases,
+        };
+        ledger.controls.results.push(result);
+        await persist("control-started");
         let runtime: BenchmarkRuntime | undefined;
         try {
           const source = await phase(
@@ -700,14 +880,11 @@ export const runImplementationBenchmark = async (
           await writeFile(join(plan.output, `${control.kind}.log`), output, {
             mode: 0o600,
           });
-          const result = {
-            ...control,
+          Object.assign(result, {
             exitCode: checked.exitCode,
             status: "unavailable",
             outputSha256: hash(output),
-            phases: controlPhases,
-          };
-          ledger.controls.results.push(result);
+          });
           await phase(
             "checker-result-integrity",
             allowances.checksMs,
@@ -728,6 +905,7 @@ export const runImplementationBenchmark = async (
           result.status = passed ? "passed" : "failed";
           if (!passed) ledger.controls.status = "failed";
         } catch (error) {
+          result.status = "unavailable";
           const resources = (error as { resources?: string[] }).resources;
           if (resources?.length) {
             ledger.cleanup.status = "failed";
@@ -750,6 +928,7 @@ export const runImplementationBenchmark = async (
                 () => rm(root, { recursive: true, force: true }),
                 true,
               );
+              await progress.releaseResource(root);
             } catch {
               ledger.cleanup.status = "failed";
               ledger.cleanup.resources.push(root);
@@ -763,8 +942,8 @@ export const runImplementationBenchmark = async (
         ledger.controls.status = "passed";
       if (ledger.controls.status === "failed") ledger.status = "control-failed";
       else
-        for (const slot of plan.slots.slice(0, slotLimit)) {
-          if (dependencies.signal?.aborted) {
+        for (const slot of scheduled.slice(0, slotLimit)) {
+          if (signal.aborted) {
             ledger.status = "cancelled";
             break;
           }
@@ -781,6 +960,9 @@ export const runImplementationBenchmark = async (
           ledger.budget.judgeReservedMs += allowances.judgeMs;
           ledger.budget.judgeReservedCalls++;
           const attempt: Attempt = {
+            id: `${slot.id}-attempt-${attempts.filter((attempt) => attempt.slotId === slot.id).length + 1}`,
+            armId: `arm-${slot.arm + 1}`,
+            ...(retry ? { retryOf: retry.id } : {}),
             slotId: slot.id,
             status: "running",
             startedAt: new Date(now()).toISOString(),
@@ -795,11 +977,17 @@ export const runImplementationBenchmark = async (
             },
           };
           attempts.push(attempt);
-          ledger.unrun.shift();
+          const evidenceId = retry ? attempt.id : slot.id;
+          ledger.unrun = ledger.unrun.filter((id) => id !== slot.id);
           await persist();
-          const root = await mkdtemp(
-            join(dirname(plan.output), ".benchmark-attempt-"),
-          );
+          const root = join(plan.output, "runtime", attempt.id);
+          await progress.ownResource({
+            id: root,
+            kind: "directory",
+            attemptId: attempt.id,
+            status: "owned",
+          });
+          await mkdir(root, { recursive: true, mode: 0o700 });
           let runtime: BenchmarkRuntime | undefined;
           let checker: BenchmarkRuntime | undefined;
           let worker: Awaited<ReturnType<typeof privateWorktree>> | undefined;
@@ -843,11 +1031,23 @@ export const runImplementationBenchmark = async (
             let stream = "";
             let usage: IterationUsage | null = null;
             let sessionId: string | null = null;
+            attempt.implementation = {
+              exitCode: null,
+              usage: null,
+              streamSha256: null,
+              requested: { ...arm, serviceTier: "default" },
+              observed: null,
+            };
             const observe = (line: string) => {
               stream += `${redact(line)}\n`;
+              progress.log(attempt, redact(line));
               for (const event of provider.parseStreamLine(line)) {
-                if (event.type === "usage") usage = event.usage;
+                if (event.type === "usage") {
+                  usage = event.usage;
+                  attempt.implementation!.usage = usage;
+                }
                 if (event.type === "session_id") sessionId = event.sessionId;
+                progress.activity(attempt, event.type);
               }
             };
             ledger.budget.implementationCalls++;
@@ -874,19 +1074,21 @@ export const runImplementationBenchmark = async (
               attempt.status =
                 result.exitCode === 0 ? "judge-pending" : "worker-failed";
             } finally {
-              attempt.implementation ??= {
-                exitCode: null,
+              attempt.implementation = {
+                exitCode: attempt.implementation?.exitCode ?? null,
                 usage,
                 streamSha256: hash(stream),
                 requested: { ...arm, serviceTier: "default" },
                 observed: null,
               };
+              // Drain live log writes before finalizing the exact stream bytes.
+              await persist("implementation-stream-finished", "implementation");
               await writeFile(
-                join(plan.output, `${slot.id}-implementation.jsonl`),
+                join(plan.output, `${evidenceId}-implementation.jsonl`),
                 stream,
                 { mode: 0o600 },
               );
-              await save(join(plan.output, `${slot.id}-provenance.json`), {
+              await save(join(plan.output, `${evidenceId}-provenance.json`), {
                 sessionId,
                 requested: arm,
                 serviceTier: "default",
@@ -897,6 +1099,10 @@ export const runImplementationBenchmark = async (
               });
             }
           } catch (error) {
+            if ((error as { unsettled?: boolean }).unsettled) {
+              attempt.cleanup.status = "failed";
+              attempt.cleanup.resources.push(runtime?.id ?? root);
+            }
             attempt.status =
               error instanceof PhaseFailure
                 ? error.outcome
@@ -933,7 +1139,7 @@ export const runImplementationBenchmark = async (
                   const captured = await captureSessions(
                     root,
                     plan.output,
-                    slot.id,
+                    evidenceId,
                     redact,
                     signal,
                   );
@@ -941,7 +1147,7 @@ export const runImplementationBenchmark = async (
                     Object.assign(attempt.implementation, captured);
                   return seal(
                     plan,
-                    slot.id,
+                    evidenceId,
                     worker!.worktree,
                     protectedBase!.storage,
                     redact,
@@ -979,12 +1185,12 @@ export const runImplementationBenchmark = async (
                   attempt.reason = "Candidate edits exceed the frozen scope";
                 }
                 if (
-                  dependencies.signal?.aborted ||
+                  signal.aborted ||
                   attempt.status === "timed-out" ||
                   attempt.status === "cancelled"
                 )
                   throw new PhaseFailure(
-                    dependencies.signal?.aborted ? "cancelled" : "timed-out",
+                    signal.aborted ? "cancelled" : "timed-out",
                     "Configured checks did not run after interrupted implementation",
                   );
                 const checkWorkspace = await phase(
@@ -1048,7 +1254,7 @@ export const runImplementationBenchmark = async (
                 );
                 const output = redact(`${checked.stdout}\n${checked.stderr}`);
                 await writeFile(
-                  join(plan.output, `${slot.id}-check.log`),
+                  join(plan.output, `${evidenceId}-check.log`),
                   output,
                   { mode: 0o600 },
                 );
@@ -1083,6 +1289,10 @@ export const runImplementationBenchmark = async (
               }
             }
           } catch (error) {
+            if ((error as { unsettled?: boolean }).unsettled) {
+              attempt.cleanup.status = "failed";
+              attempt.cleanup.resources.push(checker?.id ?? root);
+            }
             const resources = (error as { resources?: string[] }).resources;
             if (resources?.length) {
               attempt.cleanup.status = "failed";
@@ -1124,7 +1334,7 @@ export const runImplementationBenchmark = async (
               }
             }
             if (!attempt.candidate)
-              await rm(join(plan.output, "candidates", slot.id), {
+              await rm(join(plan.output, "candidates", evidenceId), {
                 recursive: true,
                 force: true,
               });
@@ -1137,6 +1347,7 @@ export const runImplementationBenchmark = async (
                   () => rm(root, { recursive: true, force: true }),
                   true,
                 );
+                await progress.releaseResource(root);
               } catch {
                 attempt.cleanup.status = "failed";
                 attempt.cleanup.resources.push(root);
@@ -1177,7 +1388,7 @@ export const runImplementationBenchmark = async (
         ? "cleanup-failed"
         : error instanceof PhaseFailure
           ? error.outcome
-          : "environment-unavailable";
+          : "infrastructure-failed";
     ledger.reason =
       error instanceof PhaseFailure
         ? error.message
@@ -1205,6 +1416,7 @@ export const runImplementationBenchmark = async (
               }),
             true,
           );
+          await progress.releaseResource(join(plan.output, "protected"));
         } catch {
           ledger.cleanup.status = "failed";
           ledger.cleanup.resources.push(join(plan.output, "protected"));
@@ -1214,8 +1426,7 @@ export const runImplementationBenchmark = async (
         await report();
       }
     } finally {
-      await lock.close();
-      await rm(join(plan.output, "benchmark.lock"), { force: true });
+      await progress.close();
     }
   }
   return {

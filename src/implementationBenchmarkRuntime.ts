@@ -1,14 +1,14 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type {
   BenchmarkRuntime,
   BenchmarkRuntimeRequest,
 } from "./implementationBenchmark.js";
 import type { ExecResult } from "./SandboxProvider.js";
+import type { BenchmarkResource } from "./benchmarkProgress.js";
 
 const docker = (
   args: string[],
@@ -32,7 +32,15 @@ const docker = (
       pending += chunk;
       const lines = pending.split("\n");
       pending = lines.pop()!;
-      for (const line of lines) onLine?.(line);
+      for (const line of lines) {
+        try {
+          onLine?.(line);
+        } catch (error) {
+          child.kill("SIGKILL");
+          reject(error);
+          return;
+        }
+      }
       if (stdout.length > 32 * 1024 * 1024) {
         overflow = true;
         child.kill("SIGKILL");
@@ -47,7 +55,12 @@ const docker = (
     });
     child.on("error", reject);
     child.on("close", (code) => {
-      if (pending) onLine?.(pending);
+      try {
+        if (pending) onLine?.(pending);
+      } catch (error) {
+        reject(error);
+        return;
+      }
       if (signal.aborted) reject(signal.reason);
       else if (overflow)
         reject(
@@ -61,13 +74,10 @@ const docker = (
     }
   });
 
-/** Each runtime mounts only its own private Git, worktree and writable home. */
-export const createBenchmarkRuntime = async (
-  request: BenchmarkRuntimeRequest,
-): Promise<BenchmarkRuntime> => {
-  const name = `sandcastle-benchmark-${randomUUID()}`;
-  const home = join(request.root, "home");
-  const codexHome = join(home, ".codex");
+/** Use only authentication from the exact owned runtime, including refreshed tokens. */
+export const benchmarkCredentialRedactor = (
+  authPaths: string | readonly string[],
+) => {
   const secrets = new Set<string>();
   const collect = (value: unknown, key = ""): void => {
     if (
@@ -78,21 +88,45 @@ export const createBenchmarkRuntime = async (
     else if (value && typeof value === "object")
       for (const [name, item] of Object.entries(value)) collect(item, name);
   };
-  const redact = (text: string) => {
-    try {
-      collect(JSON.parse(readFileSync(join(codexHome, "auth.json"), "utf8")));
-    } catch {
-      /* A check runtime has no authentication file. */
+  return (text: string) => {
+    for (const authPath of typeof authPaths === "string"
+      ? [authPaths]
+      : authPaths) {
+      try {
+        collect(JSON.parse(readFileSync(authPath, "utf8")));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+          throw new Error("Owned credential redaction could not be verified");
+      }
     }
     return [...secrets].reduce(
       (value, secret) => value.replaceAll(secret, "[redacted]"),
       text,
     );
   };
+};
+
+/** Each runtime mounts only its own private Git, worktree and writable home. */
+export const createBenchmarkRuntime = async (
+  request: BenchmarkRuntimeRequest,
+): Promise<BenchmarkRuntime> => {
+  const name = request.id;
+  const home = join(request.root, "home");
+  const codexHome = join(home, ".codex");
+  const privateAuth = join(
+    dirname(request.root),
+    "controller-auth",
+    "auth.json",
+  );
+  const redact = benchmarkCredentialRedactor([
+    privateAuth,
+    join(codexHome, "auth.json"),
+  ]);
   const stop = async (signal: AbortSignal) => {
     const result = await docker(["rm", "-f", name], signal);
     if (result.exitCode !== 0 && !/No such container/i.test(result.stderr))
       throw new Error(`Owned container cleanup failed: ${name}`);
+    await verifyRemoved(name, signal);
   };
   try {
     await mkdir(codexHome, { recursive: true, mode: 0o700 });
@@ -105,8 +139,12 @@ export const createBenchmarkRuntime = async (
       const auth = await readFile(
         join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "auth.json"),
       );
-      collect(JSON.parse(auth.toString()));
+      JSON.parse(auth.toString());
+      // This seed is outside the worker mount and survives abrupt controller loss.
+      await mkdir(dirname(privateAuth), { recursive: true, mode: 0o700 });
+      await writeFile(privateAuth, auth, { mode: 0o600 });
       await writeFile(join(codexHome, "auth.json"), auth, { mode: 0o600 });
+      redact("");
     }
     const started = await docker(
       [
@@ -115,6 +153,8 @@ export const createBenchmarkRuntime = async (
         "--init",
         "--name",
         name,
+        "--label",
+        `sandcastle.benchmark.run=${request.runId}`,
         "--user",
         `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`,
         "--cpus",
@@ -199,4 +239,48 @@ export const createBenchmarkRuntime = async (
       "Private Docker runtime unavailable; verify the frozen image, authentication and owned resource capacity",
     );
   }
+};
+
+const verifyRemoved = async (name: string, signal: AbortSignal) => {
+  const observed = await docker(["inspect", name], signal);
+  if (
+    observed.exitCode === 0 ||
+    !/No such (?:object|container)/i.test(observed.stderr)
+  )
+    throw new Error(`Owned container removal could not be verified: ${name}`);
+};
+
+/** Recovery may stop only the exact container labelled for this retained run. */
+export const reconcileBenchmarkDocker = async (
+  resource: BenchmarkResource,
+  runId: string,
+  signal: AbortSignal,
+): Promise<void> => {
+  const name = resource.id;
+  if (
+    resource.kind !== "docker" ||
+    !/^sandcastle-benchmark-[a-f0-9-]+$/.test(name)
+  )
+    throw new Error(
+      "Unknown benchmark runtime requires its original recovery adapter",
+    );
+  const observed = await docker(["inspect", name], signal);
+  if (observed.exitCode !== 0) {
+    if (/No such (?:object|container)/i.test(observed.stderr)) return;
+    throw new Error("Owned Docker resources could not be inspected");
+  }
+  const containers = JSON.parse(observed.stdout) as {
+    Config?: { Labels?: Record<string, string> };
+  }[];
+  if (
+    containers.length !== 1 ||
+    containers[0]?.Config?.Labels?.["sandcastle.benchmark.run"] !== runId
+  )
+    throw new Error(
+      "Retained container ownership does not match this benchmark",
+    );
+  const removed = await docker(["rm", "-f", name], signal);
+  if (removed.exitCode !== 0)
+    throw new Error("Owned container recovery failed");
+  await verifyRemoved(name, signal);
 };

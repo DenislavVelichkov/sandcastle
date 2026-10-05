@@ -31,6 +31,13 @@ import { defaultImageName } from "./sandboxes/docker.js";
 import { withBenchmarkActivity } from "./benchmark.js";
 import { writeBenchmarkReport } from "./benchmarkReport.js";
 import { planTicketBenchmark, runTicketBenchmark } from "./ticketBenchmark.js";
+import {
+  cancelBenchmark,
+  readBenchmarkLog,
+  readBenchmarkProgress,
+  resumeTicketBenchmark,
+  watchBenchmarkProgress,
+} from "./benchmarkProgress.js";
 import type {
   AgentEntry,
   IssueTrackerEntry,
@@ -831,23 +838,16 @@ const benchmarkCommand = Command.make(
       );
       const result = yield* Effect.tryPromise({
         try: async () => {
-          const cancellation = new AbortController();
-          const cancel = () => cancellation.abort();
-          process.once("SIGINT", cancel);
-          process.once("SIGTERM", cancel);
-          try {
-            return await runTicketBenchmark(
+          return withBenchmarkInterrupt((signal) =>
+            runTicketBenchmark(
               plan,
               undefined,
               maxNewSlots._tag === "Some"
                 ? Number(maxNewSlots.value)
                 : Infinity,
-              { signal: cancellation.signal },
-            );
-          } finally {
-            process.removeListener("SIGINT", cancel);
-            process.removeListener("SIGTERM", cancel);
-          }
+              { signal },
+            ),
+          );
         },
         catch: (error) => new InitError({ message: String(error) }),
       });
@@ -904,6 +904,154 @@ const benchmarkReportCommand = Command.make(
     }),
 );
 
+const benchmarkDirectoryOption = Options.text("directory").pipe(
+  Options.withDescription(
+    "Original external implementation benchmark directory",
+  ),
+);
+const withBenchmarkInterrupt = async <T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+): Promise<T> => {
+  const controller = new AbortController();
+  const interrupt = () => controller.abort("Host received SIGINT");
+  const terminate = () => controller.abort("Host received SIGTERM");
+  process.once("SIGINT", interrupt);
+  process.once("SIGTERM", terminate);
+  try {
+    return await operation(controller.signal);
+  } finally {
+    process.removeListener("SIGINT", interrupt);
+    process.removeListener("SIGTERM", terminate);
+  }
+};
+const benchmarkStatusCommand = Command.make(
+  "benchmark-status",
+  {
+    directory: benchmarkDirectoryOption,
+    after: Options.text("after").pipe(
+      Options.withDescription("Last observed sequence cursor; default 0"),
+      Options.optional,
+    ),
+    watch: Options.boolean("watch").pipe(
+      Options.withDescription(
+        "Observe saved progress until ownership ends; disconnecting leaves execution active",
+      ),
+    ),
+    logAttempt: Options.text("log-attempt").pipe(
+      Options.withDescription(
+        "Explicitly read this attempt's bounded private log tail",
+      ),
+      Options.optional,
+    ),
+    logRole: Options.choice("log-role", ["implementation", "checks"]).pipe(
+      Options.withDefault("implementation"),
+    ),
+  },
+  ({ directory, after, watch, logAttempt, logRole }) =>
+    Effect.tryPromise({
+      try: async () => {
+        if (logAttempt._tag === "Some") {
+          if (watch)
+            throw new Error(
+              "Choose either passive progress watch or a private log tail",
+            );
+          console.log(
+            JSON.stringify({
+              attemptId: logAttempt.value,
+              role: logRole,
+              privateLog: await readBenchmarkLog(
+                resolve(directory),
+                logAttempt.value,
+                logRole,
+              ),
+            }),
+          );
+          return;
+        }
+        const cursor = after._tag === "Some" ? Number(after.value) : 0;
+        if (!watch) {
+          console.log(
+            JSON.stringify(
+              await readBenchmarkProgress(resolve(directory), {
+                after: cursor,
+              }),
+            ),
+          );
+          return;
+        }
+        await withBenchmarkInterrupt(async (signal) => {
+          for await (const progress of watchBenchmarkProgress(
+            resolve(directory),
+            { after: cursor, signal },
+          ))
+            console.log(JSON.stringify(progress));
+        });
+      },
+      catch: (error) => new InitError({ message: String(error) }),
+    }),
+);
+const benchmarkCancelCommand = Command.make(
+  "benchmark-cancel",
+  {
+    directory: benchmarkDirectoryOption,
+    reason: Options.text("reason").pipe(
+      Options.withDescription(
+        "Persist the reason for stopping this run's owned operations",
+      ),
+    ),
+  },
+  ({ directory, reason }) =>
+    Effect.tryPromise({
+      try: async () => {
+        console.log(
+          JSON.stringify(await cancelBenchmark(resolve(directory), reason)),
+        );
+      },
+      catch: (error) => new InitError({ message: String(error) }),
+    }),
+);
+const benchmarkResumeCommand = Command.make(
+  "benchmark-resume",
+  {
+    directory: benchmarkDirectoryOption,
+    retryAttempt: Options.text("retry-attempt").pipe(
+      Options.withDescription(
+        "Explicitly retry one failed/interrupted attempt with a new linked identity",
+      ),
+      Options.optional,
+    ),
+    maxNewSlots: Options.text("max-new-slots").pipe(
+      Options.withDescription(
+        "Dispatch limit within the original frozen maximum",
+      ),
+      Options.optional,
+    ),
+  },
+  ({ directory, retryAttempt, maxNewSlots }) =>
+    Effect.tryPromise({
+      try: async () => {
+        const result = await withBenchmarkInterrupt((signal) =>
+          resumeTicketBenchmark(
+            resolve(directory),
+            {
+              retryAttemptId:
+                retryAttempt._tag === "Some" ? retryAttempt.value : undefined,
+              maxNewSlots:
+                maxNewSlots._tag === "Some"
+                  ? Number(maxNewSlots.value)
+                  : undefined,
+            },
+            { signal },
+          ),
+        );
+        console.log(JSON.stringify(result));
+        if (!["judge-pending", "complete"].includes(result.status))
+          process.exitCode = result.status === "cancelled" ? 130 : 1;
+      },
+      catch: (error) => new InitError({ message: String(error) }),
+    }),
+);
+
 const rootCommand = Command.make("sandcastle", {}, () =>
   Effect.gen(function* () {
     const d = yield* Display;
@@ -919,6 +1067,9 @@ export const sandcastle = rootCommand.pipe(
     podmanCommand,
     benchmarkCommand,
     benchmarkReportCommand,
+    benchmarkStatusCommand,
+    benchmarkCancelCommand,
+    benchmarkResumeCommand,
   ]),
 );
 

@@ -1,9 +1,11 @@
-import { exec } from "node:child_process";
+import { exec, execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { BenchmarkRuntimeRequest } from "./implementationBenchmark.js";
 
 const benchmarkDirectories: string[] = [];
 afterEach(async () => {
@@ -71,6 +73,183 @@ describe("sandcastle CLI", () => {
     ])
       expect(stdout).toContain(option);
   });
+
+  it("exposes durable status, cancellation and unchanged-plan resume through the built entry", async () => {
+    const root = await mkdtemp(join(tmpdir(), "cli-progress-"));
+    benchmarkDirectories.push(root);
+    const project = join(root, "project");
+    const output = join(root, "evidence");
+    await mkdir(project);
+    await initRepo(project);
+    await writeFile(join(project, "check.sh"), "exit 0\n");
+    await commitFile(
+      project,
+      "task.md",
+      "# Preserve durable progress\n",
+      "Frozen task",
+    );
+    await execAsync("git add check.sh && git commit -m check", {
+      cwd: project,
+    });
+    const built = (await import(
+      join(import.meta.dirname, "..", "dist", "index.js")
+    )) as typeof import("./index.js");
+    const plan = await built.planTicketBenchmark(
+      {
+        cwd: project,
+        tickets: ["task.md"],
+        arms: ["gpt-6-astra:high"],
+        check: "sh check.sh",
+        output,
+        preflight: true,
+      },
+      {
+        inspectWorker: async (request) => ({
+          imageDigest: `sha256:${"a".repeat(64)}`,
+          codexVersion: "controlled",
+          nodeVersion: process.version,
+          configSha256: createHash("sha256")
+            .update(request.config)
+            .digest("hex"),
+          authenticated: true,
+          usageAvailable: true,
+          models: [
+            {
+              model: "gpt-6-astra",
+              supportedReasoningEfforts: [{ reasoningEffort: "high" }],
+            },
+            {
+              model: "gpt-6.1-sol",
+              supportedReasoningEfforts: [{ reasoningEffort: "xhigh" }],
+            },
+          ],
+          tools: Object.fromEntries(
+            request.capabilities.tools.map((tool) => [tool, `/bin/${tool}`]),
+          ),
+          freeBytes: 2 ** 32,
+          freeInodes: 100000,
+          gradingReady: true,
+          environments: {},
+        }),
+      },
+    );
+    let calls = 0;
+    const safety = new AbortController();
+    const running = built.runTicketBenchmark(plan, undefined, 1, {
+      signal: safety.signal,
+      createRuntime: async (request: BenchmarkRuntimeRequest) => ({
+        id: request.id,
+        exec: async ({ signal, onLine }) => {
+          calls++;
+          onLine?.(
+            '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}',
+          );
+          return new Promise<never>((_, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), {
+              once: true,
+            });
+          });
+        },
+        stop: async () => {},
+      }),
+    });
+    const command = promisify(execFile);
+    try {
+      await vi.waitFor(async () => {
+        expect(
+          (await built.readBenchmarkProgress(output)).snapshot.counts
+            .implementationCalls,
+        ).toBe(1);
+      });
+      const { stdout } = await command(process.execPath, [
+        cliPath,
+        "benchmark-status",
+        "--directory",
+        output,
+      ]);
+      const status = JSON.parse(stdout);
+      expect(status.snapshot.phase).toBe("implementation");
+      expect(status.snapshot.counts.graded).toBe(0);
+      const observer = spawn(
+        process.execPath,
+        [cliPath, "benchmark-status", "--directory", output, "--watch"],
+        { stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let observations = "";
+      observer.stdout.on("data", (chunk) => {
+        observations += chunk;
+      });
+      const disconnected = new Promise<void>((resolve) =>
+        observer.once("close", () => resolve()),
+      );
+      try {
+        await vi.waitFor(
+          () => {
+            expect(observations).toContain(status.snapshot.runId);
+          },
+          { timeout: 3000 },
+        );
+        observer.kill("SIGINT");
+        await disconnected;
+        expect(
+          (await built.readBenchmarkProgress(output)).snapshot.owner?.token,
+        ).toBe(status.snapshot.owner.token);
+        expect(calls).toBe(1);
+      } finally {
+        if (observer.exitCode === null) observer.kill("SIGKILL");
+        await disconnected;
+      }
+      const cancelled = await command(process.execPath, [
+        cliPath,
+        "benchmark-cancel",
+        "--directory",
+        output,
+        "--reason",
+        "Built CLI stop",
+      ]);
+      expect(JSON.parse(cancelled.stdout).reason).toBe("Built CLI stop");
+      expect(await running).toMatchObject({
+        status: "cancelled",
+        completed: 1,
+      });
+      const resumed = await command(process.execPath, [
+        cliPath,
+        "benchmark-resume",
+        "--directory",
+        output,
+      ]);
+      expect(JSON.parse(resumed.stdout)).toMatchObject({
+        status: "judge-pending",
+        completed: 1,
+      });
+      const cursorRead = await command(process.execPath, [
+        cliPath,
+        "benchmark-status",
+        "--directory",
+        output,
+        "--after",
+        String(status.cursor),
+      ]);
+      expect(
+        JSON.parse(cursorRead.stdout).events.every(
+          (event: { sequence: number }) => event.sequence > status.cursor,
+        ),
+      ).toBe(true);
+      expect(calls).toBe(1);
+    } finally {
+      safety.abort();
+      await running;
+    }
+    for (const name of [
+      "benchmark-status",
+      "benchmark-cancel",
+      "benchmark-resume",
+    ]) {
+      expect(
+        (await command(process.execPath, [cliPath, name, "--help"])).stdout,
+      ).toContain("--directory");
+    }
+  }, 10000);
 
   it("plans any number of explicit arms without model calls", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "cli-benchmark-"));

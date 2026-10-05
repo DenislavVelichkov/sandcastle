@@ -996,10 +996,7 @@ export const freezeLaunch = async (input: {
     },
     capabilities,
   };
-  const executionBlockers = [
-    "Durable recovery is pending #48",
-    "Independent judge execution is pending #49",
-  ];
+  const executionBlockers = ["Independent judge execution is pending #49"];
   return {
     launch,
     runnerCommit: runnerCommit ?? "unknown",

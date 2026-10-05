@@ -1,7 +1,8 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   lstat,
+  appendFile,
   mkdtemp,
   mkdir,
   readFile,
@@ -14,6 +15,13 @@ import { afterEach, expect, it, vi } from "vitest";
 import { planTicketBenchmark, runTicketBenchmark } from "./ticketBenchmark.js";
 import type { TicketBenchmarkOptions } from "./ticketBenchmark.js";
 import type { LaunchContract } from "./benchmarkLaunch.js";
+import {
+  cancelBenchmark,
+  readBenchmarkLog,
+  readBenchmarkProgress,
+  resumeTicketBenchmark,
+  watchBenchmarkProgress,
+} from "./benchmarkProgress.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -43,6 +51,7 @@ const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
 if (args[0] === 'run') process.stdout.write('owned-container');
 else if (args[0] === 'rm') process.exitCode = 0;
+else if (args[0] === 'inspect') { process.stderr.write('No such object'); process.exitCode = 1; }
 else if (args.includes('--version')) process.stdout.write(args.includes('codex') ? 'codex test\\n' : process.version + '\\n');
 else {
   const cwd = args[args.indexOf('-w') + 1];
@@ -180,6 +189,617 @@ const fixture = async (
   return { repo, plan };
 };
 
+it("publishes live progress and reconnects a passive observer without replaying execution", async () => {
+  const { plan } = await fixture();
+  let finish!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let calls = 0;
+  const running = runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => ({
+      id: request.worktree,
+      exec: async ({ command, onLine }) => {
+        if (command.startsWith("codex exec")) {
+          calls++;
+          onLine?.(
+            '{"type":"item.completed","item":{"type":"agent_message","text":"private worker narrative"}}',
+          );
+          onLine?.(
+            '{"type":"turn.completed","usage":{"input_tokens":20,"cached_input_tokens":5,"output_tokens":7}}',
+          );
+          await waiting;
+          await writeFile(join(request.worktree, "value.txt"), "correct\n");
+        }
+        return { stdout: "", stderr: "", exitCode: 0 };
+      },
+      stop: async () => {},
+    }),
+  });
+  try {
+    await vi.waitFor(async () => {
+      const { snapshot } = await readBenchmarkProgress(plan.output);
+      expect(snapshot.phase).toBe("implementation");
+      expect(snapshot.counts).toMatchObject({
+        scheduled: 2,
+        attempted: 1,
+        completed: 0,
+        graded: 0,
+        implementationCalls: 1,
+        judgeCalls: 0,
+      });
+      expect(snapshot.lastImplementationEvent).toMatchObject({ kind: "usage" });
+      expect(snapshot.attempts[0]?.usage?.outputTokens).toBe(7);
+    });
+    const first = await readBenchmarkProgress(plan.output);
+    expect(JSON.stringify(first)).not.toContain("private worker narrative");
+    expect(first.snapshot.owner?.pid).toBe(process.pid);
+    expect(first.snapshot.lastImplementationEvent?.at).not.toBeNull();
+    expect(
+      await readBenchmarkLog(plan.output, first.snapshot.attempts[0]!.id),
+    ).toContain("private worker narrative");
+    const disconnect = new AbortController();
+    const observer = watchBenchmarkProgress(plan.output, {
+      after: first.cursor,
+      signal: disconnect.signal,
+    });
+    let heartbeat = await observer.next();
+    while (!heartbeat.value?.events.some((event) => event.kind === "heartbeat"))
+      heartbeat = await observer.next();
+    expect(heartbeat.value!.snapshot.controllerHeartbeat).not.toBe(
+      first.snapshot.controllerHeartbeat,
+    );
+    expect(heartbeat.value!.snapshot.lastImplementationEvent?.at).toBe(
+      first.snapshot.lastImplementationEvent?.at,
+    );
+    disconnect.abort();
+    await observer.return(undefined);
+    expect((await readBenchmarkProgress(plan.output)).snapshot.phase).toBe(
+      "implementation",
+    );
+    // Dropping the observer performs no mutation or cancellation.
+    finish();
+    expect(await running).toMatchObject({
+      status: "judge-pending",
+      completed: 1,
+    });
+    const reconnected = await readBenchmarkProgress(plan.output, {
+      after: first.cursor,
+    });
+    expect(
+      reconnected.events.every((event) => event.sequence > first.cursor),
+    ).toBe(true);
+    expect(reconnected.snapshot.counts.completed).toBe(1);
+    expect(reconnected.snapshot.counts.graded).toBe(0);
+    expect(reconnected.snapshot.owner).toBeNull();
+    const phases = [...first.events, ...reconnected.events]
+      .filter((event) => event.kind === "phase-started")
+      .map((event) => event.phase);
+    expect(phases.indexOf("implementation")).toBeLessThan(
+      phases.indexOf("checks"),
+    );
+    expect(phases.indexOf("checks")).toBeLessThan(
+      phases.lastIndexOf("cleanup"),
+    );
+    expect(calls).toBe(1);
+    expect(
+      await readFile(
+        join(plan.output, `${plan.slots[0]!.id}-implementation.jsonl`),
+        "utf8",
+      ),
+    ).toContain("private worker narrative");
+  } finally {
+    finish();
+    await running;
+  }
+});
+
+it.each(["setup", "implementation", "checks"] as const)(
+  "persists cancellation during %s and stops owned work before releasing ownership",
+  async (stage) => {
+    const { plan } = await fixture();
+    let entered!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const stopOnAbort = (signal: AbortSignal) =>
+      new Promise<never>((_, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        });
+      });
+    const stopped: string[] = [];
+    const running = runTicketBenchmark(plan, undefined, 1, {
+      createRuntime: async (request) => {
+        const { snapshot } = await readBenchmarkProgress(plan.output);
+        expect(
+          snapshot.resources.some(
+            (resource) =>
+              resource.id === request.id && resource.status === "owned",
+          ),
+        ).toBe(true);
+        if (stage === "setup" && request.role === "implementation") {
+          entered();
+          return stopOnAbort(request.signal);
+        }
+        return {
+          id: request.worktree,
+          exec: async ({ command, signal, onLine }) => {
+            if (command.startsWith("codex exec")) {
+              await writeFile(join(request.worktree, "value.txt"), "partial\n");
+              onLine?.(
+                '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}',
+              );
+            }
+            if (
+              (stage === "implementation" &&
+                command.startsWith("codex exec")) ||
+              (stage === "checks" && request.role === "checks")
+            ) {
+              entered();
+              return stopOnAbort(signal);
+            }
+            return { stdout: "", stderr: "", exitCode: 0 };
+          },
+          stop: async () => {
+            stopped.push(request.worktree);
+          },
+        };
+      },
+    });
+    await Promise.race([
+      ready,
+      running.then(() => {
+        throw new Error("Execution stopped before the cancellation scenario");
+      }),
+    ]);
+    await cancelBenchmark(plan.output, "Requested deterministic stop");
+    expect(await running).toMatchObject({ status: "cancelled", completed: 1 });
+    const { snapshot, events } = await readBenchmarkProgress(plan.output);
+    expect(snapshot.cancellation?.reason).toBe("Requested deterministic stop");
+    expect(snapshot.owner).toBeNull();
+    expect(snapshot.resources.length).toBeGreaterThan(0);
+    expect(
+      snapshot.resources.every((resource) => resource.status === "released"),
+    ).toBe(true);
+    expect(
+      events.some((event) => event.kind === "cancellation-requested"),
+    ).toBe(true);
+    if (stage !== "setup") {
+      expect(stopped.length).toBeGreaterThan(0);
+      expect(snapshot.attempts[0]?.usage?.outputTokens).toBe(3);
+    }
+  },
+);
+
+it("resumes only unrun slots with the original plan, identities, call counts and allowance", async () => {
+  const { plan } = await fixture();
+  let calls = 0;
+  const dependencies = {
+    createRuntime: async (
+      request: import("./implementationBenchmark.js").BenchmarkRuntimeRequest,
+    ) => ({
+      id: request.id,
+      exec: async ({ command }: { command: string }) => {
+        if (command.startsWith("codex exec")) {
+          calls++;
+          await writeFile(join(request.worktree, "value.txt"), "correct\n");
+        }
+        return { stdout: "", stderr: "", exitCode: 0 };
+      },
+      stop: async () => {},
+    }),
+  };
+  await runTicketBenchmark(plan, undefined, 1, dependencies);
+  const first = await readBenchmarkProgress(plan.output);
+  const manifest = await readFile(join(plan.output, "manifest.json"), "utf8");
+  expect(
+    await resumeTicketBenchmark(plan.output, { maxNewSlots: 1 }, dependencies),
+  ).toMatchObject({ completed: 2, status: "judge-pending" });
+  const second = await readBenchmarkProgress(plan.output, {
+    after: first.cursor,
+  });
+  expect(second.snapshot.runId).toBe(first.snapshot.runId);
+  expect(second.snapshot.startedAt).toBe(first.snapshot.startedAt);
+  expect(second.snapshot.attempts[0]?.id).toBe(first.snapshot.attempts[0]?.id);
+  expect(second.snapshot.counts).toMatchObject({
+    scheduled: 2,
+    attempted: 2,
+    attempts: 2,
+    implementationCalls: 2,
+    retries: 0,
+    judgeCalls: 0,
+  });
+  expect(second.snapshot.allowance.remainingMs).toBeLessThan(
+    first.snapshot.allowance.remainingMs,
+  );
+  expect(second.events.every((event) => event.sequence > first.cursor)).toBe(
+    true,
+  );
+  expect(await readFile(join(plan.output, "manifest.json"), "utf8")).toBe(
+    manifest,
+  );
+  await resumeTicketBenchmark(plan.output, {}, dependencies);
+  expect(calls).toBe(2);
+});
+
+it.each(["interrupted", "cancelled", "unresponsive-recovery"] as const)(
+  "recovers a killed controller with %s work without replaying completed calls",
+  async (scenario) => {
+    const { plan: original } = await fixture({}, { maxCalls: 6 });
+    const { id: _id, ...frozenPlan } = {
+      ...original,
+      launch: {
+        ...original.launch!,
+        allowances: { ...original.launch!.allowances, cleanupMs: 500 },
+      },
+    };
+    const { output: _output, ...hashed } = frozenPlan;
+    const plan = {
+      ...frozenPlan,
+      id: createHash("sha256").update(JSON.stringify(hashed)).digest("hex"),
+    };
+    const root = dirname(plan.output);
+    const frozen = join(root, "frozen-plan.json");
+    await writeFile(frozen, JSON.stringify(plan));
+    const script = join(root, "controller.mts");
+    await writeFile(
+      script,
+      `
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { runTicketBenchmark } from ${JSON.stringify(join(process.cwd(), "src/ticketBenchmark.ts"))};
+const plan = JSON.parse(await readFile(${JSON.stringify(frozen)}, 'utf8'));
+let calls = 0;
+await runTicketBenchmark(plan, undefined, Infinity, {
+  createRuntime: async (request) => ({
+    id: request.id,
+    exec: async ({command, onLine}) => {
+      if (command.startsWith('codex exec')) {
+        calls++;
+        await writeFile(join(request.worktree, 'value.txt'), 'partial\\n');
+        onLine?.('{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}');
+        if (calls === 2) await new Promise(() => {});
+      }
+      return {stdout:'', stderr:'', exitCode:0};
+    },
+    stop: async () => {},
+  }),
+});
+`,
+    );
+    const child = spawn("pnpm", ["exec", "tsx", script], {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let errors = "";
+    child.stderr.on("data", (chunk) => {
+      errors += chunk;
+    });
+    const exited = new Promise<void>((resolve) =>
+      child.once("exit", () => resolve()),
+    );
+    let ownerPid: number | undefined;
+    try {
+      await vi.waitFor(
+        async () => {
+          if (child.exitCode !== null) throw new Error(errors);
+          const { snapshot } = await readBenchmarkProgress(plan.output);
+          expect(snapshot.counts.implementationCalls).toBe(2);
+          expect(snapshot.attempts[1]?.usage?.outputTokens).toBe(3);
+          ownerPid = snapshot.owner!.pid;
+        },
+        { timeout: 4000 },
+      );
+      await expect(resumeTicketBenchmark(plan.output)).rejects.toThrow(
+        "owner is still running",
+      );
+      process.kill(ownerPid!, "SIGKILL");
+      await exited;
+      const before = await readBenchmarkProgress(plan.output);
+      if (scenario === "cancelled") {
+        await cancelBenchmark(
+          plan.output,
+          "Cancellation retained after controller loss",
+        );
+        expect(
+          (await readBenchmarkProgress(plan.output)).pendingCancellation
+            ?.reason,
+        ).toBe("Cancellation retained after controller loss");
+      }
+      await writeFile(
+        join(plan.output, "benchmark.lock", "owner.json"),
+        JSON.stringify({
+          ...before.snapshot.owner,
+          pid: process.pid,
+          start: "retired-process-start",
+        }),
+      );
+      await mkdir(join(plan.output, "benchmark-recovery.lock"));
+      await writeFile(
+        join(plan.output, "benchmark-recovery.lock", "owner.json"),
+        JSON.stringify(before.snapshot.owner),
+      );
+      // A snapshot can lag a committed journal record and a crash can tear its last write.
+      await writeFile(join(plan.output, "status.json"), '{"obsolete":true}');
+      await appendFile(join(plan.output, "events.jsonl"), '{"torn":');
+      let calls = 0;
+      if (scenario === "unresponsive-recovery") {
+        await expect(
+          resumeTicketBenchmark(
+            plan.output,
+            {},
+            {
+              recoverResource: async () => new Promise(() => {}),
+              createRuntime: async () => {
+                calls++;
+                throw new Error("Must not dispatch");
+              },
+            },
+          ),
+        ).rejects.toThrow("bounded allowance");
+        expect(
+          (await readBenchmarkProgress(plan.output)).snapshot.recoveryOwner
+            ?.pid,
+        ).toBe(process.pid);
+        await expect(resumeTicketBenchmark(plan.output)).rejects.toThrow(
+          "running recovery owner",
+        );
+        expect(calls).toBe(0);
+        return;
+      }
+      await expect(
+        resumeTicketBenchmark(
+          plan.output,
+          {},
+          {
+            recoverResource: async () => {
+              throw new Error("Owned resource is still active");
+            },
+            createRuntime: async () => {
+              calls++;
+              throw new Error("Must not dispatch");
+            },
+          },
+        ),
+      ).rejects.toThrow("resource is still active");
+      expect(calls).toBe(0);
+      const reconciled: string[] = [];
+      expect(
+        await resumeTicketBenchmark(
+          plan.output,
+          {},
+          {
+            recoverResource: async (resource) => {
+              reconciled.push(resource.id);
+            },
+            createRuntime: async () => {
+              calls++;
+              throw new Error("Must not replay");
+            },
+          },
+        ),
+      ).toMatchObject({ completed: 2, status: "judge-pending" });
+      const after = await readBenchmarkProgress(plan.output, {
+        after: before.cursor,
+      });
+      expect(reconciled.length).toBeGreaterThan(0);
+      expect(after.snapshot.attempts[0]?.status).toBe("judge-pending");
+      expect(after.snapshot.attempts[1]?.status).toBe(scenario);
+      if (scenario === "cancelled")
+        expect(after.snapshot.cancellation?.reason).toBe(
+          "Cancellation retained after controller loss",
+        );
+      expect(after.snapshot.attempts[1]?.usage?.outputTokens).toBe(3);
+      const partial = after.snapshot.attempts[1]!.evidence.find((path) =>
+        path.endsWith("worktree"),
+      );
+      expect(partial).toBeDefined();
+      expect(await readFile(join(partial!, "value.txt"), "utf8")).toBe(
+        "partial\n",
+      );
+      expect(after.snapshot.counts).toMatchObject({
+        implementationCalls: 2,
+        completed: 1,
+        attempts: 2,
+      });
+      expect(after.snapshot.owner).toBeNull();
+      expect(calls).toBe(0);
+      expect(after.events[0]?.sequence).toBe(before.cursor + 1);
+    } finally {
+      if (child.exitCode === null) {
+        if (ownerPid) {
+          try {
+            process.kill(ownerPid, "SIGKILL");
+          } catch {}
+        }
+        child.kill("SIGKILL");
+      }
+      await exited;
+    }
+  },
+  8000,
+);
+
+it("links an explicit retry to the interrupted attempt without replacing evidence or counting another repetition", async () => {
+  const { plan } = await fixture();
+  const cancellation = new AbortController();
+  await runTicketBenchmark(plan, undefined, 1, {
+    signal: cancellation.signal,
+    createRuntime: async (request) => ({
+      id: request.id,
+      exec: async ({ onLine }) => {
+        await writeFile(join(request.worktree, "value.txt"), "partial\n");
+        onLine?.(
+          '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}',
+        );
+        cancellation.abort("Interrupted first implementation");
+        return { stdout: "", stderr: "", exitCode: 0 };
+      },
+      stop: async () => {},
+    }),
+  });
+  const first = await readBenchmarkProgress(plan.output);
+  const original = first.snapshot.attempts[0]!;
+  const originalEvidence = await readFile(
+    join(plan.output, `${plan.slots[0]!.id}-implementation.jsonl`),
+    "utf8",
+  );
+  await resumeTicketBenchmark(
+    plan.output,
+    { retryAttemptId: original.id, maxNewSlots: 1 },
+    {
+      createRuntime: async (request) => ({
+        id: request.id,
+        exec: async () => {
+          await writeFile(join(request.worktree, "value.txt"), "correct\n");
+          return { stdout: "", stderr: "", exitCode: 0 };
+        },
+        stop: async () => {},
+      }),
+    },
+  );
+  const { snapshot } = await readBenchmarkProgress(plan.output);
+  expect(snapshot.attempts).toHaveLength(2);
+  expect(snapshot.attempts[1]).toMatchObject({
+    id: `${plan.slots[0]!.id}-attempt-2`,
+    retryOf: original.id,
+    slotId: original.slotId,
+    status: "judge-pending",
+    check: "passed",
+  });
+  expect(snapshot.counts).toMatchObject({
+    scheduled: 2,
+    attempted: 1,
+    completed: 0,
+    retries: 1,
+    attempts: 2,
+    implementationCalls: 2,
+  });
+  expect(snapshot.unrun).toEqual([plan.slots[1]!.id]);
+  expect(
+    await readFile(
+      join(plan.output, `${plan.slots[0]!.id}-implementation.jsonl`),
+      "utf8",
+    ),
+  ).toBe(originalEvidence);
+  expect(
+    await readFile(
+      join(
+        original.evidence.find((path) => path.endsWith("worktree"))!,
+        "value.txt",
+      ),
+      "utf8",
+    ),
+  ).toBe("partial\n");
+  await expect(
+    resumeTicketBenchmark(plan.output, { retryAttemptId: original.id }),
+  ).rejects.toThrow("already retried");
+});
+
+it("rejects changed frozen inputs before recovery and does not reset exhausted calls or time", async () => {
+  const { plan } = await fixture({}, { maxCalls: 2 });
+  let calls = 0;
+  const dependencies = {
+    createRuntime: async (
+      request: import("./implementationBenchmark.js").BenchmarkRuntimeRequest,
+    ) => ({
+      id: request.id,
+      exec: async ({ command }: { command: string }) => {
+        if (command.startsWith("codex exec")) calls++;
+        return { stdout: "", stderr: "", exitCode: 0 };
+      },
+      stop: async () => {},
+    }),
+  };
+  await runTicketBenchmark(plan, undefined, 1, dependencies);
+  const manifestPath = join(plan.output, "manifest.json");
+  const manifest = await readFile(manifestPath, "utf8");
+  await writeFile(
+    manifestPath,
+    JSON.stringify({ ...plan, check: "different check" }),
+  );
+  await expect(
+    resumeTicketBenchmark(plan.output, {}, dependencies),
+  ).rejects.toThrow("Frozen implementation plan changed");
+  expect(calls).toBe(1);
+  await writeFile(manifestPath, manifest);
+  expect(
+    await resumeTicketBenchmark(plan.output, {}, dependencies),
+  ).toMatchObject({ status: "budget-exhausted", completed: 1 });
+  const first = await readBenchmarkProgress(plan.output);
+  expect(first.snapshot.counts.implementationCalls).toBe(1);
+  expect(first.snapshot.allowance.remainingCalls).toBe(0);
+  expect(first.snapshot.unrun).toEqual([plan.slots[1]!.id]);
+  await resumeTicketBenchmark(
+    plan.output,
+    {},
+    {
+      ...dependencies,
+      now: () => Date.parse(first.snapshot.startedAt) + plan.overallLimitMs + 1,
+    },
+  );
+  expect(
+    (await readBenchmarkProgress(plan.output)).snapshot.allowance.remainingMs,
+  ).toBe(0);
+  await resumeTicketBenchmark(
+    plan.output,
+    {},
+    { ...dependencies, now: () => Date.parse(first.snapshot.startedAt) + 1 },
+  );
+  expect(
+    (await readBenchmarkProgress(plan.output)).snapshot.allowance.remainingMs,
+  ).toBe(0);
+  expect(calls).toBe(1);
+});
+
+it("bounds an unresponsive operation and retains ownership when its stop cannot be verified", async () => {
+  const { plan: original } = await fixture();
+  const { id: _id, ...frozen } = {
+    ...original,
+    launch: {
+      ...original.launch!,
+      allowances: { ...original.launch!.allowances, cleanupMs: 30 },
+    },
+  };
+  const { output: _output, ...hashed } = frozen;
+  const plan = {
+    ...frozen,
+    id: createHash("sha256").update(JSON.stringify(hashed)).digest("hex"),
+  };
+  let entered!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const running = runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => ({
+      id: request.id,
+      exec: async () => {
+        entered();
+        return new Promise(() => {});
+      },
+      stop: async () => new Promise(() => {}),
+    }),
+  });
+  await Promise.race([
+    ready,
+    running.then(() => {
+      throw new Error("Did not reach the unresponsive invocation");
+    }),
+  ]);
+  await cancelBenchmark(plan.output, "Stop unresponsive operation");
+  expect(await running).toMatchObject({ status: "cleanup-failed" });
+  const { snapshot } = await readBenchmarkProgress(plan.output);
+  expect(snapshot.owner).not.toBeNull();
+  expect(
+    snapshot.resources.some((resource) => resource.status === "cleanup-failed"),
+  ).toBe(true);
+  expect(snapshot.cancellation?.reason).toBe("Stop unresponsive operation");
+  await expect(resumeTicketBenchmark(plan.output)).rejects.toThrow(
+    "owner is still running",
+  );
+});
+
 it("runs isolated same-base arms beside a dirty host and retains uncommitted candidates for judging", async () => {
   const { repo, plan } = await fixture();
   await writeFile(join(repo, "value.txt"), "host draft\n");
@@ -257,6 +877,15 @@ it("runs isolated same-base arms beside a dirty host and retains uncommitted can
       outputTokens: 7,
     });
     expect(
+      createHash("sha256")
+        .update(
+          await readFile(
+            join(plan.output, `${attempt.slotId}-implementation.jsonl`),
+          ),
+        )
+        .digest("hex"),
+    ).toBe(attempt.implementation.streamSha256);
+    expect(
       await readFile(join(attempt.candidate.worktree, "new.txt"), "utf8"),
     ).toBe("untracked candidate\n");
     expect(git(attempt.candidate.worktree, "status", "--porcelain")).toBe("");
@@ -326,17 +955,31 @@ it("blocks measurement when a declared known-bad control passes the protected ch
     { controls: { knownBad: "HEAD" } },
   );
   let modelCalls = 0;
-  const result = await runTicketBenchmark(plan, undefined, Infinity, {
-    createRuntime: async (request) => ({
+  let checkCalls = 0;
+  const dependencies = {
+    createRuntime: async (
+      request: import("./implementationBenchmark.js").BenchmarkRuntimeRequest,
+    ) => ({
       id: request.worktree,
-      exec: async ({ command }) => {
+      exec: async ({ command }: { command: string }) => {
         if (command.startsWith("codex exec")) modelCalls++;
+        else checkCalls++;
         return { stdout: "", stderr: "", exitCode: 0 };
       },
       stop: async () => {},
     }),
-  });
+  };
+  const result = await runTicketBenchmark(
+    plan,
+    undefined,
+    Infinity,
+    dependencies,
+  );
   expect(result).toMatchObject({ status: "control-failed", completed: 0 });
+  expect(
+    await resumeTicketBenchmark(plan.output, {}, dependencies),
+  ).toMatchObject({ status: "control-failed", completed: 0 });
+  expect(checkCalls).toBe(1);
   expect(modelCalls).toBe(0);
 });
 
