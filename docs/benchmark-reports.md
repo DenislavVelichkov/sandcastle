@@ -6,6 +6,11 @@ Open the HTML directly as a local file. It embeds its data, interactions and
 downloads, so it also works when copied without adjacent JSON or CSV files.
 There are no external fonts, chart libraries or services.
 
+The [installed launch guide](benchmark-installed-launch.md) connects package
+verification, task selection, observer recovery and report opening. Its focused
+offline proof opens an isolated HTML file, exercises keyboard controls and
+verifies browser downloads against the embedded JSON/CSV.
+
 Regenerate through the same report entry without starting an implementation,
 judge, browser or native runtime:
 

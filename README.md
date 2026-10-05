@@ -42,6 +42,8 @@ This comparison uses [upstream commit `e99f832`](https://github.com/mattpocock/s
 
 The task workflow remains opt-in. Projects own their tracker, prompts, checks, approval route, and Git target. Use the [workflow API reference](docs/workflow.md) and [daily operating guide](docs/workflow-user-guide.md) when you need those controls.
 
+For benchmarks, follow the [installed consumer launch guide](docs/benchmark-installed-launch.md) to verify the actual commands, select a project/task and bounded allowance, observe or recover the run, and open its offline judge-score report. Reproducible package and runtime fixtures prove orchestration without calling models or claiming model performance.
+
 The [routing decision](docs/workflow-user-guide.md#review-the-routing-decision) retains fixed Sol High. The completed three-model pilot validates one ticket; the incomplete historical studies establish no model ranking, adaptive activation, or subscription savings. The [capability evidence index](docs/workflow-evidence.md) records the tested limits. Owner answers use a project-authenticated host route; Codex Desktop chat answer delivery and automatic app-close shutdown remain disabled.
 
 ## Prerequisites
