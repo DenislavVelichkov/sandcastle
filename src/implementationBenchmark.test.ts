@@ -86,6 +86,7 @@ const git = (cwd: string, ...args: string[]) =>
 const fixture = async (
   options: Partial<TicketBenchmarkOptions> = {},
   contract?: Partial<LaunchContract>,
+  frozenFiles: Readonly<Record<string, string>> = {},
 ) => {
   const root = await mkdtemp(join(tmpdir(), "private-benchmark-"));
   roots.push(root);
@@ -101,6 +102,10 @@ const fixture = async (
     'test "$(cat value.txt)" = correct\n',
   );
   await writeFile(join(repo, ".gitignore"), "node_modules/\ndist/\n");
+  for (const [path, text] of Object.entries(frozenFiles)) {
+    await mkdir(dirname(join(repo, path)), { recursive: true });
+    await writeFile(join(repo, path), text);
+  }
   if (contract)
     await writeFile(
       join(repo, "launch.json"),
@@ -567,3 +572,170 @@ it("grades sealed code with the frozen check script even when the worker replace
     ),
   ).toBe("exit 0\n");
 });
+
+it("transfers exact candidate bytes despite worker Git attributes", async () => {
+  for (const bytes of ["correct\n", "correct\r\n"]) {
+    const { plan } = await fixture();
+    await runTicketBenchmark(plan, undefined, 1, {
+      createRuntime: async (request) => ({
+        id: request.worktree,
+        exec: async ({ command }) => {
+          if (command.startsWith("codex exec")) {
+            await writeFile(join(request.worktree, "value.txt"), bytes);
+            await writeFile(
+              join(request.worktree, ".gitattributes"),
+              "*.txt text eol=crlf\n",
+            );
+          } else
+            expect(
+              await readFile(join(request.worktree, "value.txt"), "utf8"),
+            ).toBe(bytes);
+          return { stdout: "", stderr: "", exitCode: 0 };
+        },
+        stop: async () => {},
+      }),
+    });
+    const ledger = JSON.parse(
+      await readFile(join(plan.output, "execution.json"), "utf8"),
+    );
+    const attempt = ledger.attempts[0];
+    expect(attempt.check.status).toBe("passed");
+    expect(
+      execFileSync("git", ["show", `${attempt.candidate.head}:value.txt`], {
+        cwd: attempt.candidate.worktree,
+        encoding: "utf8",
+      }),
+    ).toBe(bytes);
+  }
+});
+
+it.each(["preparation", "checks"] as const)(
+  "rejects grading inputs changed during %s without exporting a passing check",
+  async (phase) => {
+    const { plan } = await fixture({ prepare: "prepare-fixture" });
+    await runTicketBenchmark(plan, undefined, 1, {
+      createRuntime: async (request) => ({
+        id: request.worktree,
+        exec: async ({ command }) => {
+          if (command.startsWith("codex exec"))
+            await writeFile(join(request.worktree, "value.txt"), "wrong\n");
+          if (
+            request.role === "checks" &&
+            command ===
+              (phase === "preparation" ? "prepare-fixture" : plan.check)
+          )
+            await writeFile(join(request.worktree, "check.sh"), "exit 0\n");
+          return { stdout: "claimed pass", stderr: "", exitCode: 0 };
+        },
+        stop: async () => {},
+      }),
+    });
+    const ledger = JSON.parse(
+      await readFile(join(plan.output, "execution.json"), "utf8"),
+    );
+    expect(ledger.attempts[0]).toMatchObject({
+      status: "environment-unavailable",
+      check: { status: "unavailable" },
+      judge: { status: "pending" },
+      cleanup: { status: "passed" },
+    });
+    expect(ledger.attempts[0].reason).toContain(
+      "Protected grading inputs changed",
+    );
+  },
+);
+
+it("keeps disposable checker installations and build output outside source applicability", async () => {
+  const { plan } = await fixture({ prepare: "prepare-fixture" });
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => ({
+      id: request.worktree,
+      exec: async ({ command }) => {
+        if (command.startsWith("codex exec"))
+          await writeFile(join(request.worktree, "value.txt"), "correct\n");
+        if (request.role === "checks" && command === "prepare-fixture")
+          for (const directory of ["node_modules", "dist"]) {
+            await mkdir(join(request.worktree, directory));
+            await writeFile(
+              join(request.worktree, directory, "artifact"),
+              "disposable\n",
+            );
+          }
+        return { stdout: "passed", stderr: "", exitCode: 0 };
+      },
+      stop: async () => {},
+    }),
+  });
+  const ledger = JSON.parse(
+    await readFile(join(plan.output, "execution.json"), "utf8"),
+  );
+  expect(ledger.attempts[0]).toMatchObject({
+    status: "judge-pending",
+    check: { status: "passed" },
+    cleanup: { status: "passed" },
+  });
+});
+
+it("freezes and restores Unicode grading paths as actual Git paths", async () => {
+  const path = "tests/проверка.sh";
+  const { plan } = await fixture({}, undefined, { [path]: "frozen grader\n" });
+  expect(plan.launch!.checking.files).toContainEqual(
+    expect.objectContaining({ path, text: "frozen grader\n" }),
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => ({
+      id: request.worktree,
+      exec: async ({ command }) => {
+        if (command.startsWith("codex exec"))
+          await writeFile(join(request.worktree, path), "worker replacement\n");
+        else
+          expect(await readFile(join(request.worktree, path), "utf8")).toBe(
+            "frozen grader\n",
+          );
+        return { stdout: "", stderr: "", exitCode: 0 };
+      },
+      stop: async () => {},
+    }),
+  });
+  const ledger = JSON.parse(
+    await readFile(join(plan.output, "execution.json"), "utf8"),
+  );
+  expect(ledger.attempts[0].check.status).toBe("passed");
+});
+
+it.each(["preparation", "checks"] as const)(
+  "invalidates a check when %s replaces the candidate's source bytes",
+  async (phase) => {
+    const { plan } = await fixture({ prepare: "prepare-fixture" });
+    await runTicketBenchmark(plan, undefined, 1, {
+      createRuntime: async (request) => ({
+        id: request.worktree,
+        exec: async ({ command }) => {
+          if (command.startsWith("codex exec"))
+            await writeFile(join(request.worktree, "value.txt"), "wrong\n");
+          if (
+            request.role === "checks" &&
+            command ===
+              (phase === "preparation" ? "prepare-fixture" : plan.check)
+          )
+            await writeFile(join(request.worktree, "value.txt"), "correct\n");
+          return { stdout: "claimed pass", stderr: "", exitCode: 0 };
+        },
+        stop: async () => {},
+      }),
+    });
+    const ledger = JSON.parse(
+      await readFile(join(plan.output, "execution.json"), "utf8"),
+    );
+    const attempt = ledger.attempts[0];
+    expect(attempt).toMatchObject({
+      status: "environment-unavailable",
+      check: { status: "unavailable" },
+      judge: { status: "pending" },
+    });
+    expect(attempt.reason).toContain("Checked candidate changed");
+    expect(
+      await readFile(join(attempt.candidate.worktree, "value.txt"), "utf8"),
+    ).toBe("wrong\n");
+  },
+);

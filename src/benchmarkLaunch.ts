@@ -624,9 +624,9 @@ export const freezeLaunch = async (input: {
     judge,
     contract: { config, frozen },
   } = input;
-  const baseFiles = git(cwd, "ls-tree", "-r", "--name-only", baseCommit).split(
-    "\n",
-  );
+  const baseFiles = git(cwd, "ls-tree", "-r", "--name-only", "-z", baseCommit)
+    .split("\0")
+    .filter(Boolean);
   const modes = new Map(
     git(cwd, "ls-tree", "-r", "-z", baseCommit)
       .split("\0")

@@ -7,6 +7,7 @@ Codex model IDs can contain dots, such as `gpt-6.1-sol`; retain dotted identifie
 Use `pnpm` for installs, scripts, and package executables in this repository; keep its pnpm lockfiles and generated worker commands aligned.
 Keep `@standard-schema/spec` as a direct dependency: exported `Output` types import it, and a fresh pnpm install does not expose the transitive copy to typecheck.
 `AGENTS.md` links to `CLAUDE.md`; edits to this guidance appear under `CLAUDE.md` in Git.
+Use NUL-separated Git path discovery for frozen benchmark inputs; line-oriented Git output quotes Unicode filenames and can silently omit protected checks.
 Run the build before the full test suite, sequentially: the build clears `dist/`, which CLI tests execute.
 If Vitest fails before collecting tests with `/tmp` `ENOSPC`, check inode availability and set `TMPDIR` to a fresh directory on the project disk. Preserve retained pilot directories.
 

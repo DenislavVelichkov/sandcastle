@@ -77,6 +77,15 @@ export const privateWorktree = async (
   await mkdir(root, { recursive: true, mode: 0o700 });
   const storage = join(root, "storage.git");
   await git(root, "init", "--bare", storage);
+  // Candidate transport preserves working bytes, including line endings and $Id$.
+  // Controller-owned attributes override repository filters and normalization.
+  await writeFile(
+    join(storage, "info", "attributes"),
+    "* -text -filter -ident\n",
+    {
+      mode: 0o600,
+    },
+  );
   await git(storage, "fetch", "--no-tags", "--", source, commit);
   const worktree = join(root, "worktree");
   await git(storage, "worktree", "add", "--detach", worktree, commit);
@@ -104,6 +113,59 @@ export const workspaceFiles = async (
       }),
   );
   return groups.flat().sort();
+};
+
+const relevantFiles = async (
+  workspace: string,
+  ignoredAt: string,
+  tracked: readonly string[],
+  signal: AbortSignal,
+) => {
+  const files = await workspaceFiles(
+    workspace,
+    "",
+    async (directory) =>
+      tracked.some((path) => path.startsWith(`${directory}/`)) ||
+      !(await ignoredPaths(ignoredAt, [`${directory}/`], signal)).length,
+    signal,
+  );
+  const ignored = await ignoredPaths(
+    ignoredAt,
+    files.filter((path) => !tracked.includes(path)),
+    signal,
+  );
+  return files.filter((path) => !ignored.includes(path));
+};
+
+/** Check applicability against actual source bytes without trusting runtime Git. */
+export const workspaceFingerprint = async (
+  workspace: string,
+  ignoredAt: string,
+  signal: AbortSignal,
+  expectedPaths?: readonly string[],
+) => {
+  const tracked =
+    expectedPaths ??
+    (await runGit(workspace, ["ls-files", "-z"], signal))
+      .split("\0")
+      .filter(Boolean);
+  const paths = await relevantFiles(workspace, ignoredAt, tracked, signal);
+  const records = [];
+  for (const path of paths) {
+    signal.throwIfAborted();
+    const source = join(workspace, path);
+    const info = await lstat(source);
+    if (info.isSymbolicLink())
+      records.push([path, "120000", hash(await readlink(source))]);
+    else if (info.isFile())
+      records.push([
+        path,
+        info.mode & 0o100 ? "100755" : "100644",
+        hash(await readFile(source, { signal })),
+      ]);
+    else throw new Error("Unsupported checked source file");
+  }
+  return { paths, sha256: hash(JSON.stringify(records)) };
 };
 
 export const seal = async (
@@ -134,22 +196,10 @@ export const seal = async (
   const tracked = (await git(worktree, "ls-files", "-z"))
     .split("\0")
     .filter(Boolean);
-  const files = await workspaceFiles(
-    workspace,
-    "",
-    async (directory) =>
-      tracked.some((path) => path.startsWith(`${directory}/`)) ||
-      !(await ignoredPaths(worktree, [`${directory}/`], signal)).length,
-    signal,
-  );
-  const ignored = await ignoredPaths(
-    worktree,
-    files.filter((path) => !tracked.includes(path)),
-    signal,
-  );
+  const files = await relevantFiles(workspace, worktree, tracked, signal);
   for (const path of tracked)
     await rm(join(worktree, path), { force: true, recursive: true });
-  for (const path of files.filter((path) => !ignored.includes(path))) {
+  for (const path of files) {
     signal.throwIfAborted();
     const source = join(workspace, path);
     const target = join(worktree, path);

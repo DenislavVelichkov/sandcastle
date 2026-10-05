@@ -5,6 +5,7 @@ import {
   mkdtemp,
   open,
   readFile,
+  readlink,
   realpath,
   rename,
   rm,
@@ -31,6 +32,7 @@ import {
   privateWorktree,
   seal,
   workspaceFiles,
+  workspaceFingerprint,
   type Candidate,
 } from "./benchmarkCandidate.js";
 import { createBenchmarkRuntime } from "./implementationBenchmarkRuntime.js";
@@ -281,6 +283,56 @@ const restoreChecks = async (plan: TicketBenchmarkPlan, worktree: string) => {
   }
 };
 
+const verifyChecks = async (
+  plan: TicketBenchmarkPlan,
+  worktree: string,
+  signal: AbortSignal,
+  ignoredAt: string,
+  expected: Awaited<ReturnType<typeof workspaceFingerprint>>,
+) => {
+  for (const file of plan.launch!.checking.files) {
+    signal.throwIfAborted();
+    const path = join(worktree, file.path);
+    try {
+      if (!isWithin(worktree, await realpath(dirname(path))))
+        throw new Error("Grading directory escaped its worktree");
+      const info = await lstat(path);
+      const bytes =
+        file.mode === "120000"
+          ? info.isSymbolicLink()
+            ? Buffer.from(await readlink(path))
+            : null
+          : info.isFile()
+            ? await readFile(path, { signal })
+            : null;
+      if (
+        !bytes ||
+        hash(bytes) !== file.sha256 ||
+        (file.mode !== "120000" &&
+          Boolean(info.mode & 0o100) !== (file.mode === "100755"))
+      )
+        throw new Error("Frozen grading bytes or mode changed");
+    } catch {
+      signal.throwIfAborted();
+      throw new PhaseFailure(
+        "environment-unavailable",
+        `Protected grading inputs changed: ${file.path}`,
+      );
+    }
+  }
+  const actual = await workspaceFingerprint(
+    worktree,
+    ignoredAt,
+    signal,
+    expected.paths,
+  );
+  if (actual.sha256 !== expected.sha256)
+    throw new PhaseFailure(
+      "environment-unavailable",
+      "Checked candidate changed during preparation or checking",
+    );
+};
+
 export const runImplementationBenchmark = async (
   plan: TicketBenchmarkPlan,
   maxNewSlots: number,
@@ -348,7 +400,9 @@ export const runImplementationBenchmark = async (
     cleanup = false,
   ): Promise<T> => {
     const group = (phaseName: string) =>
-      phaseName.startsWith("checker-") || phaseName === "checks"
+      phaseName.startsWith("checker-") ||
+      phaseName === "checks" ||
+      phaseName === "control-check"
         ? "checks"
         : ["setup", "preparation", "worktree"].includes(phaseName)
           ? "setup"
@@ -598,34 +652,73 @@ export const runImplementationBenchmark = async (
               return source;
             },
           );
+          const expected = await phase(
+            "checker-baseline",
+            allowances.checksMs,
+            controlPhases,
+            (signal) =>
+              workspaceFingerprint(
+                source.worktree,
+                protectedBase!.worktree,
+                signal,
+              ),
+          );
           runtime = await setup(
             { plan, root, worktree: source.worktree, role: "control" },
             controlPhases,
           );
           await prepareRuntime(runtime, controlPhases);
+          await phase(
+            "checker-input-integrity",
+            allowances.checksMs,
+            controlPhases,
+            (signal) =>
+              verifyChecks(
+                plan,
+                source.worktree,
+                signal,
+                protectedBase!.worktree,
+                expected,
+              ),
+          );
           const checked = await phase(
             "control-check",
             allowances.checksMs,
             controlPhases,
             (signal) => runtime!.exec({ command: plan.check!, signal }),
           );
-          const passed =
-            control.kind === "known-good"
-              ? checked.exitCode === 0
-              : checked.exitCode !== 0;
           const output =
             runtime.redact?.(`${checked.stdout}\n${checked.stderr}`) ??
             `${checked.stdout}\n${checked.stderr}`;
           await writeFile(join(plan.output, `${control.kind}.log`), output, {
             mode: 0o600,
           });
-          ledger.controls.results.push({
+          const result = {
             ...control,
             exitCode: checked.exitCode,
-            status: passed ? "passed" : "failed",
+            status: "unavailable",
             outputSha256: hash(output),
             phases: controlPhases,
-          });
+          };
+          ledger.controls.results.push(result);
+          await phase(
+            "checker-result-integrity",
+            allowances.checksMs,
+            controlPhases,
+            (signal) =>
+              verifyChecks(
+                plan,
+                source.worktree,
+                signal,
+                protectedBase!.worktree,
+                expected,
+              ),
+          );
+          const passed =
+            control.kind === "known-good"
+              ? checked.exitCode === 0
+              : checked.exitCode !== 0;
+          result.status = passed ? "passed" : "failed";
           if (!passed) ledger.controls.status = "failed";
         } catch (error) {
           const resources = (error as { resources?: string[] }).resources;
@@ -905,6 +998,17 @@ export const runImplementationBenchmark = async (
                   attempt.phases,
                   () => restoreChecks(plan, checkWorkspace.worktree),
                 );
+                const expected = await phase(
+                  "checker-baseline",
+                  allowances.checksMs,
+                  attempt.phases,
+                  (signal) =>
+                    workspaceFingerprint(
+                      checkWorkspace.worktree,
+                      protectedBase!.worktree,
+                      signal,
+                    ),
+                );
                 checker = await setup(
                   {
                     plan,
@@ -916,6 +1020,19 @@ export const runImplementationBenchmark = async (
                 );
                 attempt.resources.push(checker.id);
                 await prepareRuntime(checker, attempt.phases, true);
+                await phase(
+                  "checker-input-integrity",
+                  allowances.checksMs,
+                  attempt.phases,
+                  (signal) =>
+                    verifyChecks(
+                      plan,
+                      checkWorkspace.worktree,
+                      signal,
+                      protectedBase!.worktree,
+                      expected,
+                    ),
+                );
                 const checked = await phase(
                   "checks",
                   allowances.checksMs,
@@ -929,13 +1046,28 @@ export const runImplementationBenchmark = async (
                   { mode: 0o600 },
                 );
                 attempt.check = {
-                  status: checked.exitCode === 0 ? "passed" : "failed",
+                  status: "unavailable",
                   exitCode: checked.exitCode,
                   outputSha256: hash(output),
                   candidateHead: attempt.candidate.head,
                   candidateTree: attempt.candidate.tree,
                   frozenInputsSha256: hash(JSON.stringify(launch.checking)),
                 };
+                await phase(
+                  "checker-result-integrity",
+                  allowances.checksMs,
+                  attempt.phases,
+                  (signal) =>
+                    verifyChecks(
+                      plan,
+                      checkWorkspace.worktree,
+                      signal,
+                      protectedBase!.worktree,
+                      expected,
+                    ),
+                );
+                attempt.check.status =
+                  checked.exitCode === 0 ? "passed" : "failed";
                 if (
                   attempt.status === "judge-pending" &&
                   checked.exitCode !== 0
@@ -968,6 +1100,7 @@ export const runImplementationBenchmark = async (
                   : "Candidate sealing failed";
             if (attempt.candidate)
               attempt.check = {
+                ...attempt.check,
                 status:
                   error instanceof PhaseFailure &&
                   ["cancelled", "timed-out"].includes(error.outcome)
