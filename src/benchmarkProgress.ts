@@ -737,6 +737,7 @@ export const openBenchmarkProgress = async (
     sealInterruptedJudge?: (
       attempt: ImplementationAttempt,
       signal: AbortSignal,
+      commit: () => Promise<void>,
     ) => Promise<void>;
   },
 ): Promise<BenchmarkProgressController> => {
@@ -966,11 +967,14 @@ export const openBenchmarkProgress = async (
         await checkpoint("interrupted-evidence-sealed");
       }
       for (const attempt of execution.attempts.filter(
-        (attempt) => attempt.judge.status === "running",
+        (attempt) => attempt.judge.assessments?.length,
       )) {
         if (options.sealInterruptedJudge)
           await boundedRecovery(
-            () => options.sealInterruptedJudge!(attempt, captureSignal),
+            () =>
+              options.sealInterruptedJudge!(attempt, captureSignal, () =>
+                checkpoint("judge-finalized"),
+              ),
             captureSignal,
             plan.launch!.allowances.cleanupMs,
           );

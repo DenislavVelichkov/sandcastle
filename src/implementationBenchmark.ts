@@ -494,9 +494,14 @@ export const runImplementationBenchmark = async (
       );
       if (attempt.candidate) attempt.judge.status = "pending";
     },
-    sealInterruptedJudge: async (attempt, signal) => {
+    sealInterruptedJudge: async (attempt, signal, commit) => {
       const assessment = attempt.judge.assessments?.at(-1);
-      if (!assessment || assessment.status !== "running") return;
+      if (!assessment) return;
+      if (assessment.finishedAt && assessment.status !== "running") {
+        await sealJudgeAssessment(plan, attempt, assessment, commit);
+        attempt.judge.status = assessment.status;
+        return;
+      }
       const root = join(plan.output, "runtime", `judge-${assessment.id}`);
       const redact = benchmarkCredentialRedactor([
         join(root, "controller-auth", "auth.json"),
@@ -526,13 +531,18 @@ export const runImplementationBenchmark = async (
             assessment.provenance.sessionId = event.sessionId;
         }
       assessment.provenance.streamSha256 = hash(stream);
+      await mkdir(dirname(assessment.provenance.stream), {
+        recursive: true,
+        mode: 0o700,
+      });
+      await writeFile(assessment.provenance.stream, stream, { mode: 0o600 });
       failJudgeAssessment(
         assessment,
         "Controller stopped during judging; this call is not replayed",
       );
       assessment.finishedAt = new Date(now()).toISOString();
       attempt.judge.status = "incomplete";
-      await sealJudgeAssessment(plan, attempt, assessment);
+      await sealJudgeAssessment(plan, attempt, assessment, commit);
     },
   });
   attempts = ledger.attempts;
@@ -1070,16 +1080,24 @@ export const runImplementationBenchmark = async (
       } catch {
         failJudgeAssessment(assessment, "Judge provenance capture failed");
       }
-      await progress.publish(
-        "judge-stream-finished",
-        "assessment-complete",
-        attempt,
-      );
       assessment.provenance.streamSha256 = hash(stream);
       await writeFile(assessment.provenance.stream, stream, { mode: 0o600 });
       assessment.finishedAt = new Date(now()).toISOString();
       attempt.judge.status = assessment.status;
-      await sealJudgeAssessment(plan, attempt, assessment);
+      await phase(
+        "judge-sealing",
+        allowances.sealMs,
+        phases,
+        () =>
+          sealJudgeAssessment(plan, attempt, assessment, () =>
+            progress.publish(
+              "judge-stream-finished",
+              "assessment-complete",
+              attempt,
+            ),
+          ),
+        true,
+      );
       if (attempt.cleanup.status === "passed")
         try {
           await phase(
@@ -1113,11 +1131,23 @@ export const runImplementationBenchmark = async (
     await persist("report", "report-generation");
     const assessed = await readBenchmarkAssessments(plan.output);
     const comparison = compareBenchmarkCandidates(plan, assessed.assessments);
+    const evaluated = new Set(
+      attempts
+        .filter(
+          (attempt) =>
+            !attempt.retryOf &&
+            assessed.assessments.some(
+              (item) =>
+                item.assessment.id === attempt.judge.assessments?.at(-1)?.id &&
+                item.applicable &&
+                item.assessment.status === "complete",
+            ),
+        )
+        .map((attempt) => attempt.slotId),
+    ).size;
     await save(join(plan.output, "report.json"), {
       status: ledger.status,
-      evaluated: attempts.filter(
-        (attempt) => attempt.judge.status === "complete",
-      ).length,
+      evaluated,
       judge: plan.judge,
       projectAcceptance: "not assessed",
       scheduled: plan.slots.length,
@@ -1136,7 +1166,7 @@ export const runImplementationBenchmark = async (
     });
     await writeFile(
       join(plan.output, "report.html"),
-      `<!doctype html><html lang="en"><meta charset="utf-8"><title>Implementation benchmark</title><h1>Implementation benchmark</h1><p>${new Set(attempts.map((attempt) => attempt.slotId)).size}/${plan.slots.length} slots attempted, ${attempts.length} attempts including retries. ${ledger.status}. ${attempts.filter((attempt) => attempt.judge.status === "complete").length} complete assessments. Scores, coverage and evidence are in report.json. Project acceptance is not assessed.</p>`,
+      `<!doctype html><html lang="en"><meta charset="utf-8"><title>Implementation benchmark</title><h1>Implementation benchmark</h1><p>${new Set(attempts.map((attempt) => attempt.slotId)).size}/${plan.slots.length} slots attempted, ${attempts.length} attempts including retries. ${ledger.status}. ${evaluated} current complete assessments. Scores, coverage and evidence are in report.json. Project acceptance is not assessed.</p>`,
       { mode: 0o600 },
     );
     return {
@@ -1204,18 +1234,17 @@ export const runImplementationBenchmark = async (
       : retry
         ? plan.slots.filter((slot) => slot.id === retry.slotId)
         : plan.slots.filter((slot) => ledger.unrun.includes(slot.id));
-    if (!scheduled.length && ledger.status === "running")
-      ledger.status = attempts.some(
-        (attempt) => attempt.judge.status === "pending",
-      )
-        ? "judge-pending"
-        : attempts.some((attempt) => attempt.judge.status === "incomplete")
-          ? "assessment-incomplete"
-          : ledger.unrun.length
-            ? "partial"
-            : "completed";
-    else if (!scheduled.length) {
-      /* Preserve a refused rejudge's budget outcome. */
+    if (!scheduled.length) {
+      if (ledger.status === "running")
+        ledger.status = attempts.some(
+          (attempt) => attempt.judge.status === "pending",
+        )
+          ? "judge-pending"
+          : attempts.some((attempt) => attempt.judge.status === "incomplete")
+            ? "assessment-incomplete"
+            : ledger.unrun.length
+              ? "partial"
+              : "complete";
     } else if (ledger.controls.status === "failed")
       ledger.status = "control-failed";
     else if (
@@ -1842,7 +1871,7 @@ export const runImplementationBenchmark = async (
             ? "assessment-incomplete"
             : ledger.unrun.length
               ? "partial"
-              : "completed";
+              : "complete";
     }
   } catch (error) {
     if (!initialized) throw error;

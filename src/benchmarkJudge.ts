@@ -1,13 +1,18 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import {
+  link,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  realpath,
+  rm,
+} from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import type { IterationUsage } from "./AgentProvider.js";
 import type { Candidate } from "./benchmarkCandidate.js";
-import {
-  workspaceFingerprint,
-  verifyBenchmarkCandidate,
-} from "./benchmarkCandidate.js";
+import { verifyBenchmarkCandidate } from "./benchmarkCandidate.js";
 import type {
   ImplementationAttempt,
   ImplementationExecution,
@@ -171,17 +176,6 @@ export const judgeRubric = (
     (row) => row.task === undefined || row.task === ticket + 1,
   );
 };
-export const judgeCandidateFingerprint = (
-  candidate: Candidate | JudgeAssessment["candidate"],
-  signal: AbortSignal,
-) =>
-  workspaceFingerprint(
-    candidate.worktree,
-    candidate.worktree,
-    signal,
-    "paths" in candidate ? candidate.paths : undefined,
-  );
-
 /** Output is evidence to validate; only the controller calculates scores. */
 export const assessJudgeOutput = async (
   plan: TicketBenchmarkPlan,
@@ -230,7 +224,8 @@ export const assessJudgeOutput = async (
   assessment.requirements = [];
   let applicableWeight = 0,
     assessedWeight = 0,
-    earnedWeight = 0;
+    earnedWeight = 0,
+    missingWeight = 0;
   for (const rule of rubric) {
     const row = output.requirements.find((item) => item.id === rule.id)!;
     const applicable =
@@ -300,25 +295,24 @@ export const assessJudgeOutput = async (
           : verdict === "partial"
             ? rule.partialCredit
             : 0);
-    }
+    } else missingWeight += rule.weight;
     assessment.requirements.push({ ...row, verdict, evidence, gaps });
   }
   assessment.deviations = output.deviations;
   assessment.disclosures.push(...output.disclosures);
-  const missing = applicableWeight - assessedWeight;
   assessment.score = {
-    value: assessedWeight ? (100 * earnedWeight) / assessedWeight : null,
+    value: assessedWeight ? 100 * (earnedWeight / assessedWeight) : null,
     coverage: applicableWeight ? assessedWeight / applicableWeight : 1,
     applicableWeight,
     assessedWeight,
     range: applicableWeight
       ? [
-          (100 * earnedWeight) / applicableWeight,
-          (100 * (earnedWeight + missing)) / applicableWeight,
+          100 * (earnedWeight / applicableWeight),
+          100 * ((earnedWeight + missingWeight) / applicableWeight),
         ]
       : null,
   };
-  assessment.status = missing ? "incomplete" : "complete";
+  assessment.status = missingWeight ? "incomplete" : "complete";
 };
 
 export const judgePrompt = (
@@ -357,6 +351,7 @@ export const sealJudgeAssessment = async (
   plan: TicketBenchmarkPlan,
   attempt: ImplementationAttempt,
   assessment: JudgeAssessment,
+  commit: () => Promise<void>,
 ) => {
   const path = join(plan.output, "assessments", `${assessment.id}.json`);
   const bytes = `${JSON.stringify(assessment, null, 2)}\n`;
@@ -364,12 +359,50 @@ export const sealJudgeAssessment = async (
     recursive: true,
     mode: 0o700,
   });
-  await writeFile(path, bytes, { mode: 0o600, flag: "wx" });
-  (attempt.judge.records ??= []).push({
+  const record = {
     id: assessment.id,
     path,
     sha256: hash(bytes),
-  });
+  };
+  const prior = attempt.judge.records?.find(
+    (item) => item.id === assessment.id,
+  );
+  if (prior && (prior.path !== path || prior.sha256 !== record.sha256))
+    throw new Error("A bound assessment cannot be rewritten");
+  if (!prior) (attempt.judge.records ??= []).push(record);
+  // The journal commits the exact expected bytes before the export becomes visible.
+  await commit();
+  const matches = async () => {
+    try {
+      if (!(await readFile(path)).equals(Buffer.from(bytes)))
+        throw new Error("Bound assessment evidence changed");
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      return false;
+    }
+  };
+  const temporary = `${path}.tmp`;
+  await rm(temporary, { force: true });
+  if (await matches()) return;
+  const file = await open(temporary, "wx", 0o600);
+  try {
+    await file.writeFile(bytes);
+    await file.sync();
+  } finally {
+    await file.close();
+  }
+  try {
+    await link(temporary, path);
+  } catch (error) {
+    if (
+      (error as NodeJS.ErrnoException).code !== "EEXIST" ||
+      !(await matches())
+    )
+      throw error;
+  } finally {
+    await rm(temporary, { force: true });
+  }
 };
 
 /** Passive applicability checks never dispatch a judge or change historical bytes. */

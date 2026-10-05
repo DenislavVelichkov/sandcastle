@@ -482,6 +482,47 @@ it("freezes explicit rubric rules and declared satisfied prerequisites before wo
   ).rejects.toThrow("max-new-slots");
 });
 
+it.each(["unknown-task", "empty-task", "overflowing-total"] as const)(
+  "rejects %s rubric contracts before declaring a plan ready",
+  async (problem) => {
+    const { repo } = await project();
+    await writeFile(join(repo, "other.md"), "Another selected task\n");
+    const row = {
+      id: "behavior",
+      requirement: "Keep the required behavior",
+      weight: 1,
+      partialCredit: 0.5,
+      applicability: "always",
+      evidence: ["code"],
+    };
+    const rubric =
+      problem === "overflowing-total"
+        ? [
+            { ...row, weight: 1e308 },
+            { ...row, id: "other", weight: 1e308 },
+          ]
+        : [{ ...row, task: problem === "unknown-task" ? 2 : 1 }];
+    await writeFile(
+      join(repo, "launch.json"),
+      JSON.stringify({ version: 1, rubric }),
+    );
+    await expect(
+      planTicketBenchmark({
+        cwd: repo,
+        tickets:
+          problem === "empty-task" ? ["task.md", "other.md"] : ["task.md"],
+        contract: "launch.json",
+      }),
+    ).rejects.toThrow(
+      problem === "unknown-task"
+        ? "Rubric task"
+        : problem === "empty-task"
+          ? "Every selected task"
+          : "finite",
+    );
+  },
+);
+
 it("charges setup time against the remaining model-call budget", () => {
   expect(invocationBudgetMs(1_000, 900, 100)).toBe(900);
   expect(invocationBudgetMs(1_000, 900, 700)).toBe(300);

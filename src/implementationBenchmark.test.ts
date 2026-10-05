@@ -518,6 +518,160 @@ it("invalidates reformatted assessment exports without rewriting the historical 
   expect(current.execution.budget.judgeCalls).toBe(1);
 });
 
+it.each([false, true])(
+  "retains finite scores and missing-evidence status for large weights, missing=%s",
+  async (missing) => {
+    const code = {
+      id: "code",
+      requirement: "The value works",
+      weight: 1e308,
+      partialCredit: 0.5,
+      applicability: "always" as const,
+      evidence: ["code" as const],
+    };
+    const { plan } = await fixture(
+      {},
+      {
+        visualRequired: missing,
+        rubric: [
+          code,
+          ...(missing
+            ? [
+                {
+                  ...code,
+                  id: "visual",
+                  weight: 1,
+                  applicability: "visual" as const,
+                  evidence: ["visual" as const],
+                },
+              ]
+            : []),
+        ],
+      },
+    );
+    await runTicketBenchmark(plan, undefined, 1, {
+      createRuntime: async (request) => controlledJudge(request),
+    });
+    const { assessments } = await readBenchmarkAssessments(plan.output);
+    expect(assessments[0]!.assessment).toMatchObject({
+      status: missing ? "incomplete" : "complete",
+      score: { value: 100, range: [100, 100] },
+    });
+  },
+);
+
+it("counts only current original assessments in generated reports", async () => {
+  const { plan } = await fixture();
+  let judgeCalls = 0;
+  await runTicketBenchmark(plan, undefined, Infinity, {
+    createRuntime: async (request) => {
+      if (request.role === "judge" && ++judgeCalls === 2) {
+        const saved = await readBenchmarkAssessments(plan.output);
+        await writeFile(
+          join(
+            saved.assessments[0]!.assessment.candidate.worktree,
+            "value.txt",
+          ),
+          "changed after grading\n",
+        );
+      }
+      return controlledJudge(request);
+    },
+  });
+  const report = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  expect(report.evaluated).toBe(1);
+  expect(report.comparison[0].status).toBe("inconclusive");
+  expect(await readFile(join(plan.output, "report.html"), "utf8")).toContain(
+    "1 current complete assessments",
+  );
+});
+
+it("returns success through the built CLI for a completed code assessment", async () => {
+  const { plan } = await fixture({ arms: ["gpt-6-astra:medium"] });
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => controlledJudge(request),
+  });
+  const stdout = execFileSync(
+    process.execPath,
+    [
+      join(process.cwd(), "dist", "main.js"),
+      "benchmark-resume",
+      "--directory",
+      plan.output,
+    ],
+    { encoding: "utf8" },
+  );
+  expect(JSON.parse(stdout)).toMatchObject({
+    status: "complete",
+    completed: 1,
+  });
+}, 10000);
+
+it.each([true, false])(
+  "recovers final assessment export, already exported=%s, without another judge call",
+  async (exported) => {
+    const { plan } = await fixture({ arms: ["gpt-6-astra:medium"] });
+    await runTicketBenchmark(plan, undefined, 1, {
+      createRuntime: async (request) => controlledJudge(request),
+    });
+    const initial = await readBenchmarkAssessments(plan.output);
+    const assessment = initial.assessments[0]!.assessment;
+    const artifact = join(plan.output, "assessments", `${assessment.id}.json`);
+    const bytes = await readFile(artifact, "utf8");
+    const journal = (await readFile(join(plan.output, "events.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    const finalized = journal.findIndex(
+      (record) => record.event.kind === "judge-stream-finished",
+    );
+    expect(finalized).toBeGreaterThan(0);
+    journal[finalized].snapshot.owner.start = "retired-process-start";
+    await writeFile(
+      join(plan.output, "events.jsonl"),
+      journal
+        .slice(0, finalized + 1)
+        .map((record) => JSON.stringify(record))
+        .join("\n") + "\n",
+    );
+    await mkdir(join(plan.output, "benchmark.lock"));
+    await writeFile(
+      join(plan.output, "benchmark.lock", "owner.json"),
+      JSON.stringify({
+        ...journal[finalized].snapshot.owner,
+        start: "retired-process-start",
+      }),
+    );
+    if (!exported) await rm(artifact);
+    let calls = 0;
+    await resumeTicketBenchmark(
+      plan.output,
+      {},
+      {
+        recoverResource: async () => {},
+        createRuntime: async () => {
+          calls++;
+          throw new Error("Do not replay a finalized judge");
+        },
+      },
+    );
+    const recovered = await readBenchmarkAssessments(plan.output);
+    expect(calls).toBe(0);
+    expect(recovered.execution.budget.judgeCalls).toBe(1);
+    expect(recovered.assessments[0]).toMatchObject({
+      applicable: true,
+      assessment: {
+        id: assessment.id,
+        status: "complete",
+        score: { value: 100 },
+      },
+    });
+    expect(await readFile(artifact, "utf8")).toBe(bytes);
+  },
+);
+
 it.each(["met", "partial", "not_met", "not_assessed"] as const)(
   "records a controlled %s fixture grade without confusing missing evidence with zero",
   async (verdict) => {
