@@ -149,6 +149,7 @@ export const createBenchmarkProjectRuntime = async (input: {
   candidate: Candidate;
   checkWorktree: string;
   own: (resource: BenchmarkResource) => Promise<BenchmarkResource>;
+  release: (id: string) => Promise<void>;
   publish: () => Promise<void>;
 }) => {
   const { plan, candidate } = input;
@@ -168,8 +169,6 @@ export const createBenchmarkProjectRuntime = async (input: {
     adapterSha256: report.adapterSha256,
     status: "owned",
   });
-  await mkdir(root, { recursive: true, mode: 0o700 });
-  await mkdir(evidence, { recursive: true, mode: 0o700 });
   const base = {
     runId: input.runId,
     attemptId: input.attemptId,
@@ -191,14 +190,37 @@ export const createBenchmarkProjectRuntime = async (input: {
     check: plan.check!,
   };
   const bytes = JSON.stringify(base);
-  await writeFile(join(root, "context.json"), bytes, { mode: 0o400 });
-  resource.contextSha256 = hash(bytes);
-  await input.publish();
+  try {
+    await mkdir(root, { recursive: true, mode: 0o700 });
+    await mkdir(evidence, { recursive: true, mode: 0o700 });
+    await writeFile(join(root, "context.json"), bytes, { mode: 0o400 });
+    resource.contextSha256 = hash(bytes);
+    await input.publish();
+  } catch (error) {
+    // No project code has been imported yet; only this disposable root exists.
+    try {
+      await rm(root, { recursive: true, force: true });
+      await input.release(root);
+    } catch {
+      resource.status = "cleanup-failed";
+      throw Object.assign(
+        error instanceof Error
+          ? error
+          : new Error("Project context setup failed"),
+        { resources: [root] },
+      );
+    }
+    throw error;
+  }
   let adapter: BenchmarkProjectAdapter | undefined;
   const context = (
     signal: AbortSignal,
     remainingMs: number,
-  ): BenchmarkProjectContext => ({ ...base, signal, remainingMs });
+  ): BenchmarkProjectContext => ({
+    ...structuredClone(base),
+    signal,
+    remainingMs,
+  });
   const reference = (
     id: string,
     path: string,
@@ -341,6 +363,12 @@ export const createBenchmarkProjectRuntime = async (input: {
         await rm(root, { recursive: true, force: true });
       } catch (error) {
         report.status = "cleanup-failed";
+        report.failure = [
+          report.failure,
+          `Cleanup unverified: ${error instanceof Error ? error.message : "project stop failed"}`,
+        ]
+          .filter(Boolean)
+          .join("; ");
         resource.status = "cleanup-failed";
         throw error;
       }

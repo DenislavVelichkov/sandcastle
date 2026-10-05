@@ -211,6 +211,7 @@ export async function prepare(c) {
   return {build:c.candidate.head, profile:'fixture-native', device:'private-device', ports:[], services:[], kind:'native'};
 }
 export async function check(c) {
+  if(c.config.failure === 'unresponsive') return new Promise(() => {});
   if(c.config.failure === 'cancel') await new Promise((accept,reject) => c.signal.addEventListener('abort',() => reject(c.signal.reason),{once:true}));
   const value = await readFile(join(c.worktree, 'value.txt'), 'utf8');
   return {stdout:value, stderr:'', exitCode:value === 'correct\\n' ? 0 : 1};
@@ -510,6 +511,90 @@ it("stops an owned project after a protected-check deadline", async () => {
     saved.execution.resources.filter((item) => item.kind === "project-runtime"),
   ).toMatchObject([{ status: "released" }]);
   expect(saved.execution.cleanup.status).toBe("passed");
+});
+
+it("retains project ownership when a check ignores its deadline", async () => {
+  const { plan: original } = await fixture(
+    { arms: ["gpt-6-astra:medium"] },
+    {
+      adapter: {
+        id: "unresponsive-project",
+        readiness: "true",
+        module: "adapter.mjs",
+        config: { failure: "unresponsive" },
+      },
+    },
+    { "adapter.mjs": ownedProjectAdapter },
+  );
+  const { id: _id, ...frozen } = {
+    ...original,
+    launch: {
+      ...original.launch!,
+      allowances: {
+        ...original.launch!.allowances,
+        checksMs: 500,
+        cleanupMs: 100,
+      },
+    },
+  };
+  const { output: _output, ...hashed } = frozen;
+  const plan = {
+    ...frozen,
+    id: createHash("sha256").update(JSON.stringify(hashed)).digest("hex"),
+  };
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => controlledJudge(request),
+  });
+  const saved = await readBenchmarkAssessments(plan.output);
+  const resource = saved.execution.resources.find(
+    (item) => item.kind === "project-runtime",
+  )!;
+  expect(resource.status).toBe("cleanup-failed");
+  expect(saved.execution.status).toBe("cleanup-failed");
+  expect(saved.execution.cleanup.resources).toContain(resource.id);
+  expect(await readFile(join(resource.id, "running"), "utf8")).toBe(
+    saved.execution.attempts[0]!.candidate!.head,
+  );
+});
+
+it("releases only its unstarted private root when evidence-directory setup fails", async () => {
+  const { plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"] },
+    {
+      adapter: {
+        id: "unstarted-project",
+        readiness: "true",
+        module: "adapter.mjs",
+      },
+    },
+    { "adapter.mjs": ownedProjectAdapter },
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => {
+      const runtime = controlledJudge(request);
+      const exec = runtime.exec;
+      runtime.exec = async (input) => {
+        if (
+          request.role === "implementation" &&
+          input.command.startsWith("codex exec")
+        )
+          await writeFile(
+            join(plan.output, "visuals"),
+            "Directory collision sentinel",
+          );
+        return exec(input);
+      };
+      return runtime;
+    },
+  });
+  const saved = await readBenchmarkAssessments(plan.output);
+  expect(
+    saved.execution.resources.filter((item) => item.kind === "project-runtime"),
+  ).toMatchObject([{ status: "released" }]);
+  expect(saved.execution.cleanup.status).toBe("passed");
+  expect(await readFile(join(plan.output, "visuals"), "utf8")).toBe(
+    "Directory collision sentinel",
+  );
 });
 
 it("stops the owned project and preserves visual evidence after judge failure", async () => {

@@ -809,38 +809,59 @@ export const runImplementationBenchmark = async (
     }
   };
   const projects = new Map<string, OwnedBenchmarkProjectRuntime>();
+  const retainUnsettledProject = (attempt: Attempt, error: unknown) => {
+    if (!(error as { unsettled?: boolean })?.unsettled) return;
+    const project = projects.get(attempt.id);
+    if (!project) return;
+    project.resource.status = "cleanup-failed";
+    project.report.status = "cleanup-failed";
+    project.report.failure =
+      "Project operation did not settle after cancellation; retain ownership for reconciliation";
+    attempt.cleanup.status = "failed";
+    if (!attempt.cleanup.resources.includes(project.resource.id))
+      attempt.cleanup.resources.push(project.resource.id);
+  };
   const prepareProject = async (
     attempt: Attempt,
     checkWorktree: string,
     phases = attempt.phases,
   ) => {
-    const project = await createBenchmarkProjectRuntime({
-      plan,
-      runId: ledger.runId,
-      attemptId: attempt.id,
-      slotId: attempt.slotId,
-      candidate: attempt.candidate!,
-      checkWorktree,
-      own: (resource) => progress.ownResource(resource),
-      publish: () => persist("project-runtime-owned", "environment-readiness"),
-    });
-    projects.set(attempt.id, project);
-    attempt.project = project.report;
+    let project: OwnedBenchmarkProjectRuntime | undefined;
+    attempt.project = {
+      status: "preparing",
+      adapterSha256: launch.adapter.sha256,
+      evidence: [],
+    };
     try {
+      project = await createBenchmarkProjectRuntime({
+        plan,
+        runId: ledger.runId,
+        attemptId: attempt.id,
+        slotId: attempt.slotId,
+        candidate: attempt.candidate!,
+        checkWorktree,
+        own: (resource) => progress.ownResource(resource),
+        release: (id) => progress.releaseResource(id),
+        publish: () =>
+          persist("project-runtime-owned", "environment-readiness"),
+      });
+      projects.set(attempt.id, project);
+      attempt.project = project.report;
       await phase(
         phases === attempt.phases
           ? "checker-project-readiness"
           : "judge-project-readiness",
         phases === attempt.phases ? allowances.checksMs : allowances.judgeMs,
         phases,
-        (signal, remainingMs) => project.prepare(signal, remainingMs),
+        (signal, remainingMs) => project!.prepare(signal, remainingMs),
       );
       await persist("project-runtime-ready", "environment-readiness");
       return project;
     } catch (error) {
-      project.report.status = "unavailable";
-      project.report.failure =
+      attempt.project.status = "unavailable";
+      attempt.project.failure =
         error instanceof Error ? error.message : "Project runtime unavailable";
+      retainUnsettledProject(attempt, error);
       throw error;
     }
   };
@@ -858,7 +879,13 @@ export const runImplementationBenchmark = async (
       );
       await progress.releaseResource(project.resource.id);
       projects.delete(attempt.id);
-    } catch {
+    } catch (error) {
+      project.resource.status = "cleanup-failed";
+      project.report.status = "cleanup-failed";
+      project.report.failure ??=
+        error instanceof Error
+          ? error.message
+          : "Owned project cleanup journal release failed";
       attempt.cleanup.status = "failed";
       attempt.cleanup.resources.push(project.resource.id);
     }
@@ -1181,6 +1208,7 @@ export const runImplementationBenchmark = async (
         },
       );
     } catch (error) {
+      retainUnsettledProject(attempt, error);
       failJudgeAssessment(
         assessment,
         error instanceof PhaseFailure
@@ -1210,7 +1238,8 @@ export const runImplementationBenchmark = async (
             () => inspection!.close(),
             true,
           );
-        } catch {
+        } catch (error) {
+          retainUnsettledProject(attempt, error);
           failJudgeAssessment(
             assessment,
             "Owned candidate live inspection failed",
@@ -1605,6 +1634,7 @@ export const runImplementationBenchmark = async (
           result.status = passed ? "passed" : "failed";
           if (!passed) ledger.controls.status = "failed";
         } catch (error) {
+          if (controlAttempt) retainUnsettledProject(controlAttempt, error);
           result.status = "unavailable";
           const resources = (error as { resources?: string[] }).resources;
           if (resources?.length) {
@@ -2015,6 +2045,7 @@ export const runImplementationBenchmark = async (
               }
             }
           } catch (error) {
+            retainUnsettledProject(attempt, error);
             if ((error as { unsettled?: boolean }).unsettled) {
               attempt.cleanup.status = "failed";
               attempt.cleanup.resources.push(checker?.id ?? root);
