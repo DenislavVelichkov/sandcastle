@@ -142,14 +142,31 @@ try {
     await writeFile(join(output, name), bytes, { mode: 0o600 });
     views.push({ ...layout, height, screenshot: name, sha256: digest(bytes) });
   }
-  await evaluate(
-    "document.querySelector('[data-graph]:not([hidden]) [data-point]').focus()",
-  );
+  for (
+    let tries = 0;
+    !(await evaluate("document.activeElement?.hasAttribute('data-point')"));
+    tries++
+  ) {
+    assert(tries < 30, "Keyboard navigation did not reach a graph point");
+    await client.call("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Tab",
+      code: "Tab",
+      windowsVirtualKeyCode: 9,
+    });
+    await client.call("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Tab",
+      code: "Tab",
+      windowsVirtualKeyCode: 9,
+    });
+  }
   const focus = await evaluate(
-    "({index:document.activeElement.dataset.point,outline:getComputedStyle(document.activeElement).outlineStyle,details:document.querySelector('#point-detail').innerText})",
+    "({index:document.activeElement.dataset.point,visible:document.activeElement.matches(':focus-visible'),strokeWidth:getComputedStyle(document.activeElement.querySelector('.dot')).strokeWidth,details:document.querySelector('#point-detail').innerText})",
   );
   assert.equal(focus.index, "0");
-  assert.notEqual(focus.outline, "none");
+  assert.equal(focus.visible, true);
+  assert.equal(focus.strokeWidth, "5px");
   assert(focus.details.includes("gpt-6-astra"));
   await client.call("Input.dispatchKeyEvent", {
     type: "keyDown",
@@ -237,6 +254,7 @@ try {
         externalRequests: [],
         views,
         keyboard: "passed",
+        focus,
         accessibilityTree: "passed",
         downloads: "passed",
         receipts,

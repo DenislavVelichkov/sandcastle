@@ -175,3 +175,7 @@ publication or Renovio pilot runs. Successful proofs seal compact evidence and
 remove disposable consumers, archives, tools, source projects and verified
 runtime data. Failures retain their directory and ownership evidence for
 inspection. Do not delete it while an owned process or resource remains active.
+
+The [issue 52 proof record](proofs/issue-52-installed-benchmark.md) records the
+installed candidate, final checks, real runtime observations, offline browser
+downloads and verified removal receipts.
