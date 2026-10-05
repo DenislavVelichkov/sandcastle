@@ -107,7 +107,7 @@ try {
   for (
     let tries = 0;
     await evaluate(
-      "document.readyState !== 'complete' || !document.querySelector('[data-point]')",
+      "location.protocol !== 'file:' || document.readyState !== 'complete' || !document.querySelector('[data-point]')",
     );
     tries++
   ) {
@@ -260,15 +260,30 @@ try {
     await browser.verifyStopped(cleanup),
     "Owned report browser stop remains unverified",
   );
-  await writeFile(
-    join(output, "cleanup.json"),
-    JSON.stringify({
-      status: "passed",
-      unit: JSON.parse(await readFile(join(root, "browser.json"))).unit,
-    }) + "\n",
-    { mode: 0o600 },
-  );
-  if (verified) await rm(root, { recursive: true, force: true });
+  const receipt = {
+    stopped: true,
+    unit: JSON.parse(await readFile(join(root, "browser.json"))).unit,
+    proofSha256: verified
+      ? digest(await readFile(join(output, "proof.json")))
+      : null,
+  };
+  try {
+    if (verified) await rm(root, { recursive: true, force: true });
+    await writeFile(
+      join(output, "cleanup.json"),
+      JSON.stringify({ ...receipt, status: verified ? "passed" : "retained" }) +
+        "\n",
+      { mode: 0o600 },
+    );
+  } catch (error) {
+    await writeFile(
+      join(output, "cleanup.json"),
+      JSON.stringify({ ...receipt, status: "failed", reason: String(error) }) +
+        "\n",
+      { mode: 0o600 },
+    );
+    throw error;
+  }
 }
 console.log(
   JSON.stringify({ proof: join(output, "proof.json"), cleanup: "passed" }),

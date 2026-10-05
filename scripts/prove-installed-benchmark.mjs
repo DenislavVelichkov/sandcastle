@@ -506,6 +506,20 @@ try {
   }
   assert.deepEqual(await readFile(join(tools, "calls.jsonl")), before);
   assert.deepEqual(await readFile(join(complete, "manifest.json")), manifest);
+  const report = await read(join(reportDirectory, "report.json"));
+  assert.equal(report.rows.length, 4);
+  assert(
+    report.rows.every(
+      (row) =>
+        row.score === 100 && row.coverage === 1 && row.check === "passed",
+    ),
+  );
+  assert.equal(report.identities.manifestSha256, hash(manifest));
+  assert.equal(
+    report.identities.ledgerSha256,
+    hash(await readFile(join(complete, "execution.json"))),
+  );
+  assert.equal(report.projectAcceptance, "not assessed");
   proof.offlineRegeneration = true;
   for (const directory of [
     complete,
@@ -527,15 +541,33 @@ try {
     ).length,
     0,
   );
-  proof.cleanup = "passed";
+  proof.cleanup = "resources-stopped";
   // Seal proof before removing the consumer, source projects, archive and fixture tools.
   await save(join(output, "proof.json"), proof);
   verified = true;
 } finally {
   for (const child of children) child.kill("SIGTERM");
   if (children.size) await until(async () => children.size === 0);
-  if (verified) await rm(disposable, { recursive: true, force: true });
-  else
+  if (verified) {
+    const receipt = {
+      proofSha256: hash(await readFile(join(output, "proof.json"))),
+      disposable,
+    };
+    try {
+      await rm(disposable, { recursive: true, force: true });
+      await save(join(output, "cleanup.json"), {
+        ...receipt,
+        status: "passed",
+      });
+    } catch (error) {
+      await save(join(output, "cleanup.json"), {
+        ...receipt,
+        status: "failed",
+        reason: String(error),
+      });
+      throw error;
+    }
+  } else
     await save(join(output, "failed-proof.json"), {
       ...proof,
       retained: disposable,
@@ -546,6 +578,6 @@ console.log(
   JSON.stringify({
     proof: join(output, "proof.json"),
     dataKind: "fixture",
-    cleanup: proof.cleanup,
+    cleanup: (await read(join(output, "cleanup.json"))).status,
   }),
 );
