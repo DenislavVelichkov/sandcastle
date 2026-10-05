@@ -135,7 +135,8 @@ changeset covers this delivery. Initial full review and accepted-fix delta
 review found no outstanding Standards or Spec findings. The final offline
 correction is reviewed as a delta with its affected HTML and adapter contracts.
 
-All local issue 52 acceptance checks pass. No public release is required. These
-commits have not been pushed; the tracker remains open for integration under
-the repository's closure rule. A future live benchmark requires an explicit
-task and bounded allowance, and its outcome remains unmeasured.
+All local issue 52 acceptance checks pass. No public release is required. This
+record preserves validation completed before integration. Publication and
+closure status are tracked in [issue 52](https://github.com/DenislavVelichkov/sandcastle/issues/52).
+A future live benchmark requires an explicit task and bounded allowance, and
+its outcome remains unmeasured.
