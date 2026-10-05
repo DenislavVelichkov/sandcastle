@@ -52,3 +52,4 @@ work without that comparison uses no manifest. See
 `docs/agents/visual-acceptance.md`.
 
 Benchmark reasoning efforts are open-ended worker catalog strings. Validate capabilities against model/list, including hidden entries, instead of a fixed effort allowlist.
+Freeze visual applicability per selected benchmark task; a scoped visual criterion must not waive another task's nonvisual requirements.

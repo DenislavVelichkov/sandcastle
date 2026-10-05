@@ -588,6 +588,60 @@ it("counts only current original assessments in generated reports", async () => 
   );
 });
 
+it("keeps visual applicability local to each selected task", async () => {
+  const { plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"], tickets: ["task.md", "visual.md"] },
+    {
+      rubric: [
+        {
+          id: "code",
+          task: 1,
+          requirement: "The nonvisual value works",
+          weight: 1,
+          partialCredit: 0.5,
+          applicability: "nonvisual",
+          evidence: ["code"],
+        },
+        {
+          id: "visual",
+          task: 2,
+          requirement: "The required visual matches",
+          weight: 1,
+          partialCredit: 0.5,
+          applicability: "visual",
+          evidence: ["visual"],
+        },
+      ],
+    },
+    { "visual.md": "Implement the required visual.\n" },
+  );
+  const prompts: string[] = [];
+  await runTicketBenchmark(plan, undefined, Infinity, {
+    createRuntime: async (request) => {
+      const runtime = controlledJudge(request);
+      const exec = runtime.exec;
+      runtime.exec = async (input) => {
+        if (request.role === "judge") prompts.push(input.stdin!);
+        return exec(input);
+      };
+      return runtime;
+    },
+  });
+  const { assessments } = await readBenchmarkAssessments(plan.output);
+  expect(assessments[0]!.assessment).toMatchObject({
+    status: "complete",
+    score: { value: 100, coverage: 1 },
+    requirements: [{ id: "code", verdict: "met" }],
+  });
+  expect(assessments[1]!.assessment).toMatchObject({
+    status: "incomplete",
+    score: { value: null, coverage: 0 },
+    requirements: [{ id: "visual", verdict: "not_assessed", gaps: ["visual"] }],
+  });
+  expect(prompts[0]).toContain("Required visuals: false");
+  expect(prompts[1]).toContain("Required visuals: true");
+});
+
 it("returns success through the built CLI for a completed code assessment", async () => {
   const { plan } = await fixture({ arms: ["gpt-6-astra:medium"] });
   await runTicketBenchmark(plan, undefined, 1, {
