@@ -802,7 +802,7 @@ const benchmarkCommand = Command.make(
             prompt: optional(prompt),
             judge: optional(judge),
             contract: optional(contract),
-            preflight,
+            preflight: preflight || !dryRun,
             maxNewSlots:
               maxNewSlots._tag === "Some"
                 ? Number(maxNewSlots.value)
@@ -826,22 +826,37 @@ const benchmarkCommand = Command.make(
         return;
       }
       yield* d.status(
-        `Benchmarking ${plan.tickets.map((item) => item.source).join(", ")} with ${plan.arms.map((item) => `${item.model}:${item.effort}`).join(", ")}; ${plan.slots.length} calls planned`,
+        `Benchmarking ${plan.tickets.map((item) => item.source).join(", ")} with ${plan.arms.map((item) => `${item.model}:${item.effort}`).join(", ")}; ${plan.slots.length} implementation slots planned`,
         "info",
       );
       const result = yield* Effect.tryPromise({
-        try: () =>
-          runTicketBenchmark(
-            plan,
-            undefined,
-            maxNewSlots._tag === "Some" ? Number(maxNewSlots.value) : Infinity,
-          ),
+        try: async () => {
+          const cancellation = new AbortController();
+          const cancel = () => cancellation.abort();
+          process.once("SIGINT", cancel);
+          process.once("SIGTERM", cancel);
+          try {
+            return await runTicketBenchmark(
+              plan,
+              undefined,
+              maxNewSlots._tag === "Some"
+                ? Number(maxNewSlots.value)
+                : Infinity,
+              { signal: cancellation.signal },
+            );
+          } finally {
+            process.removeListener("SIGINT", cancel);
+            process.removeListener("SIGTERM", cancel);
+          }
+        },
         catch: (error) => new InitError({ message: String(error) }),
       });
       yield* d.status(
-        `${result.status}: ${result.completed}/${plan.slots.length} slots; ${result.output}/report.html`,
+        `${result.status}: ${result.completed}/${plan.slots.length} slots attempted; ${result.output}/report.html`,
         result.status === "complete" ? "success" : "info",
       );
+      if (result.status !== "judge-pending" && result.status !== "complete")
+        process.exitCode = result.status === "cancelled" ? 130 : 1;
     }),
 );
 

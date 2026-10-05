@@ -19,6 +19,7 @@ import {
 } from "./AgentProvider.js";
 import { createSandbox } from "./createSandbox.js";
 import { defaultImageName, docker } from "./sandboxes/docker.js";
+import type { ImplementationBenchmarkDependencies } from "./implementationBenchmark.js";
 import {
   freezeLaunch,
   parseBenchmarkIdentity,
@@ -452,11 +453,17 @@ export const runTicketBenchmark = async (
   plan: TicketBenchmarkPlan,
   executeSlot: typeof liveSlot = liveSlot,
   maxNewSlots = Infinity,
+  dependencies: ImplementationBenchmarkDependencies = {},
 ): Promise<{ output: string; status: string; completed: number }> => {
-  if (plan.version === 2)
-    throw new Error(
-      "Implementation benchmark execution requires the private controller and judge consumer (#47–#49); use --dry-run or --preflight",
-    );
+  if (plan.version === 2) {
+    if (executeSlot !== liveSlot)
+      throw new Error(
+        "Version-two execution requires protected runtime executors",
+      );
+    const { runImplementationBenchmark } =
+      await import("./implementationBenchmark.js");
+    return runImplementationBenchmark(plan, maxNewSlots, dependencies);
+  }
   if (
     maxNewSlots !== Infinity &&
     (!Number.isSafeInteger(maxNewSlots) || maxNewSlots < 1)

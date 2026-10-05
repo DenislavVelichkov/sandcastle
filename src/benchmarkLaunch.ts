@@ -18,6 +18,15 @@ import {
 
 export const launchHash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
+export const protectedBenchmarkPath = (
+  path: string,
+  check: string | null,
+): boolean =>
+  /(?:^|\/)(?:tests?|__tests__|scripts)\//.test(path) ||
+  /(?:^|\/)(?:[^/]*\.(?:test|spec)\.[^/]+|(?:check|verify)[^/]*\.[^/]+|[^/]*config\.[^/]+|AGENTS\.md|CLAUDE\.md|package\.json|(?:pnpm-lock|yarn|package-lock)\.[^/]+)$/.test(
+    path,
+  ) ||
+  (!!check && check.includes(path));
 const command = (cwd: string, name: string, args: string[]) =>
   execFileSync(name, args, {
     cwd,
@@ -95,6 +104,15 @@ const contractSchema = z
     minimumFreeInodes: z.number().int().positive().optional(),
     implementationMinutes: z.number().int().positive().optional(),
     judgeMinutes: z.number().int().positive().optional(),
+    protectedFiles: z.array(z.string().min(1)).optional(),
+    controls: z
+      .object({
+        knownBad: z.string().min(1).optional(),
+        knownGood: z.string().min(1).optional(),
+      })
+      .strict()
+      .optional(),
+    maxCalls: z.number().int().nonnegative().optional(),
   })
   .strict();
 export type LaunchContract = z.infer<typeof contractSchema>;
@@ -102,6 +120,8 @@ export interface FrozenFile {
   readonly path: string;
   readonly text: string;
   readonly sha256: string;
+  readonly mode?: string;
+  readonly base64?: string;
 }
 export interface Prerequisite {
   readonly source: string;
@@ -111,6 +131,7 @@ export interface Prerequisite {
 }
 export interface BenchmarkReadiness {
   readonly executionReady: false;
+  readonly implementationReady: boolean;
   readonly workerStatus: "unchecked" | "blocked" | "ready";
   readonly mode: "scheduling" | "preflight";
   readonly status: "unchecked" | "blocked" | "ready";
@@ -178,6 +199,14 @@ export interface FrozenLaunch {
     readonly evidencePolicy: string;
     readonly controls: "unknown";
   };
+  readonly checking: {
+    readonly files: readonly FrozenFile[];
+    readonly controls: readonly {
+      readonly kind: "known-bad" | "known-good";
+      readonly commit: string;
+    }[];
+    readonly policy: string;
+  };
   readonly allowances: {
     readonly implementationCallsPerSlot: 1;
     readonly judgeCallsPerSlot: 1;
@@ -186,6 +215,9 @@ export interface FrozenLaunch {
     readonly setupMs: number;
     readonly checksMs: number;
     readonly cleanupMs: number;
+    readonly sealMs: number;
+    readonly controlsMs: number;
+    readonly maxCalls: number;
     readonly overallMs: number;
     readonly requiredCalls: number;
     readonly maxSlotsPerDispatch: number | null;
@@ -595,13 +627,30 @@ export const freezeLaunch = async (input: {
   const baseFiles = git(cwd, "ls-tree", "-r", "--name-only", baseCommit).split(
     "\n",
   );
+  const modes = new Map(
+    git(cwd, "ls-tree", "-r", "-z", baseCommit)
+      .split("\0")
+      .filter(Boolean)
+      .map((row) => {
+        const [metadata, path] = row.split("\t");
+        return [path!, metadata!.split(" ")[0]!] as const;
+      }),
+  );
   const files = (names: string[]): FrozenFile[] =>
     names.sort().map((path) => {
-      const text = execFileSync("git", ["show", `${baseCommit}:${path}`], {
+      const bytes = execFileSync("git", ["show", `${baseCommit}:${path}`], {
         cwd,
-        encoding: "utf8",
       });
-      return { path, text, sha256: launchHash(text) };
+      const text = bytes.toString("utf8");
+      return {
+        path,
+        text,
+        sha256: launchHash(bytes),
+        mode: modes.get(path),
+        ...(Buffer.from(text).equals(bytes)
+          ? {}
+          : { base64: bytes.toString("base64") }),
+      };
     });
   const instructions = files(
     baseFiles.filter(
@@ -717,6 +766,29 @@ export const freezeLaunch = async (input: {
   };
   const workerConfig =
     'service_tier = "default"\n[features]\nmulti_agent = false\n';
+  const protectedPaths = baseFiles.filter(
+    (path) =>
+      protectedBenchmarkPath(path, input.check) ||
+      dependencyFiles.some((file) => file.path === path) ||
+      (!!input.check && input.check.includes(path)),
+  );
+  for (const path of config.protectedFiles ?? []) {
+    if (!baseFiles.includes(path))
+      throw new Error(
+        `Protected grading file must exist in the frozen base: ${path}`,
+      );
+    protectedPaths.push(path);
+  }
+  const checking = {
+    files: files([...new Set(protectedPaths)]),
+    controls: Object.entries(config.controls ?? {}).map(([kind, ref]) => ({
+      kind:
+        kind === "knownBad" ? ("known-bad" as const) : ("known-good" as const),
+      commit: git(cwd, "rev-parse", "--verify", `${ref}^{commit}`),
+    })),
+    policy:
+      "Restore frozen grading files in a separate checker. Candidate identity includes tracked files and untracked files not ignored by the frozen base; runtime Git, ignored installations and build outputs are excluded. Declare every additional grading dependency with protectedFiles.",
+  };
   const checks: {
     name: string;
     status: "passed" | "blocked" | "unchecked";
@@ -896,6 +968,7 @@ export const freezeLaunch = async (input: {
         "Direct candidate worktree inspection and independent configured-check results. Required visual evidence must be bound to the candidate; missing evidence is not assessed. Project and human acceptance remain separate.",
       controls: "unknown",
     },
+    checking,
     allowances: {
       implementationCallsPerSlot: 1,
       judgeCallsPerSlot: 1,
@@ -904,6 +977,9 @@ export const freezeLaunch = async (input: {
       setupMs: 300_000,
       checksMs: 300_000,
       cleanupMs: 60_000,
+      sealMs: 60_000,
+      controlsMs: checking.controls.length * 660_000,
+      maxCalls: config.maxCalls ?? tickets.length * arms.length * 2,
       overallMs: input.overallMs,
       requiredCalls: tickets.length * arms.length * 2,
       maxSlotsPerDispatch: input.maxNewSlots,
@@ -912,7 +988,6 @@ export const freezeLaunch = async (input: {
     capabilities,
   };
   const executionBlockers = [
-    "Private implementation controller is pending #47",
     "Durable recovery is pending #48",
     "Independent judge execution is pending #49",
   ];
@@ -922,6 +997,7 @@ export const freezeLaunch = async (input: {
     readiness: {
       mode: input.preflight ? "preflight" : "scheduling",
       executionReady: false,
+      implementationReady: input.preflight && blockers.length === 0,
       workerStatus: blockers.length
         ? "blocked"
         : input.preflight
