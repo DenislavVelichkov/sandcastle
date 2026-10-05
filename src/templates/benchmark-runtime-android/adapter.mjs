@@ -346,30 +346,61 @@ export async function prepare(c) {
   // This fixture needs no network, including when an SDK uses its legacy NAT
   // stack instead of the requested private network simulator.
   await adb(c, s, "shell", "cmd", "connectivity", "airplane-mode", "enable");
-  await adb(c, s, "shell", "svc", "wifi", "disable");
-  await adb(c, s, "shell", "svc", "data", "disable");
-  await wait(
+  await adb(c, s, "shell", "cmd", "wifi", "set-wifi-enabled", "disabled");
+  await adb(
     c,
-    async () =>
-      (
-        await adb(
-          c,
-          s,
-          "shell",
-          "settings",
-          "get",
-          "global",
-          "airplane_mode_on",
-        )
-      ).trim() === "1" &&
-      (
-        await adb(c, s, "shell", "settings", "get", "global", "wifi_on")
-      ).trim() === "0" &&
-      (
-        await adb(c, s, "shell", "settings", "get", "global", "mobile_data")
-      ).trim() === "0",
-    "offline guest networking",
+    s,
+    "shell",
+    "cmd",
+    "wifi",
+    "set-scan-always-available",
+    "disabled",
   );
+  await adb(c, s, "shell", "svc", "data", "disable");
+  let network;
+  try {
+    await wait(
+      c,
+      async () => {
+        network = {
+          airplaneMode: (
+            await adb(
+              c,
+              s,
+              "shell",
+              "settings",
+              "get",
+              "global",
+              "airplane_mode_on",
+            )
+          ).trim(),
+          wifi: (await adb(c, s, "shell", "cmd", "wifi", "status")).trim(),
+          cellular: (await adb(c, s, "shell", "dumpsys", "telephony.registry"))
+            .split("\n")
+            .filter((line) => /^\s*mServiceState=/.test(line)),
+        };
+        // Preferences can retain enabled values in airplane mode. Verify the
+        // live Wi-Fi service and every guest cellular radio instead.
+        return (
+          network.airplaneMode === "1" &&
+          /^Wifi is disabled$/m.test(network.wifi) &&
+          network.cellular.length > 0 &&
+          network.cellular.every(
+            (line) =>
+              line.includes("mVoiceRegState=3(POWER_OFF)") &&
+              line.includes("mDataRegState=3(POWER_OFF)"),
+          )
+        );
+      },
+      "offline guest networking",
+    );
+  } finally {
+    await writeFile(
+      join(c.evidence, "network-proof.json"),
+      JSON.stringify(network ?? null),
+      { mode: 0o600 },
+    );
+  }
   const renderer = (await adb(c, s, "shell", "dumpsys", "SurfaceFlinger"))
     .split("\n")
     .find((line) => line.includes("GLES:"));
@@ -410,7 +441,8 @@ export async function prepare(c) {
       avd: s.avd,
       serial: s.serial,
       boot: "1",
-      network: "airplane mode; Wi-Fi and mobile data verified disabled",
+      network:
+        "airplane mode; live Wi-Fi disabled and cellular radios powered off",
       renderer,
       apkSha256: s.build,
       worktree: c.worktree,

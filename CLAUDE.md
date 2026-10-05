@@ -57,3 +57,4 @@ Freeze visual applicability per selected benchmark task; a scoped visual criteri
 
 Linux Unix sockets have short pathname limits. Bind benchmark inspection sockets through a directory descriptor and connect from their parent directory with a relative socket path.
 Android Emulator can fall back to legacy guest networking when a private netsim transport is unavailable. Verify the fixture's required network state rather than inferring isolation from netsim launch flags.
+Android radio preferences can retain enabled values in airplane mode. Verify the live Wi-Fi and cellular service state when proving an offline fixture.
