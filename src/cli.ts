@@ -867,7 +867,10 @@ const benchmarkReportCommand = Command.make(
       Options.withDescription("Absolute host benchmark directory"),
     ),
     policyId: Options.text("policy-id").pipe(
-      Options.withDescription("Frozen benchmark policy identity"),
+      Options.withDescription(
+        "Frozen policy identity, required only for historical pilot reports",
+      ),
+      Options.optional,
     ),
     output: Options.text("output").pipe(
       Options.withDescription("Local output directory for HTML, JSON and CSV"),
@@ -881,22 +884,27 @@ const benchmarkReportCommand = Command.make(
     Effect.gen(function* () {
       const d = yield* Display;
       const files = yield* Effect.tryPromise({
-        try: () =>
-          withBenchmarkActivity(
-            directory,
-            policyId,
-            "benchmark-report",
-            5 * 60_000,
-            () =>
-              writeBenchmarkReport({
+        try: () => {
+          const id = policyId._tag === "Some" ? policyId.value : undefined;
+          const generate = () =>
+            writeBenchmarkReport({
+              directory,
+              policyId: id,
+              outputDirectory: output,
+              ...(manifest._tag === "Some"
+                ? { manifestPath: manifest.value }
+                : {}),
+            });
+          return id
+            ? withBenchmarkActivity(
                 directory,
-                policyId,
-                outputDirectory: output,
-                ...(manifest._tag === "Some"
-                  ? { manifestPath: manifest.value }
-                  : {}),
-              }),
-          ),
+                id,
+                "benchmark-report",
+                5 * 60_000,
+                generate,
+              )
+            : generate();
+        },
         catch: (error) => new InitError({ message: String(error) }),
       });
       yield* d.status(`Report: ${files.html}`, "success");

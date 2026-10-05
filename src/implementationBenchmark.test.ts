@@ -26,6 +26,7 @@ import {
   readBenchmarkAssessments,
   compareBenchmarkCandidates,
 } from "./benchmarkJudge.js";
+import { writeBenchmarkReport } from "./benchmarkReport.js";
 import {
   cancelBenchmark,
   readBenchmarkLog,
@@ -250,13 +251,20 @@ it("connects a frozen owned project runtime to checks, visual evidence and live 
         },
       ],
     },
-    { "adapter.mjs": ownedProjectAdapter },
+    {
+      "adapter.mjs": ownedProjectAdapter,
+      "task.md":
+        "# Synthetic visual assessment fixture\n\nControlled runtime evidence tests reporting, not measured model quality.\n",
+    },
   );
   expect(plan.readiness!.executionReady).toBe(true);
   const result = await runTicketBenchmark(plan, undefined, 1, {
     createRuntime: async (request) => {
       const runtime = controlledJudge(request, (output) => {
         output.requirements[0].evidence = [{ kind: "visual", id: "screen" }];
+        output.disclosures.push(
+          "Synthetic visual assessment fixture, not measured model quality.",
+        );
       });
       const exec = runtime.exec;
       runtime.exec = async (input) => {
@@ -300,6 +308,16 @@ it("connects a frozen owned project runtime to checks, visual evidence and live 
       ],
     },
   });
+  const report = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  expect(report.rows[0].assessment.requirements[0].evidence[0]).toMatchObject({
+    kind: "visual",
+    runtime: { profile: "fixture-native" },
+  });
+  const html = await readFile(join(plan.output, "report.html"), "utf8");
+  expect(html.includes("Synthetic visual assessment fixture")).toBe(true);
+  expect(html.includes("visual: screen")).toBe(true);
   expect(
     execution.resources.filter(
       (resource) => resource.kind === "project-runtime",
@@ -1190,8 +1208,347 @@ it("counts only current original assessments in generated reports", async () => 
   );
   expect(report.evaluated).toBe(1);
   expect(report.comparison[0].status).toBe("inconclusive");
+  expect(report.rows[0]).toMatchObject({ score: null, applicable: false });
   expect(await readFile(join(plan.output, "report.html"), "utf8")).toContain(
     "1 current complete assessments",
+  );
+});
+
+it("regenerates an offline judge-score report and exports without changing retained inputs", async () => {
+  const { plan } = await fixture();
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => controlledJudge(request),
+  });
+  const sourcePaths = ["manifest.json", "execution.json"];
+  const sources = await Promise.all(
+    sourcePaths.map((path) => readFile(join(plan.output, path), "utf8")),
+  );
+  const files = await writeBenchmarkReport({
+    directory: plan.output,
+    outputDirectory: join(plan.output, "regenerated"),
+  });
+  const report = JSON.parse(await readFile(files.json, "utf8"));
+  expect(report).toMatchObject({
+    evaluated: 1,
+    counts: { planned: 2, attempted: 1, completed: 1, graded: 1, unrun: 1 },
+    comparison: [{ status: "inconclusive" }],
+    rows: [
+      {
+        model: "gpt-6-astra",
+        effort: "medium",
+        score: 100,
+        sampleCount: 1,
+        coverage: 1,
+        check: "passed",
+        projectAcceptance: "not_assessed",
+      },
+      { status: "unrun", score: null, sampleCount: 0 },
+    ],
+  });
+  expect(report.identities.manifestSha256).toBe(
+    createHash("sha256").update(sources[0]!).digest("hex"),
+  );
+  expect(report.identities.ledgerSha256).toBe(
+    createHash("sha256").update(sources[1]!).digest("hex"),
+  );
+  const html = await readFile(files.html, "utf8");
+  expect(html).toContain("Specification adherence");
+  expect(html).toContain("gpt-6.1-sol:xhigh");
+  expect(html).not.toMatch(/fetch\(|https?:\/\/[^<]*<script/);
+  expect(await readFile(files.csv, "utf8")).toContain('"unrun"');
+  const first = await Promise.all(
+    [files.html, files.json, files.csv].map((path) => readFile(path, "utf8")),
+  );
+  await writeBenchmarkReport({
+    directory: plan.output,
+    outputDirectory: join(plan.output, "regenerated"),
+  });
+  expect(
+    await Promise.all(
+      [files.html, files.json, files.csv].map((path) => readFile(path, "utf8")),
+    ),
+  ).toEqual(first);
+  expect(
+    await Promise.all(
+      sourcePaths.map((path) => readFile(join(plan.output, path), "utf8")),
+    ),
+  ).toEqual(sources);
+});
+
+const syntheticReportRates: NonNullable<LaunchContract["rateCard"]> = {
+  source: "Synthetic report accounting fixture, not official prices",
+  date: "2026-10-05",
+  inputs: {
+    version: 1,
+    serviceTier: "default",
+    unit: "per-million-tokens",
+    models: {
+      "gpt-6-astra": {
+        api: [
+          {
+            upToInputTokens: 272000,
+            input: 10,
+            cachedInput: 1,
+            cacheWriteInput: 12.5,
+            output: 50,
+          },
+          {
+            upToInputTokens: null,
+            input: 20,
+            cachedInput: 2,
+            cacheWriteInput: 25,
+            output: 75,
+          },
+        ],
+        codexStandard: { input: 250, cachedInput: 25, output: 1250 },
+      },
+      "gpt-6.1-sol": {
+        api: [
+          {
+            upToInputTokens: null,
+            input: 2,
+            cachedInput: 0.2,
+            cacheWriteInput: 2.5,
+            output: 8,
+          },
+        ],
+        codexStandard: { input: 50, cachedInput: 5, output: 200 },
+      },
+    },
+  },
+};
+
+it("values implementation and judge separately using raw provenance without double cache or reasoning charges", async () => {
+  const { plan } = await fixture({}, { rateCard: syntheticReportRates });
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => {
+      const runtime = controlledJudge(request);
+      if (request.role === "implementation") {
+        const exec = runtime.exec;
+        runtime.exec = async (input) => {
+          const result = await exec(input);
+          return {
+            ...result,
+            stdout:
+              JSON.stringify({
+                type: "turn.completed",
+                usage: {
+                  input_tokens: 120,
+                  cached_input_tokens: 20,
+                  output_tokens: 30,
+                  reasoning_output_tokens: 11,
+                },
+              }) + "\n",
+          };
+        };
+      }
+      return runtime;
+    },
+  });
+  const report = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  const costs = report.rows[0].costs;
+  expect(costs.implementation.api).toMatchObject({
+    status: "range",
+    lower: 0.00252,
+    upper: 0.00479,
+  });
+  expect(costs.implementation.codexStandard).toMatchObject({
+    lower: 0.063,
+    upper: 0.063,
+  });
+  expect(costs.judge.api.lower).toBeCloseTo(0.000138, 10);
+  expect(costs.judge.api.upper).toBeCloseTo(0.000148, 10);
+  expect(costs.judge.codexStandard.lower).toBeCloseTo(0.00345, 10);
+  expect(costs.full.api.lower).toBeCloseTo(0.002658, 10);
+  expect(costs.full.api.upper).toBeCloseTo(0.004938, 10);
+  expect(costs.implementation.rawUsage[0].input_tokens).toBe(120);
+  expect(costs.implementation.api.assumptions.join(" ")).toMatch(
+    /context band/i,
+  );
+  expect(costs.implementation.api.assumptions.join(" ")).toMatch(
+    /cache.write/i,
+  );
+  expect(report.costs.totals.implementation.api.lower).toBeCloseTo(0.00252, 10);
+  expect(report.costs.otherReviewGrading.status).toBe("not-recorded");
+  expect(report.costs.observer.status).toBe("not-recorded");
+});
+
+it("keeps failed-call estimates in study totals and treats a missing counter as unknown", async () => {
+  const { plan } = await fixture({}, { rateCard: syntheticReportRates });
+  let implementations = 0;
+  await runTicketBenchmark(plan, undefined, Infinity, {
+    createRuntime: async (request) => {
+      const runtime = controlledJudge(request);
+      if (request.role === "implementation") {
+        const exec = runtime.exec;
+        runtime.exec = async (input) => {
+          const result = await exec(input);
+          return ++implementations === 1
+            ? {
+                ...result,
+                exitCode: 1,
+                stdout:
+                  JSON.stringify({
+                    type: "turn.completed",
+                    usage: {
+                      input_tokens: 120,
+                      cached_input_tokens: 20,
+                      output_tokens: 30,
+                      cache_creation_input_tokens: 40,
+                    },
+                  }) + "\n",
+              }
+            : result;
+        };
+      }
+      return runtime;
+    },
+  });
+  const report = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  expect(report.rows[0].status).toBe("worker-failed");
+  expect(report.rows[0].costs.implementation.api.lower).toBeCloseTo(
+    0.00262,
+    10,
+  );
+  expect(report.rows[0].costs.implementation.api.upper).toBeCloseTo(
+    0.00449,
+    10,
+  );
+  expect(report.rows[1].costs.implementation.api).toMatchObject({
+    status: "unavailable",
+    lower: null,
+    upper: null,
+  });
+  expect(report.costs.totals.implementation.api.status).toBe("unavailable");
+  expect(
+    report.costs.totals.implementation.knownRecorded.api.lower,
+  ).toBeCloseTo(0.00262, 10);
+  expect(
+    report.costs.calls.filter(
+      (call: { role: string }) => call.role === "implementation",
+    ),
+  ).toHaveLength(2);
+});
+
+it("does not borrow implementation rates for a judge with missing frozen prices", async () => {
+  const rates = structuredClone(syntheticReportRates);
+  delete (rates.inputs.models as Record<string, unknown>)["gpt-6.1-sol"];
+  const { plan } = await fixture({}, { rateCard: rates });
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => controlledJudge(request),
+  });
+  const report = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  expect(report.rows[0]).toMatchObject({
+    score: 100,
+    coverage: 1,
+    costs: {
+      judge: { api: { lower: null, status: "unavailable" } },
+      full: { api: { lower: null, status: "unavailable" } },
+    },
+  });
+  expect(
+    report.costs.calls
+      .find((call: { role: string }) => call.role === "judge")
+      .api.assumptions.join(" "),
+  ).toContain("model-specific");
+  expect(
+    (await readFile(join(plan.output, "report.html"), "utf8")).includes(
+      'class="point"',
+    ),
+  ).toBe(false);
+});
+
+it("reports elapsed implementation-to-settlement duration separately from phase totals", async () => {
+  const { plan } = await fixture();
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => controlledJudge(request),
+  });
+  const report = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  expect(report.attempts[0].settledAt).toEqual(expect.any(String));
+  expect(report.rows[0].endToEndMs).toBeGreaterThanOrEqual(
+    report.rows[0].measuredPhaseMs,
+  );
+  const ledgerPath = join(plan.output, "execution.json");
+  const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
+  delete ledger.attempts[0].settledAt;
+  await writeFile(ledgerPath, JSON.stringify(ledger));
+  const files = await writeBenchmarkReport({
+    directory: plan.output,
+    outputDirectory: join(plan.output, "older-report"),
+  });
+  const older = JSON.parse(await readFile(files.json, "utf8"));
+  expect(older.rows[0].endToEndMs).toBeNull();
+  expect(older.rows[0].measuredPhaseMs).toBeGreaterThan(0);
+});
+
+it("renders accessible point details and escapes hostile task and judge text in offline exports", async () => {
+  const hostile = '=HYPERLINK("bad") </script><img src=x onerror=alert(1)>';
+  const { plan } = await fixture(
+    {},
+    { rateCard: syntheticReportRates },
+    {
+      "task.md": `# ${hostile}\n\nImplement the value.\n`,
+    },
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => {
+      const runtime = controlledJudge(request, (output) => {
+        output.requirements[0].explanation = hostile;
+      });
+      if (request.role === "implementation") {
+        const exec = runtime.exec;
+        runtime.exec = async (input) => ({
+          ...(await exec(input)),
+          stdout:
+            '{"type":"turn.completed","usage":{"input_tokens":120,"cached_input_tokens":20,"output_tokens":30}}\n',
+        });
+      }
+      return runtime;
+    },
+  });
+  const html = await readFile(join(plan.output, "report.html"), "utf8");
+  expect(html).toContain("<svg");
+  expect(html).toContain('role="button"');
+  expect(html).toContain('tabindex="0"');
+  expect(html).toContain('type="application/json"');
+  expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  expect(html).not.toContain("</script><img");
+  expect(html).not.toMatch(/<img[^>]*src=x/);
+  const csv = await readFile(join(plan.output, "evaluations.csv"), "utf8");
+  expect(csv).toContain("\"'=HYPERLINK");
+  expect(/(?:^|,)"[=+\-@]/m.test(csv)).toBe(false);
+});
+
+it("regenerates implementation reports through the built CLI without a historical policy or model call", async () => {
+  const { plan } = await fixture();
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => controlledJudge(request),
+  });
+  const before = await readFile(join(plan.output, "execution.json"), "utf8");
+  const output = join(plan.output, "cli-report");
+  const result = await promisify(execFile)(process.execPath, [
+    join(import.meta.dirname, "..", "dist", "main.js"),
+    "benchmark-report",
+    "--directory",
+    plan.output,
+    "--output",
+    output,
+  ]);
+  expect(result.stdout).toContain(join(output, "report.html"));
+  expect(
+    JSON.parse(await readFile(join(output, "report.json"), "utf8")).counts
+      .graded,
+  ).toBe(1);
+  expect(await readFile(join(plan.output, "execution.json"), "utf8")).toBe(
+    before,
   );
 });
 

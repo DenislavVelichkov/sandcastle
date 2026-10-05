@@ -58,10 +58,10 @@ import {
   failJudgeAssessment,
   sealJudgeAssessment,
   readBenchmarkAssessments,
-  compareBenchmarkCandidates,
   type BenchmarkJudgeState,
   type JudgeAssessment,
 } from "./benchmarkJudge.js";
+import { writeImplementationBenchmarkReport } from "./implementationBenchmarkReport.js";
 
 const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
@@ -119,6 +119,8 @@ export interface ImplementationAttempt {
   status: string;
   startedAt: string;
   finishedAt?: string;
+  /** Full attempt settlement, including independent judging and owned cleanup. */
+  settledAt?: string;
   reason?: string;
   implementation?: {
     exitCode: number | null;
@@ -1325,6 +1327,7 @@ export const runImplementationBenchmark = async (
           assessment.status === "complete"
             ? "completed"
             : "assessment-incomplete";
+      attempt.settledAt = new Date(now()).toISOString();
       await progress.publish("judge-completed", "assessment-complete", attempt);
       judgingAttempt = undefined;
     }
@@ -1332,46 +1335,10 @@ export const runImplementationBenchmark = async (
   let initialized = false;
   const report = async () => {
     await persist("report", "report-generation");
-    const assessed = await readBenchmarkAssessments(plan.output);
-    const comparison = compareBenchmarkCandidates(plan, assessed.assessments);
-    const evaluated = new Set(
-      attempts
-        .filter(
-          (attempt) =>
-            !attempt.retryOf &&
-            assessed.assessments.some(
-              (item) =>
-                item.assessment.id === attempt.judge.assessments?.at(-1)?.id &&
-                item.applicable &&
-                item.assessment.status === "complete",
-            ),
-        )
-        .map((attempt) => attempt.slotId),
-    ).size;
-    await save(join(plan.output, "report.json"), {
-      status: ledger.status,
-      evaluated,
-      judge: plan.judge,
-      projectAcceptance: "not assessed",
-      scheduled: plan.slots.length,
-      attempted: new Set(attempts.map((attempt) => attempt.slotId)).size,
-      unrun: ledger.unrun,
-      controls: ledger.controls,
-      budget: ledger.budget,
-      cleanup: ledger.cleanup,
-      attempts,
-      comparison,
-      assessmentApplicability: assessed.assessments.map((item) => ({
-        id: item.assessment.id,
-        applicable: item.applicable,
-        reason: item.reason,
-      })),
+    await writeImplementationBenchmarkReport({
+      directory: plan.output,
+      outputDirectory: plan.output,
     });
-    await writeFile(
-      join(plan.output, "report.html"),
-      `<!doctype html><html lang="en"><meta charset="utf-8"><title>Implementation benchmark</title><h1>Implementation benchmark</h1><p>${new Set(attempts.map((attempt) => attempt.slotId)).size}/${plan.slots.length} slots attempted, ${attempts.length} attempts including retries. ${ledger.status}. ${evaluated} current complete assessments. Scores, coverage and evidence are in report.json. Project acceptance is not assessed.</p>`,
-      { mode: 0o600 },
-    );
     return {
       output: plan.output,
       status: ledger.status,
@@ -2121,6 +2088,7 @@ export const runImplementationBenchmark = async (
           }
           await runJudge(attempt);
           await stopProject(attempt);
+          attempt.settledAt = new Date(now()).toISOString();
           if (attempt.cleanup.status === "failed") {
             if (attempt.status === "judge-pending")
               attempt.status = "cleanup-failed";

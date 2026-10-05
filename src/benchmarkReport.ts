@@ -11,6 +11,7 @@ import {
 } from "./benchmark.js";
 import type { PilotBudgetState } from "./pilotBudget.js";
 import { pilotConfigurations } from "./workflowUsage.js";
+import { writeImplementationBenchmarkReport } from "./implementationBenchmarkReport.js";
 
 const names = [
   "Luna Max",
@@ -336,12 +337,25 @@ ${ledger.plan ? `<section><p class="eyebrow">Standard credit-equivalent estimate
 /** Render retained evidence only. Hosts charge this operation with withBenchmarkActivity during a pilot. */
 export const writeBenchmarkReport = async (input: {
   directory: string;
-  policyId: string;
+  policyId?: string;
   outputDirectory: string;
   manifestPath?: string;
 }): Promise<{ html: string; json: string; csv: string }> => {
   if (!input.outputDirectory)
     throw new Error("Report output directory is required");
+  try {
+    const manifest = JSON.parse(
+      await readFile(join(input.directory, "manifest.json"), "utf8"),
+    );
+    if (manifest?.version === 2 && manifest.launch)
+      return writeImplementationBenchmarkReport(input);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (!input.policyId)
+    throw new Error(
+      "Historical benchmark reports require their frozen policy identity",
+    );
   const ledger = await readBenchmark(input.directory, input.policyId);
   const ledgerText = await readFile(
     join(input.directory, "benchmark.json"),
