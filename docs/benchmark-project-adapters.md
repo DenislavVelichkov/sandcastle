@@ -144,7 +144,10 @@ and 2 GiB RAM. It checks Android boot and the live GLES renderer, builds a small
 Java APK using the fixture's build script, verifies installed APK bytes, captures
 the actual screen and supplies native hierarchy inspection. It never borrows an
 existing AVD or selects a software-rendering fallback. Its reference app runs
-offline, with networking between devices and external forwarding disabled.
+offline: airplane mode is enabled and Wi-Fi/mobile data are verified disabled.
+This also covers an SDK falling back from its private network simulator to its
+legacy guest networking stack. Networking applications need their own adapter
+and required network readiness checks.
 Android's
 [command-line documentation](https://developer.android.com/studio/run/emulator-commandline)
 describes the private writable data and headless launch flags used by this fixture.

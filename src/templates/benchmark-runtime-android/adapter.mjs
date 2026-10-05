@@ -343,6 +343,33 @@ export async function prepare(c) {
     throw new Error(
       "The native serial belongs to another AVD; refusing to borrow it",
     );
+  // This fixture needs no network, including when an SDK uses its legacy NAT
+  // stack instead of the requested private network simulator.
+  await adb(c, s, "shell", "cmd", "connectivity", "airplane-mode", "enable");
+  await adb(c, s, "shell", "svc", "wifi", "disable");
+  await adb(c, s, "shell", "svc", "data", "disable");
+  await wait(
+    c,
+    async () =>
+      (
+        await adb(
+          c,
+          s,
+          "shell",
+          "settings",
+          "get",
+          "global",
+          "airplane_mode_on",
+        )
+      ).trim() === "1" &&
+      (
+        await adb(c, s, "shell", "settings", "get", "global", "wifi_on")
+      ).trim() === "0" &&
+      (
+        await adb(c, s, "shell", "settings", "get", "global", "mobile_data")
+      ).trim() === "0",
+    "offline guest networking",
+  );
   const renderer = (await adb(c, s, "shell", "dumpsys", "SurfaceFlinger"))
     .split("\n")
     .find((line) => line.includes("GLES:"));
@@ -383,6 +410,7 @@ export async function prepare(c) {
       avd: s.avd,
       serial: s.serial,
       boot: "1",
+      network: "airplane mode; Wi-Fi and mobile data verified disabled",
       renderer,
       apkSha256: s.build,
       worktree: c.worktree,
@@ -397,7 +425,7 @@ export async function prepare(c) {
     profile: `android-${api}-x86_64-headless`,
     device: s.serial,
     ports: [s.consolePort, s.consolePort + 1, s.adbPort, s.grpcPort],
-    services: [`private-adb:${s.adbPort}`, `private-netsim:${s.consolePort}`],
+    services: [`private-adb:${s.adbPort}`, "offline-guest-network"],
     architecture: "x86_64",
     renderer,
   };

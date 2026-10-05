@@ -56,3 +56,4 @@ Benchmark reasoning efforts are open-ended worker catalog strings. Validate capa
 Freeze visual applicability per selected benchmark task; a scoped visual criterion must not waive another task's nonvisual requirements.
 
 Linux Unix sockets have short pathname limits. Bind benchmark inspection sockets through a directory descriptor and connect from their parent directory with a relative socket path.
+Android Emulator can fall back to legacy guest networking when a private netsim transport is unavailable. Verify the fixture's required network state rather than inferring isolation from netsim launch flags.
