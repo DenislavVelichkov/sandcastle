@@ -114,6 +114,34 @@ _Avoid_: "model ranking" (does not determine the next permitted action)
 One execution of a fixed **task** fixture under a selected configuration or **routing policy**, including its implementation **iterations**, required reviews, verification, and outcome against **project acceptance**.
 _Avoid_: "iteration" (only one agent invocation), "benchmark" (the full comparison)
 
+**Implementation benchmark**:
+A comparison of one implementation **iteration**, configured project checks, and a separate **judge assessment** for the same fixed instructions under different **benchmark arms**. Its check results and judge assessments do not establish **project acceptance**.
+_Avoid_: "accepted ticket" (requires the project's acceptance gates), "model ranking" (requires broader evidence)
+
+**Benchmark arm**:
+One model and reasoning-effort combination included in a benchmark comparison.
+_Avoid_: "model" (different efforts of the same model are distinct arms)
+
+**Benchmark input**:
+The fixed instructions shared by all **benchmark arms**, sourced from a selected local task document, issue-tracker task, or explicit **prompt**.
+_Avoid_: "fixture" (also describes evaluation data and environment), "ticket" (excludes a prompt supplied without a ticket)
+
+**Benchmark judge**:
+An independent **agent** that inspects an exact **candidate** in its worktree and assesses its code and runtime evidence against the frozen **benchmark input** and evaluation rubric.
+_Avoid_: "implementer" (produces the candidate), "project approver" (owns project acceptance)
+
+**Judge assessment**:
+The **benchmark judge**'s requirement-by-requirement observations, verdicts, concise supporting explanations, and evidence gaps for one **candidate**.
+_Avoid_: "test result" (an executable check's outcome), "acceptance" (a project-owned determination)
+
+**Specification adherence score**:
+A rubric-based summary of a **judge assessment** describing how closely the assessed candidate satisfies the frozen requirements. It is distinct from configured-check pass rate and **project acceptance**.
+_Avoid_: "test pass rate", "general model quality" (the score concerns this candidate and rubric)
+
+**Benchmark cost estimate**:
+A rate-based valuation of recorded benchmark usage under an explicit billing basis. It is distinct from actual subscription consumption or a paid invoice.
+_Avoid_: "bill", "subscription cost" (neither follows from token counters alone)
+
 **Completion signal**:
 The `<promise>COMPLETE</promise>` marker in the **agent**'s output indicating all actionable tasks are finished. A pure termination signal -- carries no payload. Distinct from **structured output**.
 _Avoid_: "done flag", "exit signal", conflating with **structured output**
