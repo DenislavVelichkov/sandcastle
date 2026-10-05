@@ -1005,6 +1005,8 @@ const parseCodexStreamLine = (line: string): ParsedStreamEvent[] => {
 
 /** Options for the codex agent provider. */
 export interface CodexOptions {
+  /** Independent inspection with no approvals, project instructions or writes. */
+  readonly readOnly?: boolean;
   readonly effort?: "low" | "medium" | "high" | "xhigh" | "max";
   /** Select Standard processing explicitly for guarded workflow activity. */
   readonly serviceTier?: "default";
@@ -1058,8 +1060,9 @@ export const codex = (
     // dropped in favour of `-a on-request`. `-s danger-full-access` disables
     // Codex's own filesystem sandbox — Sandcastle owns that boundary, and
     // here the reviewer agent owns the per-action approval boundary.
-    const approvalsFlags =
-      options?.approvalsReviewer === "auto_review"
+    const approvalsFlags = options?.readOnly
+      ? ` -s read-only -c 'approval_policy="never"' -c project_doc_max_bytes=0 -c features.multi_agent=false`
+      : options?.approvalsReviewer === "auto_review"
         ? ` -a on-request -s danger-full-access -c ${shellEscape(`approvals_reviewer="auto_review"`)}`
         : " --dangerously-bypass-approvals-and-sandbox";
     // Codex distinguishes fork from resume at the verb level — `codex exec

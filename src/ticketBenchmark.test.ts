@@ -215,8 +215,8 @@ it("checks the actual worker catalog for both roles and preserves execution gaps
   expect(plan.readiness).toMatchObject({
     mode: "preflight",
     workerStatus: "ready",
-    status: "blocked",
-    executionReady: false,
+    status: "ready",
+    executionReady: true,
   });
   expect(plan.launch?.modelCatalog).toHaveLength(2);
   expect(plan.launch?.identities.judge).toMatchObject({

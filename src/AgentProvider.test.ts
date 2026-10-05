@@ -710,6 +710,21 @@ describe("codex factory", () => {
     expect(command).toContain(`-c 'model_reasoning_effort="high"'`);
   });
 
+  it("builds independent read-only inspection commands without bypassing permissions or loading candidate instructions", () => {
+    const { command, stdin } = codex("gpt-6.1-sol", {
+      effort: "xhigh",
+      serviceTier: "default",
+      readOnly: true,
+    }).buildPrintCommand(opts("Inspect frozen requirements"));
+    expect(command).toContain("-s read-only");
+    expect(command).toContain('approval_policy="never"');
+    expect(command).toContain("project_doc_max_bytes=0");
+    expect(command).toContain("features.multi_agent=false");
+    expect(command).not.toContain("dangerously-bypass");
+    expect(command).not.toContain("resume");
+    expect(stdin).toBe("Inspect frozen requirements");
+  });
+
   it("buildPrintCommand resumes with stdin prompt when resumeSession is set", () => {
     const provider = codex("gpt-5.4-mini", { effort: "high" });
     const { command, stdin } = provider.buildPrintCommand({

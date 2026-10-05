@@ -68,6 +68,7 @@ const criterion = z
     applicability: z.enum(["always", "visual", "nonvisual"]),
     partialCredit: z.number().min(0).max(1),
     evidence: z.array(z.enum(["code", "check", "visual"])).min(1),
+    task: z.number().int().positive().optional(),
   })
   .strict();
 const contractSchema = z
@@ -88,6 +89,8 @@ const contractSchema = z
       )
       .optional(),
     rubric: z.array(criterion).min(1).optional(),
+    visualRequired: z.boolean().optional(),
+    references: z.array(z.string().min(1)).optional(),
     rateCard: z
       .object({
         source: z.string().min(1),
@@ -130,7 +133,7 @@ export interface Prerequisite {
   readonly sha256: string | null;
 }
 export interface BenchmarkReadiness {
-  readonly executionReady: false;
+  readonly executionReady: boolean;
   readonly implementationReady: boolean;
   readonly workerStatus: "unchecked" | "blocked" | "ready";
   readonly mode: "scheduling" | "preflight";
@@ -198,6 +201,8 @@ export interface FrozenLaunch {
     readonly rubricSha256: string;
     readonly evidencePolicy: string;
     readonly controls: "unknown";
+    readonly visualRequired: boolean;
+    readonly references: readonly FrozenFile[];
   };
   readonly checking: {
     readonly files: readonly FrozenFile[];
@@ -750,6 +755,7 @@ export const freezeLaunch = async (input: {
           applicability: "always" as const,
           partialCredit: 0.5,
           evidence: ["code", "check"] as ("code" | "check")[],
+          task: index + 1,
         }),
       );
     });
@@ -976,6 +982,22 @@ export const freezeLaunch = async (input: {
       evidencePolicy:
         "Direct candidate worktree inspection and independent configured-check results. Required visual evidence must be bound to the candidate; missing evidence is not assessed. Project and human acceptance remain separate.",
       controls: "unknown",
+      visualRequired:
+        config.visualRequired ??
+        rubric.some(
+          (row) =>
+            row.applicability !== "nonvisual" &&
+            row.evidence.includes("visual"),
+        ),
+      references: files(
+        (config.references ?? []).map((path) => {
+          if (!baseFiles.includes(path))
+            throw new Error(
+              `Judge reference must exist in the frozen base: ${path}`,
+            );
+          return path;
+        }),
+      ),
     },
     checking,
     allowances: {
@@ -996,20 +1018,30 @@ export const freezeLaunch = async (input: {
     },
     capabilities,
   };
-  const executionBlockers = ["Independent judge execution is pending #49"];
+  const executionBlockers = launch.grading.visualRequired
+    ? ["Runtime visual evidence collection is pending #50"]
+    : [];
   return {
     launch,
     runnerCommit: runnerCommit ?? "unknown",
     readiness: {
       mode: input.preflight ? "preflight" : "scheduling",
-      executionReady: false,
+      executionReady:
+        input.preflight &&
+        blockers.length === 0 &&
+        executionBlockers.length === 0,
       implementationReady: input.preflight && blockers.length === 0,
       workerStatus: blockers.length
         ? "blocked"
         : input.preflight
           ? "ready"
           : "unchecked",
-      status: input.preflight || blockers.length ? "blocked" : "unchecked",
+      status:
+        blockers.length || executionBlockers.length
+          ? "blocked"
+          : input.preflight
+            ? "ready"
+            : "unchecked",
       checks,
       blockers,
       executionBlockers,

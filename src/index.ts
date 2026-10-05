@@ -35,6 +35,15 @@ export type {
 export { writeBenchmarkReport } from "./benchmarkReport.js";
 export type { BenchmarkReportRow } from "./benchmarkReport.js";
 export { planTicketBenchmark, runTicketBenchmark } from "./ticketBenchmark.js";
+export {
+  readBenchmarkAssessments,
+  compareBenchmarkCandidates,
+} from "./benchmarkJudge.js";
+export type {
+  JudgeAssessment,
+  BenchmarkEvidenceReference,
+  BenchmarkJudgeState,
+} from "./benchmarkJudge.js";
 export type {
   TicketBenchmarkPlan,
   TicketBenchmarkOptions,

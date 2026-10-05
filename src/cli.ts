@@ -943,9 +943,11 @@ const benchmarkStatusCommand = Command.make(
       ),
       Options.optional,
     ),
-    logRole: Options.choice("log-role", ["implementation", "checks"]).pipe(
-      Options.withDefault("implementation"),
-    ),
+    logRole: Options.choice("log-role", [
+      "implementation",
+      "checks",
+      "judge",
+    ]).pipe(Options.withDefault("implementation")),
   },
   ({ directory, after, watch, logAttempt, logRole }) =>
     Effect.tryPromise({
@@ -1020,6 +1022,16 @@ const benchmarkResumeCommand = Command.make(
       ),
       Options.optional,
     ),
+    rejudgeAssessment: Options.text("rejudge-assessment").pipe(
+      Options.withDescription(
+        "Create a new linked assessment under the unchanged frozen judge and rubric",
+      ),
+      Options.optional,
+    ),
+    rejudgeReason: Options.text("reason").pipe(
+      Options.withDescription("Required reason for explicit rejudging"),
+      Options.optional,
+    ),
     maxNewSlots: Options.text("max-new-slots").pipe(
       Options.withDescription(
         "Dispatch limit within the original frozen maximum",
@@ -1027,7 +1039,13 @@ const benchmarkResumeCommand = Command.make(
       Options.optional,
     ),
   },
-  ({ directory, retryAttempt, maxNewSlots }) =>
+  ({
+    directory,
+    retryAttempt,
+    rejudgeAssessment,
+    rejudgeReason,
+    maxNewSlots,
+  }) =>
     Effect.tryPromise({
       try: async () => {
         const result = await withBenchmarkInterrupt((signal) =>
@@ -1036,6 +1054,12 @@ const benchmarkResumeCommand = Command.make(
             {
               retryAttemptId:
                 retryAttempt._tag === "Some" ? retryAttempt.value : undefined,
+              rejudgeAssessmentId:
+                rejudgeAssessment._tag === "Some"
+                  ? rejudgeAssessment.value
+                  : undefined,
+              rejudgeReason:
+                rejudgeReason._tag === "Some" ? rejudgeReason.value : undefined,
               maxNewSlots:
                 maxNewSlots._tag === "Some"
                   ? Number(maxNewSlots.value)

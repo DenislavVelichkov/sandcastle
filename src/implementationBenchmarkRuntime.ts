@@ -135,7 +135,7 @@ export const createBenchmarkRuntime = async (
       request.plan.launch!.worker.config,
       { mode: 0o600 },
     );
-    if (request.role === "implementation") {
+    if (request.role === "implementation" || request.role === "judge") {
       const auth = await readFile(
         join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "auth.json"),
       );
@@ -173,6 +173,16 @@ export const createBenchmarkRuntime = async (
         "OPENAI_KEY=",
         "-v",
         `${request.root}:${request.root}:z`,
+        ...(request.role === "judge"
+          ? [
+              "-v",
+              `${request.worktree}:${request.worktree}:ro,z`,
+              "-v",
+              `${join(request.root, "storage.git")}:${join(request.root, "storage.git")}:ro,z`,
+              "-v",
+              `${join(request.root, "references")}:${join(request.root, "references")}:ro,z`,
+            ]
+          : []),
         "-w",
         request.worktree,
         "--entrypoint",

@@ -212,14 +212,35 @@ describe("sandcastle CLI", () => {
         status: "cancelled",
         completed: 1,
       });
-      const resumed = await command(process.execPath, [
-        cliPath,
-        "benchmark-resume",
-        "--directory",
-        output,
-      ]);
+      const tools = join(root, "tools");
+      await mkdir(tools);
+      await writeFile(
+        join(tools, "docker"),
+        `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'rm') process.exitCode = 0;
+else if (args[0] === 'inspect') { process.stderr.write('No such object'); process.exitCode = 1; }
+else { process.stderr.write('Controlled judge runtime unavailable'); process.exitCode = 1; }
+`,
+        { mode: 0o755 },
+      );
+      const resumed = await command(
+        process.execPath,
+        [cliPath, "benchmark-resume", "--directory", output],
+        { env: { ...process.env, PATH: `${tools}:${process.env.PATH}` } },
+      ).then(
+        () => {
+          throw new Error(
+            "Incomplete assessment must return a failing exit code",
+          );
+        },
+        (error) => {
+          expect(error.code).toBe(1);
+          return error;
+        },
+      );
       expect(JSON.parse(resumed.stdout)).toMatchObject({
-        status: "judge-pending",
+        status: "assessment-incomplete",
         completed: 1,
       });
       const cursorRead = await command(process.execPath, [
@@ -245,9 +266,14 @@ describe("sandcastle CLI", () => {
       "benchmark-cancel",
       "benchmark-resume",
     ]) {
-      expect(
-        (await command(process.execPath, [cliPath, name, "--help"])).stdout,
-      ).toContain("--directory");
+      const help = (await command(process.execPath, [cliPath, name, "--help"]))
+        .stdout;
+      expect(help).toContain("--directory");
+      if (name === "benchmark-resume") {
+        expect(help).toContain("--rejudge-assessment");
+        expect(help).toContain("--reason");
+      }
+      if (name === "benchmark-status") expect(help).toContain("judge");
     }
   }, 10000);
 

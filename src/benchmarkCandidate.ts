@@ -65,6 +65,8 @@ export interface Candidate {
   patchSha256: string;
   patch: string;
   changedFiles: string[];
+  sourceSha256: string;
+  paths: string[];
 }
 export const privateWorktree = async (
   root: string,
@@ -238,6 +240,7 @@ export const seal = async (
     signal,
   );
   await writeFile(patch, bytes, { mode: 0o600 });
+  const fingerprint = await workspaceFingerprint(worktree, worktree, signal);
   return {
     worktree,
     baseCommit: plan.baseCommit,
@@ -245,10 +248,40 @@ export const seal = async (
     tree,
     patch,
     patchSha256: hash(bytes),
+    sourceSha256: fingerprint.sha256,
+    paths: fingerprint.paths,
     changedFiles: (
       await git(worktree, "diff", "--name-only", "-z", plan.baseCommit, head)
     )
       .split("\0")
       .filter(Boolean),
   };
+};
+
+export const verifyBenchmarkCandidate = async (
+  candidate: Pick<
+    Candidate,
+    "head" | "tree" | "worktree" | "sourceSha256" | "paths"
+  >,
+  signal: AbortSignal,
+) => {
+  const head = (
+    await runGit(candidate.worktree, ["rev-parse", "HEAD"], signal)
+  ).trim();
+  const tree = (
+    await runGit(candidate.worktree, ["rev-parse", "HEAD^{tree}"], signal)
+  ).trim();
+  const actual = await workspaceFingerprint(
+    candidate.worktree,
+    candidate.worktree,
+    signal,
+    candidate.paths,
+  );
+  if (
+    head !== candidate.head ||
+    tree !== candidate.tree ||
+    actual.sha256 !== candidate.sourceSha256
+  )
+    throw new Error("Bound candidate changed after sealing");
+  return actual;
 };

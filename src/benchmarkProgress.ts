@@ -23,8 +23,12 @@ import type {
 } from "./implementationBenchmark.js";
 import { reconcileBenchmarkDocker } from "./implementationBenchmarkRuntime.js";
 import type { TicketBenchmarkPlan } from "./ticketBenchmark.js";
+import {
+  readBenchmarkAssessments,
+  judgeReservationMs,
+  type JudgeAssessment,
+} from "./benchmarkJudge.js";
 
-/** Judge phases are reserved for the independent assessment consumer. */
 export type BenchmarkPhase =
   | "preflight"
   | "worktree-preparation"
@@ -96,6 +100,7 @@ export interface BenchmarkSnapshot {
     implementationCalls: number;
     implementationCompleted: number;
     judgeCalls: number;
+    judgeCompleted: number;
   };
   allowance: ImplementationExecution["budget"] & {
     remainingMs: number;
@@ -110,6 +115,13 @@ export interface BenchmarkSnapshot {
     check: string;
     judge: string;
     usage: IterationUsage | null;
+    judgeUsage: IterationUsage | null;
+    assessment: {
+      id: string;
+      status: string;
+      score: JudgeAssessment["score"];
+      failure: string | null;
+    } | null;
     evidence: string[];
     reason: string | null;
   }[];
@@ -142,7 +154,11 @@ const executionView = (
       scheduled: plan.slots.length,
       attempted: new Set(saved.attempts.map((item) => item.slotId)).size,
       completed: new Set(completed.map((item) => item.slotId)).size,
-      graded: 0,
+      graded: new Set(
+        saved.attempts
+          .filter((item) => !item.retryOf && item.judge.status === "complete")
+          .map((item) => item.slotId),
+      ).size,
       attempts: saved.attempts.length,
       retries: saved.attempts.filter((item) => item.retryOf).length,
       implementationCalls: saved.budget.implementationCalls,
@@ -152,6 +168,13 @@ const executionView = (
           item.implementation !== undefined,
       ).length,
       judgeCalls: saved.budget.judgeCalls,
+      judgeCompleted: saved.attempts.reduce(
+        (count, item) =>
+          count +
+          (item.judge.assessments?.filter((assessment) => assessment.finishedAt)
+            .length ?? 0),
+        0,
+      ),
     },
     allowance: {
       ...saved.budget,
@@ -180,6 +203,15 @@ const executionView = (
       check: item.check?.status ?? "not-run",
       judge: item.judge.status,
       usage: item.implementation?.usage ?? null,
+      judgeUsage: item.judge.assessments?.at(-1)?.usage ?? null,
+      assessment: item.judge.assessments?.length
+        ? {
+            id: item.judge.assessments.at(-1)!.id,
+            status: item.judge.assessments.at(-1)!.status,
+            score: item.judge.assessments.at(-1)!.score,
+            failure: item.judge.assessments.at(-1)!.failure,
+          }
+        : null,
       evidence: [
         item.candidate?.patch,
         item.candidate?.worktree,
@@ -190,6 +222,11 @@ const executionView = (
             )
           : undefined,
         ...(item.implementation?.sessions?.map((file) => file.path) ?? []),
+        ...(item.judge.records?.map((file) => file.path) ?? []),
+        ...(item.judge.assessments?.flatMap((assessment) => [
+          assessment.provenance.stream,
+          ...assessment.provenance.sessions.map((file) => file.path),
+        ]) ?? []),
       ].filter((path): path is string => Boolean(path)),
       reason: item.reason ?? null,
     })),
@@ -359,6 +396,11 @@ const claimRecovery = async (directory: string, value: BenchmarkOwner) => {
   }
 };
 const publicPhase = (name: string): BenchmarkPhase => {
+  if (name === "judge-sealing") return "evidence-sealing";
+  if (name.startsWith("judge-"))
+    return name === "judge-assessment"
+      ? "judge-assessment"
+      : "judge-preparation";
   if (name.includes("cleanup") || name.startsWith("remove-")) return "cleanup";
   if (name.startsWith("checker-") || name === "control-check") return "checks";
   if (name.includes("worktree") || name === "freeze-base")
@@ -482,6 +524,35 @@ export const readBenchmarkProgress = async (
     request?.ownerToken !== latest.snapshot.cancellation?.ownerToken
       ? request
       : null;
+  if (
+    !controlOwner &&
+    latest.snapshot.attempts.some((attempt) => attempt.assessment)
+  ) {
+    const current = await readBenchmarkAssessments(directory);
+    for (const attempt of latest.snapshot.attempts) {
+      const assessment = current.assessments
+        .filter((item) => item.attemptId === attempt.id)
+        .at(-1);
+      if (assessment && !assessment.applicable) {
+        attempt.judge = "invalidated";
+        if (attempt.assessment) {
+          attempt.assessment.status = "invalidated";
+          attempt.assessment.score = {
+            ...attempt.assessment.score,
+            value: null,
+            coverage: 0,
+            range: null,
+          };
+          attempt.assessment.failure = assessment.reason;
+        }
+      }
+    }
+    latest.snapshot.counts.graded = new Set(
+      latest.snapshot.attempts
+        .filter((attempt) => !attempt.retryOf && attempt.judge === "complete")
+        .map((attempt) => attempt.slotId),
+    ).size;
+  }
   return {
     snapshot: latest.snapshot,
     pendingCancellation,
@@ -528,7 +599,7 @@ export async function* watchBenchmarkProgress(
 export const readBenchmarkLog = async (
   directory: string,
   attemptId: string,
-  role: "implementation" | "checks" = "implementation",
+  role: "implementation" | "checks" | "judge" = "implementation",
   bytes = 4096,
 ): Promise<string> => {
   if (!Number.isSafeInteger(bytes) || bytes < 1 || bytes > 16384)
@@ -538,10 +609,15 @@ export const readBenchmarkLog = async (
   if (!attempt || !/^ticket-\d+-arm-\d+-attempt-\d+$/.test(attempt.id))
     throw new Error("Unknown benchmark attempt");
   const evidenceId = attempt.retryOf ? attempt.id : attempt.slotId;
-  const path = join(
-    directory,
-    `${evidenceId}-${role === "checks" ? "check.log" : "implementation.jsonl"}`,
-  );
+  const path =
+    role === "judge" && attempt.assessment
+      ? join(directory, "assessments", `${attempt.assessment.id}-judge.jsonl`)
+      : join(
+          directory,
+          `${evidenceId}-${role === "checks" ? "check.log" : "implementation.jsonl"}`,
+        );
+  if (role === "judge" && !attempt.assessment)
+    throw new Error("This attempt has no judge log");
   const file = await open(path, "r");
   try {
     const info = await file.stat();
@@ -560,7 +636,12 @@ export const readBenchmarkLog = async (
 
 export const resumeTicketBenchmark = async (
   directory: string,
-  options: { maxNewSlots?: number; retryAttemptId?: string } = {},
+  options: {
+    maxNewSlots?: number;
+    retryAttemptId?: string;
+    rejudgeAssessmentId?: string;
+    rejudgeReason?: string;
+  } = {},
   dependencies: ImplementationBenchmarkDependencies = {},
 ) => {
   const plan = JSON.parse(
@@ -575,6 +656,8 @@ export const resumeTicketBenchmark = async (
     ...dependencies,
     resume: true,
     retryAttemptId: options.retryAttemptId,
+    rejudgeAssessmentId: options.rejudgeAssessmentId,
+    rejudgeReason: options.rejudgeReason,
   });
 };
 
@@ -617,9 +700,21 @@ export const cancelBenchmark = async (
 
 interface BenchmarkProgressController {
   readonly signal: AbortSignal;
-  publish(kind: string, phase?: string): Promise<void>;
-  activity(attempt: ImplementationAttempt, kind: string): void;
-  log(attempt: ImplementationAttempt, line: string): void;
+  publish(
+    kind: string,
+    phase?: string,
+    attempt?: ImplementationAttempt,
+  ): Promise<void>;
+  activity(
+    attempt: ImplementationAttempt,
+    kind: string,
+    role?: "implementation" | "judge",
+  ): void;
+  log(
+    attempt: ImplementationAttempt,
+    line: string,
+    role?: "implementation" | "judge",
+  ): void;
   ownResource(resource: BenchmarkResource): Promise<BenchmarkResource>;
   releaseResource(id: string): Promise<void>;
   close(): Promise<void>;
@@ -632,8 +727,14 @@ export const openBenchmarkProgress = async (
     signal?: AbortSignal;
     resume?: boolean;
     retryAttemptId?: string;
+    rejudgeAssessmentId?: string;
+    rejudgeReason?: string;
     recoverResource?: ImplementationBenchmarkDependencies["recoverResource"];
     sealInterrupted?: (
+      attempt: ImplementationAttempt,
+      signal: AbortSignal,
+    ) => Promise<void>;
+    sealInterruptedJudge?: (
       attempt: ImplementationAttempt,
       signal: AbortSignal,
     ) => Promise<void>;
@@ -724,6 +825,21 @@ export const openBenchmarkProgress = async (
       previous = latest;
       if (previous.execution.planId !== plan.id)
         throw new Error("Progress belongs to another frozen plan");
+      if (options.rejudgeAssessmentId) {
+        if (options.retryAttemptId || !options.rejudgeReason?.trim())
+          throw new Error(
+            "Rejudging requires a reason and cannot retry implementation",
+          );
+        const target = previous.execution.attempts.find((attempt) =>
+          attempt.judge.assessments?.some(
+            (assessment) => assessment.id === options.rejudgeAssessmentId,
+          ),
+        );
+        if (!target?.candidate)
+          throw new Error(
+            "Rejudging must name an existing candidate assessment",
+          );
+      }
       if (options.retryAttemptId) {
         const target = previous.execution.attempts.find(
           (attempt) => attempt.id === options.retryAttemptId,
@@ -849,6 +965,17 @@ export const openBenchmarkProgress = async (
           );
         await checkpoint("interrupted-evidence-sealed");
       }
+      for (const attempt of execution.attempts.filter(
+        (attempt) => attempt.judge.status === "running",
+      )) {
+        if (options.sealInterruptedJudge)
+          await boundedRecovery(
+            () => options.sealInterruptedJudge!(attempt, captureSignal),
+            captureSignal,
+            plan.launch!.allowances.cleanupMs,
+          );
+        await checkpoint("interrupted-judge-sealed");
+      }
       const directorySignal = AbortSignal.any([
         AbortSignal.timeout(Math.max(1, cleanupRemainingMs)),
         recoverySignal,
@@ -929,7 +1056,7 @@ export const openBenchmarkProgress = async (
       execution.budget.judgeReservedMs =
         execution.attempts.filter(
           (attempt) => attempt.candidate && attempt.judge.status === "pending",
-        ).length * plan.launch!.allowances.judgeMs;
+        ).length * judgeReservationMs(plan);
       execution.budget.judgeReservedCalls = execution.attempts.filter(
         (attempt) => attempt.candidate && attempt.judge.status === "pending",
       ).length;
@@ -1095,18 +1222,36 @@ export const openBenchmarkProgress = async (
   timer.unref();
   return {
     signal,
-    publish: async (kind: string, phase?: string) => {
+    publish: async (
+      kind: string,
+      phase?: string,
+      attempt?: ImplementationAttempt,
+    ) => {
       await checkCancellation();
-      await publish(kind, phase);
+      await publish(kind, phase, attempt);
     },
-    activity: (attempt: ImplementationAttempt, kind: string) => {
-      void publish(`implementation-${kind}`, "implementation", attempt);
+    activity: (
+      attempt: ImplementationAttempt,
+      kind: string,
+      role = "implementation",
+    ) => {
+      void publish(
+        `${role}-${kind}`,
+        role === "judge" ? "judge-assessment" : "implementation",
+        attempt,
+      );
     },
-    log: (attempt: ImplementationAttempt, line: string) => {
+    log: (
+      attempt: ImplementationAttempt,
+      line: string,
+      role = "implementation",
+    ) => {
       const evidenceId = attempt.retryOf ? attempt.id : attempt.slotId;
       queue = queue.then(() =>
         appendFile(
-          join(plan.output, `${evidenceId}-implementation.jsonl`),
+          role === "judge"
+            ? attempt.judge.assessments!.at(-1)!.provenance.stream
+            : join(plan.output, `${evidenceId}-implementation.jsonl`),
           `${line}\n`,
           { mode: 0o600 },
         ),

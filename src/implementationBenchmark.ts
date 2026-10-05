@@ -31,6 +31,7 @@ import {
   seal,
   workspaceFiles,
   workspaceFingerprint,
+  verifyBenchmarkCandidate,
   type Candidate,
 } from "./benchmarkCandidate.js";
 import {
@@ -41,6 +42,18 @@ import {
   openBenchmarkProgress,
   type BenchmarkResource,
 } from "./benchmarkProgress.js";
+import {
+  assessJudgeOutput,
+  judgePrompt,
+  judgeProtocolId,
+  judgeReservationMs,
+  failJudgeAssessment,
+  sealJudgeAssessment,
+  readBenchmarkAssessments,
+  compareBenchmarkCandidates,
+  type BenchmarkJudgeState,
+  type JudgeAssessment,
+} from "./benchmarkJudge.js";
 
 const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
@@ -59,7 +72,7 @@ export interface BenchmarkRuntimeRequest {
   readonly plan: TicketBenchmarkPlan;
   readonly root: string;
   readonly worktree: string;
-  readonly role: "implementation" | "checks" | "control";
+  readonly role: "implementation" | "checks" | "control" | "judge";
   readonly signal: AbortSignal;
 }
 export interface BenchmarkRuntime {
@@ -81,6 +94,8 @@ export interface ImplementationBenchmarkDependencies {
   readonly now?: () => number;
   readonly resume?: boolean;
   readonly retryAttemptId?: string;
+  readonly rejudgeAssessmentId?: string;
+  readonly rejudgeReason?: string;
   /** Stop the exact recorded resource and verify its absence before returning. */
   readonly recoverResource?: (
     resource: BenchmarkResource,
@@ -128,7 +143,7 @@ export interface ImplementationAttempt {
   };
   candidate?: Candidate;
   cleanup: { status: "passed" | "failed"; resources: string[] };
-  judge: { status: "pending" | "no-candidate"; model: string; effort: string };
+  judge: BenchmarkJudgeState;
 }
 type Attempt = ImplementationAttempt;
 
@@ -175,8 +190,9 @@ const captureSessions = async (
   slotId: string,
   redact: (text: string) => string,
   signal: AbortSignal,
+  role = "implementation",
 ) => {
-  const source = join(root, "implementation", "home", ".codex", "sessions");
+  const source = join(root, role, "home", ".codex", "sessions");
   const sessions: { path: string; sha256: string }[] = [];
   const observed: {
     model: string;
@@ -291,6 +307,7 @@ const validatePlan = async (plan: TicketBenchmarkPlan) => {
     ...launch.instructions,
     ...launch.dependencies,
     ...launch.checking.files,
+    ...launch.grading.references,
   ]) {
     if (
       hash(file.base64 ? Buffer.from(file.base64, "base64") : file.text) !==
@@ -440,11 +457,17 @@ export const runImplementationBenchmark = async (
     throw new Error(
       "Explicit retries require durable recovery of an existing attempt",
     );
+  if (dependencies.rejudgeAssessmentId && !dependencies.resume)
+    throw new Error(
+      "Explicit rejudging requires durable recovery of the original frozen run",
+    );
   const progress = await openBenchmarkProgress(plan, ledger, {
     now,
     signal: dependencies.signal,
     resume: dependencies.resume,
     retryAttemptId: dependencies.retryAttemptId,
+    rejudgeAssessmentId: dependencies.rejudgeAssessmentId,
+    rejudgeReason: dependencies.rejudgeReason,
     recoverResource: dependencies.recoverResource,
     sealInterrupted: async (attempt, signal) => {
       const root = join(plan.output, "runtime", attempt.id);
@@ -471,17 +494,58 @@ export const runImplementationBenchmark = async (
       );
       if (attempt.candidate) attempt.judge.status = "pending";
     },
+    sealInterruptedJudge: async (attempt, signal) => {
+      const assessment = attempt.judge.assessments?.at(-1);
+      if (!assessment || assessment.status !== "running") return;
+      const root = join(plan.output, "runtime", `judge-${assessment.id}`);
+      const redact = benchmarkCredentialRedactor([
+        join(root, "controller-auth", "auth.json"),
+        join(root, "judge", "home", ".codex", "auth.json"),
+      ]);
+      const captured = await captureSessions(
+        root,
+        plan.output,
+        assessment.id,
+        redact,
+        signal,
+        "judge",
+      );
+      assessment.provenance.sessions = captured.sessions;
+      assessment.judge.observed = captured.observed;
+      let stream = "";
+      try {
+        stream = await readFile(assessment.provenance.stream, "utf8");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      const provider = codex(plan.judge!.model);
+      for (const line of stream.split("\n"))
+        for (const event of provider.parseStreamLine(line)) {
+          if (event.type === "usage") assessment.usage = event.usage;
+          if (event.type === "session_id")
+            assessment.provenance.sessionId = event.sessionId;
+        }
+      assessment.provenance.streamSha256 = hash(stream);
+      failJudgeAssessment(
+        assessment,
+        "Controller stopped during judging; this call is not replayed",
+      );
+      assessment.finishedAt = new Date(now()).toISOString();
+      attempt.judge.status = "incomplete";
+      await sealJudgeAssessment(plan, attempt, assessment);
+    },
   });
   attempts = ledger.attempts;
   started = Date.parse(ledger.startedAt);
   const signal = progress.signal;
+  let judgingAttempt: Attempt | undefined;
   const persist = async (kind = "checkpoint", phase?: string) => {
     ledger.budget.elapsedMs = Math.max(
       ledger.budget.elapsedMs,
       0,
       now() - started,
     );
-    await progress.publish(kind, phase);
+    await progress.publish(kind, phase, judgingAttempt);
   };
   const remaining = () =>
     allowances.overallMs -
@@ -496,17 +560,26 @@ export const runImplementationBenchmark = async (
     cleanup = false,
   ): Promise<T> => {
     const group = (phaseName: string) =>
-      phaseName.startsWith("checker-") ||
-      phaseName === "checks" ||
-      phaseName === "control-check"
-        ? "checks"
-        : ["setup", "preparation", "worktree"].includes(phaseName)
-          ? "setup"
-          : phaseName.includes("cleanup") ||
-              phaseName === "remove-owned-runtime"
-            ? "cleanup"
-            : phaseName;
-    const groupLimit = group(name) === "checks" ? allowances.checksMs : limitMs;
+      phaseName === "judge-sealing"
+        ? "judge-sealing"
+        : phaseName.startsWith("judge-") || phaseName === "assessment-complete"
+          ? "judge"
+          : phaseName.startsWith("checker-") ||
+              phaseName === "checks" ||
+              phaseName === "control-check"
+            ? "checks"
+            : ["setup", "preparation", "worktree"].includes(phaseName)
+              ? "setup"
+              : phaseName.includes("cleanup") ||
+                  phaseName === "remove-owned-runtime"
+                ? "cleanup"
+                : phaseName;
+    const groupLimit =
+      group(name) === "checks"
+        ? allowances.checksMs
+        : group(name) === "judge"
+          ? allowances.judgeMs
+          : limitMs;
     const spent = phases
       .filter((item) => group(item.name) === group(name))
       .reduce((total, item) => total + item.elapsedMs, 0);
@@ -598,8 +671,10 @@ export const runImplementationBenchmark = async (
       "signal" | "id" | "runId" | "attemptId"
     >,
     phases: Attempt["phases"],
+    attempt?: Attempt,
   ): Promise<BenchmarkRuntime> => {
     const attemptId =
+      attempt?.id ??
       [...attempts].reverse().find((attempt) => !attempt.finishedAt)?.id ??
       null;
     const id = `sandcastle-benchmark-${ledger.runId.slice(0, 8)}-${randomUUID()}`;
@@ -611,7 +686,11 @@ export const runImplementationBenchmark = async (
     });
     try {
       return await phase(
-        request.role === "checks" ? "checker-setup" : "setup",
+        request.role === "judge"
+          ? "judge-preparation"
+          : request.role === "checks"
+            ? "checker-setup"
+            : "setup",
         allowances.setupMs,
         phases,
         async (signal) => {
@@ -702,13 +781,344 @@ export const runImplementationBenchmark = async (
       throw error;
     }
   };
+  const runJudge = async (
+    attempt: Attempt,
+    previousAssessmentId: string | null = null,
+  ) => {
+    if (
+      !attempt.candidate ||
+      attempt.judge.status !== "pending" ||
+      attempt.cleanup.status !== "passed"
+    )
+      return;
+    const candidate = attempt.candidate;
+    judgingAttempt = attempt;
+    const id = randomUUID();
+    const root = join(plan.output, "runtime", `judge-${id}`);
+    const assessment: JudgeAssessment = {
+      version: 1,
+      id,
+      previousAssessmentId,
+      reason: previousAssessmentId ? dependencies.rejudgeReason! : null,
+      candidateId:
+        attempt.judge.assessments?.[0]?.candidateId ??
+        `candidate-${randomUUID()}`,
+      protocolId: judgeProtocolId(plan),
+      taskSha256:
+        plan.tickets[
+          plan.slots.find((slot) => slot.id === attempt.slotId)!.ticket
+        ]!.sha256,
+      rubricSha256: launch.grading.rubricSha256,
+      candidate: {
+        head: candidate.head,
+        tree: candidate.tree,
+        worktree: candidate.worktree,
+        sourceSha256: candidate.sourceSha256,
+        paths: candidate.paths,
+      },
+      status: "running",
+      failure: null,
+      startedAt: new Date(now()).toISOString(),
+      requirements: [],
+      deviations: [],
+      disclosures: [
+        "Frozen task, references, repository content and Git history may disclose author or model identity; these materials are retained verbatim.",
+        "Candidate and reference paths include the caller's project/output naming, which can disclose identity.",
+      ],
+      score: {
+        value: null,
+        coverage: 0,
+        applicableWeight: 0,
+        assessedWeight: 0,
+        range: null,
+      },
+      mandatoryChecks: attempt.check?.status ?? "not-run",
+      projectAcceptance: "not_assessed",
+      judge: {
+        model: plan.judge!.model,
+        effort: plan.judge!.effort,
+        serviceTier: "default",
+        observed: null,
+      },
+      usage: null,
+      provenance: {
+        sessionId: null,
+        stream: join(plan.output, "assessments", `${id}-judge.jsonl`),
+        streamSha256: null,
+        sessions: [],
+        source: "codex-stream",
+      },
+    };
+    (attempt.judge.assessments ??= []).push(assessment);
+    attempt.judge.status = "running";
+    ledger.budget.judgeReservedMs = Math.max(
+      0,
+      ledger.budget.judgeReservedMs - judgeReservationMs(plan),
+    );
+    ledger.budget.judgeReservedCalls = Math.max(
+      0,
+      ledger.budget.judgeReservedCalls - 1,
+    );
+    const phases: Attempt["phases"] = [];
+    let runtime: BenchmarkRuntime | undefined;
+    let stream = "",
+      output = "",
+      stdoutSeen = "";
+    let redact = (text: string) => text;
+    await mkdir(join(plan.output, "assessments"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await progress.publish("judge-preparation", "judge-preparation", attempt);
+    await progress.ownResource({
+      id: root,
+      kind: "directory",
+      attemptId: attempt.id,
+      status: "owned",
+    });
+    try {
+      const source = await phase(
+        "judge-worktree",
+        allowances.judgeMs,
+        phases,
+        async (signal) => {
+          await verifyBenchmarkCandidate(candidate, signal);
+          const source = await privateWorktree(
+            join(root, "judge"),
+            join(dirname(candidate.worktree), "storage.git"),
+            candidate.head,
+            signal,
+          );
+          const actual = await workspaceFingerprint(
+            source.worktree,
+            source.worktree,
+            signal,
+            candidate.paths,
+          );
+          if (actual.sha256 !== candidate.sourceSha256)
+            throw new Error("Judge worktree differs from the sealed candidate");
+          const references = join(root, "judge", "references");
+          await mkdir(references, { recursive: true, mode: 0o700 });
+          for (const [index, file] of launch.grading.references.entries())
+            await writeFile(
+              join(references, String(index)),
+              file.base64 ? Buffer.from(file.base64, "base64") : file.text,
+              { mode: 0o400 },
+            );
+          return source;
+        },
+      );
+      runtime = await setup(
+        {
+          plan,
+          root: join(root, "judge"),
+          worktree: source.worktree,
+          role: "judge",
+        },
+        phases,
+        attempt,
+      );
+      redact = runtime.redact?.bind(runtime) ?? redact;
+      const provider = codex(plan.judge!.model, {
+        effort: plan.judge!.effort as CodexOptions["effort"],
+        serviceTier: "default",
+        readOnly: true,
+      });
+      let checkOutput = "Unavailable";
+      if (
+        attempt.check?.outputSha256 &&
+        ["passed", "failed"].includes(attempt.check.status)
+      ) {
+        const bytes = await readFile(
+          join(
+            plan.output,
+            `${attempt.retryOf ? attempt.id : attempt.slotId}-check.log`,
+          ),
+        );
+        if (hash(bytes) !== attempt.check.outputSha256)
+          throw new Error("Trusted configured-check evidence changed");
+        checkOutput = `${bytes.subarray(0, 16384).toString("utf8")}${bytes.length > 16384 ? "\n[Excerpt; the complete bound log is available in references/configured-check.log]" : ""}`;
+        await writeFile(
+          join(root, "judge", "references", "configured-check.log"),
+          bytes,
+          { mode: 0o400 },
+        );
+      }
+      const references = launch.grading.references.map((file, index) => ({
+        path: file.path,
+        sha256: file.sha256,
+        location: join(root, "judge", "references", String(index)),
+      }));
+      if (
+        attempt.check?.outputSha256 &&
+        ["passed", "failed"].includes(attempt.check.status)
+      )
+        references.push({
+          path: "configured-check.log",
+          sha256: attempt.check.outputSha256,
+          location: join(root, "judge", "references", "configured-check.log"),
+        });
+      const built = provider.buildPrintCommand({
+        prompt: judgePrompt(plan, attempt, assessment, checkOutput, references),
+        dangerouslySkipPermissions: false,
+      });
+      const observe = (line: string) => {
+        stdoutSeen += `${line}\n`;
+        stream += `${redact(line)}\n`;
+        progress.log(attempt, redact(line), "judge");
+        for (const event of provider.parseStreamLine(line)) {
+          if (event.type === "usage") assessment.usage = event.usage;
+          if (event.type === "session_id")
+            assessment.provenance.sessionId = event.sessionId;
+          if (event.type === "result") output = redact(event.result);
+          if (event.type === "tool_call")
+            progress.activity(attempt, "inspection", "judge");
+          progress.activity(attempt, event.type, "judge");
+        }
+      };
+      if (
+        ledger.budget.implementationCalls +
+          ledger.budget.judgeCalls +
+          ledger.budget.judgeReservedCalls >=
+        ledger.budget.maxCalls
+      )
+        throw new Error("Judge call allowance exhausted");
+      ledger.budget.judgeCalls++;
+      await progress.publish("judge-call-started", "judge-assessment", attempt);
+      const result = await phase(
+        "judge-assessment",
+        allowances.judgeMs,
+        phases,
+        (signal) => runtime!.exec({ ...built, signal, onLine: observe }),
+      );
+      const remainingOutput = result.stdout.startsWith(stdoutSeen)
+        ? result.stdout.slice(stdoutSeen.length)
+        : result.stdout;
+      for (const line of remainingOutput.split("\n").filter(Boolean))
+        observe(line);
+      stream += redact(result.stderr);
+      if (result.exitCode !== 0) throw new Error("Judge invocation failed");
+      await phase(
+        "assessment-complete",
+        allowances.judgeMs,
+        phases,
+        async (signal) => {
+          await verifyBenchmarkCandidate(candidate, signal);
+          const actual = await workspaceFingerprint(
+            source.worktree,
+            source.worktree,
+            signal,
+            candidate.paths,
+          );
+          if (actual.sha256 !== candidate.sourceSha256)
+            throw new Error("Judge changed the candidate worktree");
+          await assessJudgeOutput(plan, attempt, assessment, output, signal);
+        },
+      );
+    } catch (error) {
+      failJudgeAssessment(
+        assessment,
+        error instanceof PhaseFailure
+          ? error.outcome
+          : error instanceof Error
+            ? redact(error.message)
+            : "Judge assessment failed",
+      );
+      if (signal.aborted) ledger.status = "cancelled";
+      if (
+        (error as { unsettled?: boolean; resources?: string[] }).unsettled ||
+        (error as { resources?: string[] }).resources?.length
+      ) {
+        attempt.cleanup.status = "failed";
+        attempt.cleanup.resources.push(
+          runtime?.id ?? root,
+          ...((error as { resources?: string[] }).resources ?? []),
+        );
+      }
+    } finally {
+      if (runtime)
+        try {
+          await stop(runtime, phases);
+        } catch {
+          attempt.cleanup.status = "failed";
+          attempt.cleanup.resources.push(runtime.id, root);
+        }
+      try {
+        const captured = await phase(
+          "judge-sealing",
+          allowances.sealMs,
+          phases,
+          (signal) =>
+            captureSessions(root, plan.output, id, redact, signal, "judge"),
+          true,
+        );
+        assessment.provenance.sessions = captured.sessions;
+        assessment.judge.observed = captured.observed;
+        if (
+          captured.observed?.some(
+            (item) =>
+              item.model !== plan.judge!.model ||
+              (item.effort !== null && item.effort !== plan.judge!.effort) ||
+              (item.serviceTier !== null && item.serviceTier !== "default"),
+          )
+        ) {
+          failJudgeAssessment(
+            assessment,
+            "Observed judge identity differs from the frozen request",
+          );
+        }
+      } catch {
+        failJudgeAssessment(assessment, "Judge provenance capture failed");
+      }
+      await progress.publish(
+        "judge-stream-finished",
+        "assessment-complete",
+        attempt,
+      );
+      assessment.provenance.streamSha256 = hash(stream);
+      await writeFile(assessment.provenance.stream, stream, { mode: 0o600 });
+      assessment.finishedAt = new Date(now()).toISOString();
+      attempt.judge.status = assessment.status;
+      await sealJudgeAssessment(plan, attempt, assessment);
+      if (attempt.cleanup.status === "passed")
+        try {
+          await phase(
+            "remove-owned-runtime",
+            allowances.cleanupMs,
+            phases,
+            () => rm(root, { recursive: true, force: true }),
+            true,
+          );
+          await progress.releaseResource(root);
+        } catch {
+          attempt.cleanup.status = "failed";
+          attempt.cleanup.resources.push(root);
+        }
+      attempt.phases.push(...phases);
+      if (
+        ["judge-pending", "completed", "assessment-incomplete"].includes(
+          attempt.status,
+        )
+      )
+        attempt.status =
+          assessment.status === "complete"
+            ? "completed"
+            : "assessment-incomplete";
+      await progress.publish("judge-completed", "assessment-complete", attempt);
+      judgingAttempt = undefined;
+    }
+  };
   let initialized = false;
   const report = async () => {
     await persist("report", "report-generation");
+    const assessed = await readBenchmarkAssessments(plan.output);
+    const comparison = compareBenchmarkCandidates(plan, assessed.assessments);
     await save(join(plan.output, "report.json"), {
       status: ledger.status,
-      evaluated: 0,
-      judge: "pending #49",
+      evaluated: attempts.filter(
+        (attempt) => attempt.judge.status === "complete",
+      ).length,
+      judge: plan.judge,
       projectAcceptance: "not assessed",
       scheduled: plan.slots.length,
       attempted: new Set(attempts.map((attempt) => attempt.slotId)).size,
@@ -717,10 +1127,16 @@ export const runImplementationBenchmark = async (
       budget: ledger.budget,
       cleanup: ledger.cleanup,
       attempts,
+      comparison,
+      assessmentApplicability: assessed.assessments.map((item) => ({
+        id: item.assessment.id,
+        applicable: item.applicable,
+        reason: item.reason,
+      })),
     });
     await writeFile(
       join(plan.output, "report.html"),
-      `<!doctype html><html lang="en"><meta charset="utf-8"><title>Implementation benchmark</title><h1>Implementation benchmark</h1><p>${new Set(attempts.map((attempt) => attempt.slotId)).size}/${plan.slots.length} slots attempted, ${attempts.length} attempts including retries. ${ledger.status}. 0 candidates evaluated. Independent judging is pending #49. Project acceptance is not assessed.</p>`,
+      `<!doctype html><html lang="en"><meta charset="utf-8"><title>Implementation benchmark</title><h1>Implementation benchmark</h1><p>${new Set(attempts.map((attempt) => attempt.slotId)).size}/${plan.slots.length} slots attempted, ${attempts.length} attempts including retries. ${ledger.status}. ${attempts.filter((attempt) => attempt.judge.status === "complete").length} complete assessments. Scores, coverage and evidence are in report.json. Project acceptance is not assessed.</p>`,
       { mode: 0o600 },
     );
     return {
@@ -736,13 +1152,46 @@ export const runImplementationBenchmark = async (
     ledger.reason = null;
     await persist(dependencies.resume ? "resumed" : "run-started");
     initialized = true;
+    const rejudge = dependencies.rejudgeAssessmentId
+      ? attempts.find((attempt) =>
+          attempt.judge.assessments?.some(
+            (assessment) => assessment.id === dependencies.rejudgeAssessmentId,
+          ),
+        )
+      : undefined;
+    if (rejudge) {
+      if (
+        remaining() < judgeReservationMs(plan) ||
+        ledger.budget.maxCalls -
+          ledger.budget.implementationCalls -
+          ledger.budget.judgeCalls -
+          ledger.budget.judgeReservedCalls <
+          1
+      ) {
+        ledger.status = "budget-exhausted";
+        await progress.publish(
+          "judge-budget-exhausted",
+          "judge-preparation",
+          rejudge,
+        );
+      } else {
+        ledger.budget.judgeReservedMs += judgeReservationMs(plan);
+        ledger.budget.judgeReservedCalls++;
+        rejudge.judge.status = "pending";
+        await runJudge(rejudge, dependencies.rejudgeAssessmentId!);
+      }
+    } else
+      for (const attempt of attempts.filter(
+        (attempt) => attempt.judge.status === "pending",
+      ))
+        await runJudge(attempt);
     const attemptMs =
       allowances.setupMs +
       allowances.implementationMs +
       allowances.sealMs +
       allowances.checksMs +
       allowances.cleanupMs +
-      allowances.judgeMs;
+      judgeReservationMs(plan);
     const slotLimit = Math.min(
       maxNewSlots,
       allowances.maxSlotsPerDispatch ?? Infinity,
@@ -750,16 +1199,24 @@ export const runImplementationBenchmark = async (
     const retry = attempts.find(
       (attempt) => attempt.id === dependencies.retryAttemptId,
     );
-    const scheduled = retry
-      ? plan.slots.filter((slot) => slot.id === retry.slotId)
-      : plan.slots.filter((slot) => ledger.unrun.includes(slot.id));
-    if (!scheduled.length)
+    const scheduled = rejudge
+      ? []
+      : retry
+        ? plan.slots.filter((slot) => slot.id === retry.slotId)
+        : plan.slots.filter((slot) => ledger.unrun.includes(slot.id));
+    if (!scheduled.length && ledger.status === "running")
       ledger.status = attempts.some(
         (attempt) => attempt.judge.status === "pending",
       )
         ? "judge-pending"
-        : "partial";
-    else if (ledger.controls.status === "failed")
+        : attempts.some((attempt) => attempt.judge.status === "incomplete")
+          ? "assessment-incomplete"
+          : ledger.unrun.length
+            ? "partial"
+            : "completed";
+    else if (!scheduled.length) {
+      /* Preserve a refused rejudge's budget outcome. */
+    } else if (ledger.controls.status === "failed")
       ledger.status = "control-failed";
     else if (
       ledger.controls.status === "unavailable" &&
@@ -951,13 +1408,14 @@ export const runImplementationBenchmark = async (
             remaining() < attemptMs ||
             allowances.maxCalls -
               ledger.budget.implementationCalls -
+              ledger.budget.judgeCalls -
               ledger.budget.judgeReservedCalls <
               2
           ) {
             ledger.status = "budget-exhausted";
             break;
           }
-          ledger.budget.judgeReservedMs += allowances.judgeMs;
+          ledger.budget.judgeReservedMs += judgeReservationMs(plan);
           ledger.budget.judgeReservedCalls++;
           const attempt: Attempt = {
             id: `${slot.id}-attempt-${attempts.filter((attempt) => attempt.slotId === slot.id).length + 1}`,
@@ -1354,12 +1812,13 @@ export const runImplementationBenchmark = async (
               }
             } else attempt.cleanup.resources.push(root);
             if (!attempt.candidate) {
-              ledger.budget.judgeReservedMs -= allowances.judgeMs;
+              ledger.budget.judgeReservedMs -= judgeReservationMs(plan);
               ledger.budget.judgeReservedCalls--;
             }
             attempt.finishedAt = new Date(now()).toISOString();
             await persist();
           }
+          await runJudge(attempt);
           if (attempt.cleanup.status === "failed") {
             if (attempt.status === "judge-pending")
               attempt.status = "cleanup-failed";
@@ -1379,7 +1838,11 @@ export const runImplementationBenchmark = async (
           (attempt) => attempt.judge.status === "pending",
         )
           ? "judge-pending"
-          : "partial";
+          : attempts.some((attempt) => attempt.judge.status === "incomplete")
+            ? "assessment-incomplete"
+            : ledger.unrun.length
+              ? "partial"
+              : "completed";
     }
   } catch (error) {
     if (!initialized) throw error;
