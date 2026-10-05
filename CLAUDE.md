@@ -54,3 +54,5 @@ work without that comparison uses no manifest. See
 
 Benchmark reasoning efforts are open-ended worker catalog strings. Validate capabilities against model/list, including hidden entries, instead of a fixed effort allowlist.
 Freeze visual applicability per selected benchmark task; a scoped visual criterion must not waive another task's nonvisual requirements.
+
+Linux Unix sockets have short pathname limits. Bind benchmark inspection sockets through a directory descriptor and connect from their parent directory with a relative socket path.

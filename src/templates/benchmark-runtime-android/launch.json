@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "allowedEdits": ["MainActivity.java"],
+  "protectedFiles": [
+    "adapter.mjs",
+    "build.sh",
+    "check.sh",
+    "AndroidManifest.xml"
+  ],
+  "adapter": {
+    "id": "android-java-reference-v1",
+    "module": "adapter.mjs",
+    "readiness": "true",
+    "config": {
+      "architecture": "x86_64",
+      "api": 35,
+      "buildTools": "35.0.0",
+      "consolePort": 5680,
+      "buildCommand": "sh build.sh"
+    }
+  },
+  "rubric": [
+    {
+      "id": "visible-label",
+      "requirement": "Candidate ready is visible in the actual native app",
+      "weight": 1,
+      "partialCredit": 0.5,
+      "applicability": "visual",
+      "evidence": ["check", "visual"]
+    }
+  ]
+}

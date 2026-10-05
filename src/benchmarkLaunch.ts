@@ -100,7 +100,12 @@ const contractSchema = z
       .strict()
       .optional(),
     adapter: z
-      .object({ id: z.string().min(1), readiness: z.string().min(1) })
+      .object({
+        id: z.string().min(1),
+        readiness: z.string().min(1),
+        module: z.string().min(1).optional(),
+        config: z.record(z.string(), z.json()).optional(),
+      })
       .strict()
       .optional(),
     minimumFreeBytes: z.number().int().positive().optional(),
@@ -162,6 +167,8 @@ export interface FrozenLaunch {
     readonly id: string;
     readonly sha256: string;
     readonly readiness: string | null;
+    readonly module?: FrozenFile;
+    readonly config?: Readonly<Record<string, unknown>>;
   };
   readonly runner: {
     readonly package: "@ai-hero/sandcastle";
@@ -808,7 +815,12 @@ export const freezeLaunch = async (input: {
       dependencyFiles.some((file) => file.path === path) ||
       (!!input.check && input.check.includes(path)),
   );
-  for (const path of config.protectedFiles ?? []) {
+  for (const path of [
+    ...new Set([
+      ...(config.protectedFiles ?? []),
+      ...(config.adapter?.module ? [config.adapter.module] : []),
+    ]),
+  ]) {
     if (!baseFiles.includes(path))
       throw new Error(
         `Protected grading file must exist in the frozen base: ${path}`,
@@ -944,6 +956,23 @@ export const freezeLaunch = async (input: {
   const adapter = {
     id: config.adapter?.id ?? "sandcastle-code-check-v1",
     readiness: config.adapter?.readiness ?? null,
+    ...(config.adapter?.module
+      ? {
+          module: (() => {
+            const path = config.adapter.module;
+            if (
+              !baseFiles.includes(path) ||
+              modes.get(path) !== "100644" ||
+              !path.endsWith(".mjs")
+            )
+              throw new Error(
+                "Project adapter must be a tracked regular .mjs file in the frozen base",
+              );
+            return files([path])[0]!;
+          })(),
+          config: config.adapter.config ?? {},
+        }
+      : {}),
   };
   const launch: FrozenLaunch = {
     projectHead: git(cwd, "rev-parse", "HEAD"),
@@ -1034,9 +1063,10 @@ export const freezeLaunch = async (input: {
     },
     capabilities,
   };
-  const executionBlockers = launch.grading.visualRequired
-    ? ["Runtime visual evidence collection is pending #50"]
-    : [];
+  const executionBlockers =
+    launch.grading.visualRequired && !adapter.module
+      ? ["Required visuals need a frozen owned project runtime adapter module"]
+      : [];
   return {
     launch,
     runnerCommit: runnerCommit ?? "unknown",

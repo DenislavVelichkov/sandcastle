@@ -1,0 +1,1 @@
+Display "Candidate ready" in the owned Android application. The configured native check must see that label in the actual foreground activity. Capture the screen and let the judge inspect the live native hierarchy. No external backend, production visual reference, design selection or human approval applies to this disposable reference fixture.

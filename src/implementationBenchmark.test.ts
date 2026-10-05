@@ -1,5 +1,8 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { promisify } from "node:util";
+import { createServer } from "node:net";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   lstat,
   appendFile,
@@ -198,6 +201,525 @@ const fixture = async (
   );
   return { repo, plan };
 };
+
+const ownedProjectAdapter = `
+import {readFile, writeFile, access, rm} from 'node:fs/promises';
+import {join} from 'node:path';
+export async function prepare(c) {
+  await writeFile(join(c.root, 'running'), c.candidate.head);
+  if (c.config.failure === 'startup') throw new Error('Required device unavailable; choose a supported private lane');
+  return {build:c.candidate.head, profile:'fixture-native', device:'private-device', ports:[], services:[], kind:'native'};
+}
+export async function check(c) {
+  if(c.config.failure === 'cancel') await new Promise((accept,reject) => c.signal.addEventListener('abort',() => reject(c.signal.reason),{once:true}));
+  const value = await readFile(join(c.worktree, 'value.txt'), 'utf8');
+  return {stdout:value, stderr:'', exitCode:value === 'correct\\n' ? 0 : 1};
+}
+export async function capture(c) {
+  await access(join(c.root, 'running'));
+  if (c.config.failure === 'missing-visual') return [];
+  await writeFile(join(c.evidence, 'screen.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=', 'base64'));
+  return [{id:'screen', path:'screen.png', mediaType:'image/png', observation:'The candidate value is visible.'}];
+}
+export async function inspect(c) {
+  return {observation:'Live candidate: ' + await readFile(join(c.worktree, 'value.txt'), 'utf8'), build:await readFile(join(c.root, 'running'), 'utf8')};
+}
+export async function stop(c) { if (c.config.failure === 'cleanup' || (c.config.failure === 'recover-cleanup' && await readFile(join(c.root,'permit-stop'),'utf8').catch(() => '') !== 'yes')) throw new Error('Owned stop unverified'); await rm(join(c.root, 'running'), {force:true}); }
+export async function verifyStopped(c) { try { await access(join(c.root, 'running')); return false; } catch { return true; } }
+`;
+
+it("connects a frozen owned project runtime to checks, visual evidence and live judge inspection", async () => {
+  const { plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"] },
+    {
+      adapter: {
+        id: "owned-fixture",
+        readiness: "true",
+        module: "adapter.mjs",
+        config: { architecture: "x86_64" },
+      },
+      rubric: [
+        {
+          id: "visible",
+          requirement: "The candidate value is visible",
+          weight: 1,
+          partialCredit: 0.5,
+          applicability: "visual",
+          evidence: ["visual"],
+        },
+      ],
+    },
+    { "adapter.mjs": ownedProjectAdapter },
+  );
+  expect(plan.readiness!.executionReady).toBe(true);
+  const result = await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => {
+      const runtime = controlledJudge(request, (output) => {
+        output.requirements[0].evidence = [{ kind: "visual", id: "screen" }];
+      });
+      const exec = runtime.exec;
+      runtime.exec = async (input) => {
+        if (request.role === "judge") {
+          expect(input.stdin).toContain('"id":"screen"');
+          const socket = /Live inspection socket: (.+)/.exec(input.stdin!)![1]!;
+          const inspection = await promisify(execFile)(
+            "curl",
+            [
+              "--silent",
+              "--unix-socket",
+              "inspection.sock",
+              "http://localhost/inspect",
+            ],
+            { cwd: dirname(socket), encoding: "utf8" },
+          );
+          expect(JSON.parse(inspection.stdout).observation).toContain(
+            "correct",
+          );
+        }
+        return exec(input);
+      };
+      return runtime;
+    },
+  });
+  const { assessments, execution } = await readBenchmarkAssessments(
+    plan.output,
+  );
+  expect(result.status, JSON.stringify(execution.attempts[0])).toBe("complete");
+  expect(assessments[0]).toMatchObject({
+    applicable: true,
+    assessment: {
+      status: "complete",
+      score: { value: 100, coverage: 1 },
+      requirements: [
+        {
+          evidence: [
+            { kind: "visual", runtime: { profile: "fixture-native" } },
+          ],
+        },
+      ],
+    },
+  });
+  expect(
+    execution.resources.filter(
+      (resource) => resource.kind === "project-runtime",
+    ),
+  ).toMatchObject([{ status: "released" }]);
+});
+
+it.each(["startup", "missing-visual", "cleanup"])(
+  "retains the distinct %s project-runtime outcome without inventing visual coverage",
+  async (failure) => {
+    const { plan } = await fixture(
+      { arms: ["gpt-6-astra:medium"] },
+      {
+        adapter: {
+          id: "failure-fixture",
+          readiness: "true",
+          module: "adapter.mjs",
+          config: { failure },
+        },
+        rubric: [
+          {
+            id: "visible",
+            requirement: "The candidate value is visible",
+            weight: 1,
+            partialCredit: 0.5,
+            applicability: "visual",
+            evidence: ["visual"],
+          },
+        ],
+      },
+      { "adapter.mjs": ownedProjectAdapter },
+    );
+    await runTicketBenchmark(plan, undefined, 1, {
+      createRuntime: async (request) =>
+        controlledJudge(request, (output) => {
+          output.requirements[0].evidence =
+            failure === "cleanup" ? [{ kind: "visual", id: "screen" }] : [];
+        }),
+    });
+    const saved = await readBenchmarkAssessments(plan.output);
+    const resource = saved.execution.resources.find(
+      (resource) => resource.kind === "project-runtime",
+    )!;
+    if (failure === "cleanup") {
+      expect(saved.execution.status).toBe("cleanup-failed");
+      expect(saved.execution.cleanup).toEqual({
+        status: "failed",
+        resources: [resource.id],
+      });
+      expect(resource.status).toBe("cleanup-failed");
+      expect(await readFile(join(resource.id, "running"), "utf8")).toBe(
+        saved.execution.attempts[0]!.candidate!.head,
+      );
+      expect(saved.assessments[0]!.assessment.projectAcceptance).toBe(
+        "not_assessed",
+      );
+    } else {
+      expect(resource.status).toBe("released");
+      expect(saved.assessments[0]!.assessment).toMatchObject({
+        status: "incomplete",
+        score: { value: null, coverage: 0 },
+        requirements: [{ verdict: "not_assessed", gaps: ["visual"] }],
+      });
+      if (failure === "startup")
+        expect(saved.execution.attempts[0]!.reason).toContain(
+          "Required device unavailable",
+        );
+    }
+  },
+);
+
+it("recovers failed project cleanup through the frozen adapter without another model call", async () => {
+  const { repo, plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"] },
+    {
+      adapter: {
+        id: "recoverable-project",
+        readiness: "true",
+        module: "adapter.mjs",
+        config: { failure: "recover-cleanup" },
+      },
+    },
+    { "adapter.mjs": ownedProjectAdapter },
+  );
+  const script = join(dirname(plan.output), "owned-controller.mts");
+  await writeFile(
+    script,
+    `
+import {writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {runTicketBenchmark} from ${JSON.stringify(join(process.cwd(), "src/ticketBenchmark.ts"))};
+await runTicketBenchmark(${JSON.stringify(plan)},undefined,1,{createRuntime:async(request) => ({
+  id:request.id, stop:async()=>{}, exec:async({command,stdin})=>{
+    if(request.role === 'implementation' && command.startsWith('codex exec')) await writeFile(join(request.worktree,'value.txt'),'correct\\n');
+    if(request.role !== 'judge' || !command.startsWith('codex exec')) return {stdout:'',stderr:'',exitCode:0};
+    const candidateId=/Candidate identity: (candidate-[a-f0-9-]+)/.exec(stdin)[1];
+    const rubric=JSON.parse(/Frozen rubric:\\n(.+)\\nTrusted configured check:/.exec(stdin)[1]);
+    const output={candidateId,requirements:rubric.map(rule=>({id:rule.id,verdict:'met',observation:'Required value is present.',explanation:'The code and protected check establish the requirement.',evidence:[{kind:'code',path:'value.txt',startLine:1,endLine:1},{kind:'check',id:'configured-check'}]})),deviations:[],disclosures:[]};
+    return {stdout:JSON.stringify({type:'item.completed',item:{type:'agent_message',text:JSON.stringify(output)}})+'\\n',stderr:'',exitCode:0};
+  }
+})});
+`,
+  );
+  await promisify(execFile)("pnpm", ["exec", "tsx", script], {
+    cwd: process.cwd(),
+    timeout: 15000,
+  });
+  const initial = await readBenchmarkAssessments(plan.output);
+  const resource = initial.execution.resources.find(
+    (item) => item.kind === "project-runtime",
+  )!;
+  expect(resource.status).toBe("cleanup-failed");
+  const assessmentPath = initial.execution.attempts[0]!.judge.records![0]!.path;
+  const assessmentBytes = await readFile(assessmentPath);
+  await writeFile(
+    join(repo, "adapter.mjs"),
+    "throw new Error('Live adapter must not run');",
+  );
+  await writeFile(join(resource.id, "permit-stop"), "yes");
+  const createRuntime = vi.fn(async () => {
+    throw new Error("Recovery must not invoke a model");
+  });
+  const result = await resumeTicketBenchmark(
+    plan.output,
+    {},
+    { createRuntime },
+  );
+  expect(result.status).toBe("complete");
+  expect(createRuntime).not.toHaveBeenCalled();
+  const recovered = await readBenchmarkAssessments(plan.output);
+  expect(recovered.execution.cleanup.status).toBe("passed");
+  expect(
+    recovered.execution.resources.every((item) => item.status === "released"),
+  ).toBe(true);
+  expect(await readFile(assessmentPath)).toEqual(assessmentBytes);
+});
+
+it.each(["configuration", "module"])(
+  "rejects changed frozen project %s before resuming",
+  async (change) => {
+    const { plan } = await fixture(
+      { arms: ["gpt-6-astra:medium"] },
+      {
+        adapter: {
+          id: "frozen-project",
+          readiness: "true",
+          module: "adapter.mjs",
+          config: { architecture: "x86_64" },
+        },
+      },
+      { "adapter.mjs": ownedProjectAdapter },
+    );
+    await runTicketBenchmark(plan, undefined, 1, {
+      createRuntime: async (request) => controlledJudge(request),
+    });
+    const changed = JSON.parse(
+      await readFile(join(plan.output, "manifest.json"), "utf8"),
+    );
+    if (change === "configuration")
+      changed.launch.adapter.config.architecture = "arm64";
+    else changed.launch.adapter.module.text += "\n// Changed adapter\n";
+    await writeFile(
+      join(plan.output, "manifest.json"),
+      JSON.stringify(changed),
+    );
+    const createRuntime = vi.fn(async () => {
+      throw new Error("Changed plan must not invoke a model");
+    });
+    await expect(
+      resumeTicketBenchmark(plan.output, {}, { createRuntime }),
+    ).rejects.toThrow("Frozen implementation plan changed");
+    expect(createRuntime).not.toHaveBeenCalled();
+  },
+);
+
+it("stops an owned project after a protected-check deadline", async () => {
+  const { plan: original } = await fixture(
+    { arms: ["gpt-6-astra:medium"] },
+    {
+      adapter: {
+        id: "deadline-project",
+        readiness: "true",
+        module: "adapter.mjs",
+        config: { failure: "cancel" },
+      },
+    },
+    { "adapter.mjs": ownedProjectAdapter },
+  );
+  const { id: _id, ...frozen } = {
+    ...original,
+    launch: {
+      ...original.launch!,
+      allowances: { ...original.launch!.allowances, checksMs: 500 },
+    },
+  };
+  const { output: _output, ...hashed } = frozen;
+  const plan = {
+    ...frozen,
+    id: createHash("sha256").update(JSON.stringify(hashed)).digest("hex"),
+  };
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => controlledJudge(request),
+  });
+  const saved = await readBenchmarkAssessments(plan.output);
+  expect(saved.execution.attempts[0]!.phases).toContainEqual(
+    expect.objectContaining({ name: "checks", outcome: "timed-out" }),
+  );
+  expect(
+    saved.execution.resources.filter((item) => item.kind === "project-runtime"),
+  ).toMatchObject([{ status: "released" }]);
+  expect(saved.execution.cleanup.status).toBe("passed");
+});
+
+it("stops the owned project and preserves visual evidence after judge failure", async () => {
+  const { plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"] },
+    {
+      adapter: {
+        id: "judge-failure-project",
+        readiness: "true",
+        module: "adapter.mjs",
+      },
+      visualRequired: true,
+    },
+    { "adapter.mjs": ownedProjectAdapter },
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => {
+      const runtime = controlledJudge(request);
+      if (request.role === "judge")
+        runtime.exec = async () => {
+          throw new Error("Controlled judge failure");
+        };
+      return runtime;
+    },
+  });
+  const saved = await readBenchmarkAssessments(plan.output);
+  expect(saved.execution.status).toBe("assessment-incomplete");
+  expect(saved.assessments[0]!.assessment.failure).toBe(
+    "Controlled judge failure",
+  );
+  expect(saved.execution.attempts[0]!.project!.evidence).toHaveLength(1);
+  expect(
+    saved.execution.resources.every((item) => item.status === "released"),
+  ).toBe(true);
+  expect(saved.execution.cleanup.status).toBe("passed");
+});
+
+it("rejects a mutated capture without rewriting the retained assessment", async () => {
+  const { plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"] },
+    {
+      adapter: {
+        id: "capture-fixture",
+        readiness: "true",
+        module: "adapter.mjs",
+      },
+      rubric: [
+        {
+          id: "visible",
+          requirement: "The candidate is visible",
+          weight: 1,
+          partialCredit: 0.5,
+          applicability: "visual",
+          evidence: ["visual"],
+        },
+      ],
+    },
+    { "adapter.mjs": ownedProjectAdapter },
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) =>
+      controlledJudge(request, (output) => {
+        output.requirements[0].evidence = [{ kind: "visual", id: "screen" }];
+      }),
+  });
+  const initial = await readBenchmarkAssessments(plan.output);
+  const record = initial.execution.attempts[0]!.judge.records![0]!;
+  const bytes = await readFile(record.path);
+  const image =
+    initial.assessments[0]!.assessment.requirements[0]!.evidence[0]!;
+  await writeFile(image.path, "different screen");
+  const current = await readBenchmarkAssessments(plan.output);
+  expect(current.assessments[0]).toMatchObject({
+    applicable: false,
+    reason: "Bound assessment evidence changed",
+  });
+  expect(await readFile(record.path)).toEqual(bytes);
+});
+
+it.each(["architecture", "collision"])(
+  "blocks an unsupported native %s before borrowing a resource",
+  async (problem) => {
+    const server = createServer();
+    await new Promise<void>((accept, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", accept);
+    });
+    try {
+      const port = (server.address() as { port: number }).port;
+      const adapter = await readFile(
+        join(
+          process.cwd(),
+          "src/templates/benchmark-runtime-android/adapter.mjs",
+        ),
+        "utf8",
+      );
+      const { plan } = await fixture(
+        { arms: ["gpt-6-astra:medium"] },
+        {
+          adapter: {
+            id: "native-readiness",
+            readiness: "true",
+            module: "adapter.mjs",
+            config: {
+              architecture: problem === "architecture" ? "arm64" : "x86_64",
+              sdk: "/fixture-sdk",
+              adbPort: port,
+            },
+          },
+          visualRequired: true,
+        },
+        { "adapter.mjs": adapter },
+      );
+      await runTicketBenchmark(plan, undefined, 1, {
+        createRuntime: async (request) => controlledJudge(request),
+      });
+      const saved = await readBenchmarkAssessments(plan.output);
+      expect(saved.execution.attempts[0]!.reason).toContain(
+        problem === "architecture"
+          ? "Linux x86_64"
+          : "choose a free private lane",
+      );
+      expect(
+        saved.execution.resources.filter(
+          (item) => item.kind === "project-runtime",
+        ),
+      ).toMatchObject([{ status: "released" }]);
+      expect(server.listening).toBe(true);
+    } finally {
+      await new Promise<void>((accept) => server.close(() => accept()));
+    }
+  },
+);
+
+it("stops the owned project runtime after cancellation during protected checks", async () => {
+  const controller = new AbortController();
+  const { plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"] },
+    {
+      adapter: {
+        id: "cancel-fixture",
+        readiness: "true",
+        module: "adapter.mjs",
+        config: { failure: "cancel" },
+      },
+      visualRequired: true,
+    },
+    { "adapter.mjs": ownedProjectAdapter },
+  );
+  const running = runTicketBenchmark(plan, undefined, 1, {
+    signal: controller.signal,
+    createRuntime: async (request) => controlledJudge(request),
+  });
+  let reached = false;
+  for (let count = 0; count < 200; count++) {
+    try {
+      const { snapshot } = await readBenchmarkProgress(plan.output);
+      if (
+        snapshot.phase === "checks" &&
+        snapshot.counts.implementationCompleted === 1 &&
+        snapshot.resources.some((item) => item.kind === "project-runtime")
+      ) {
+        reached = true;
+        break;
+      }
+    } catch {}
+    await delay(10);
+  }
+  expect(reached).toBe(true);
+  controller.abort(new Error("Cancel the owned fixture"));
+  await running;
+  const saved = await readBenchmarkAssessments(plan.output);
+  expect(
+    saved.execution.resources.filter((item) => item.kind === "project-runtime"),
+  ).toMatchObject([{ status: "released" }]);
+  expect(saved.execution.attempts[0]!.cleanup.status).toBe("passed");
+  expect(saved.execution.status).toBe("cancelled");
+});
+
+it("runs required control checks in their owned project runtimes before measurement", async () => {
+  const { plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"], maxMinutes: 90 },
+    {
+      adapter: {
+        id: "control-fixture",
+        readiness: "true",
+        module: "adapter.mjs",
+      },
+      controls: { knownBad: "main", knownGood: "correct" },
+    },
+    { "adapter.mjs": ownedProjectAdapter },
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => controlledJudge(request),
+  });
+  const saved = await readBenchmarkAssessments(plan.output);
+  expect(saved.execution.controls).toMatchObject({
+    status: "passed",
+    results: [
+      { kind: "known-bad", exitCode: 1, status: "passed" },
+      { kind: "known-good", exitCode: 0, status: "passed" },
+    ],
+  });
+  expect(
+    saved.execution.resources.filter((item) => item.kind === "project-runtime"),
+  ).toHaveLength(3);
+  expect(
+    saved.execution.resources.every((item) => item.status === "released"),
+  ).toBe(true);
+});
 
 it("judges the private candidate directly with frozen requirements and a neutral identity", async () => {
   const { plan } = await fixture({}, undefined, {

@@ -1,0 +1,1 @@
+Display "Candidate ready" in the owned browser page. The configured check must read that candidate's private server. Capture it at 800 by 600 and let the judge inspect its actual DOM. No production visual reference, design selection or human approval applies to this disposable reference fixture.

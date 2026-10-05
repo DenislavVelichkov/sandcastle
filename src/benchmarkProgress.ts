@@ -51,7 +51,9 @@ export interface BenchmarkOwner {
 }
 export interface BenchmarkResource {
   id: string;
-  kind: "directory" | "docker" | "runtime";
+  kind: "directory" | "docker" | "runtime" | "project-runtime";
+  adapterSha256?: string;
+  contextSha256?: string;
   runtimeId?: string;
   attemptId: string | null;
   status: "owned" | "released" | "cleanup-failed";

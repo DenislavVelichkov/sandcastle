@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "allowedEdits": ["index.html"],
+  "protectedFiles": ["adapter.mjs", "check.sh"],
+  "adapter": {
+    "id": "chromium-reference-v1",
+    "module": "adapter.mjs",
+    "readiness": "true",
+    "config": { "file": "index.html", "browser": "google-chrome" }
+  },
+  "rubric": [
+    {
+      "id": "visible-label",
+      "requirement": "Candidate ready is visible in the owned browser",
+      "weight": 1,
+      "partialCredit": 0.5,
+      "applicability": "visual",
+      "evidence": ["check", "visual"]
+    }
+  ]
+}

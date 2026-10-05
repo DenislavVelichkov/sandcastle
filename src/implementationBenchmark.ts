@@ -37,7 +37,15 @@ import {
 import {
   createBenchmarkRuntime,
   benchmarkCredentialRedactor,
+  reconcileBenchmarkDocker,
 } from "./implementationBenchmarkRuntime.js";
+import {
+  createBenchmarkProjectRuntime,
+  recoverBenchmarkProjectRuntime,
+  serveBenchmarkProjectInspection,
+  type OwnedBenchmarkProjectRuntime,
+  type BenchmarkProjectEvidence,
+} from "./benchmarkProjectRuntime.js";
 import {
   openBenchmarkProgress,
   type BenchmarkResource,
@@ -142,6 +150,7 @@ export interface ImplementationAttempt {
     frozenInputsSha256?: string;
   };
   candidate?: Candidate;
+  project?: BenchmarkProjectEvidence;
   cleanup: { status: "passed" | "failed"; resources: string[] };
   judge: BenchmarkJudgeState;
 }
@@ -308,6 +317,7 @@ const validatePlan = async (plan: TicketBenchmarkPlan) => {
     ...launch.dependencies,
     ...launch.checking.files,
     ...launch.grading.references,
+    ...(launch.adapter.module ? [launch.adapter.module] : []),
   ]) {
     if (
       hash(file.base64 ? Buffer.from(file.base64, "base64") : file.text) !==
@@ -468,7 +478,14 @@ export const runImplementationBenchmark = async (
     retryAttemptId: dependencies.retryAttemptId,
     rejudgeAssessmentId: dependencies.rejudgeAssessmentId,
     rejudgeReason: dependencies.rejudgeReason,
-    recoverResource: dependencies.recoverResource,
+    recoverResource: (resource, runId, signal) =>
+      resource.kind === "project-runtime"
+        ? recoverBenchmarkProjectRuntime(plan, resource, runId, signal)
+        : (dependencies.recoverResource ?? reconcileBenchmarkDocker)(
+            resource,
+            runId,
+            signal,
+          ),
     sealInterrupted: async (attempt, signal) => {
       const root = join(plan.output, "runtime", attempt.id);
       const redact = benchmarkCredentialRedactor([
@@ -566,7 +583,7 @@ export const runImplementationBenchmark = async (
     name: string,
     limitMs: number,
     phases: Attempt["phases"],
-    operation: (signal: AbortSignal) => Promise<T>,
+    operation: (signal: AbortSignal, remainingMs: number) => Promise<T>,
     cleanup = false,
   ): Promise<T> => {
     const group = (phaseName: string) =>
@@ -630,7 +647,7 @@ export const runImplementationBenchmark = async (
           );
         signal.addEventListener("abort", abort, { once: true });
       });
-      pending = operation(signal);
+      pending = operation(signal, Math.max(0, admittedMs - (now() - begin)));
       const result = await Promise.race([pending, interrupted]);
       if (now() - begin > admittedMs)
         throw new PhaseFailure("timed-out", `${name} exceeded its allowance`);
@@ -791,6 +808,61 @@ export const runImplementationBenchmark = async (
       throw error;
     }
   };
+  const projects = new Map<string, OwnedBenchmarkProjectRuntime>();
+  const prepareProject = async (
+    attempt: Attempt,
+    checkWorktree: string,
+    phases = attempt.phases,
+  ) => {
+    const project = await createBenchmarkProjectRuntime({
+      plan,
+      runId: ledger.runId,
+      attemptId: attempt.id,
+      slotId: attempt.slotId,
+      candidate: attempt.candidate!,
+      checkWorktree,
+      own: (resource) => progress.ownResource(resource),
+      publish: () => persist("project-runtime-owned", "environment-readiness"),
+    });
+    projects.set(attempt.id, project);
+    attempt.project = project.report;
+    try {
+      await phase(
+        phases === attempt.phases
+          ? "checker-project-readiness"
+          : "judge-project-readiness",
+        phases === attempt.phases ? allowances.checksMs : allowances.judgeMs,
+        phases,
+        (signal, remainingMs) => project.prepare(signal, remainingMs),
+      );
+      await persist("project-runtime-ready", "environment-readiness");
+      return project;
+    } catch (error) {
+      project.report.status = "unavailable";
+      project.report.failure =
+        error instanceof Error ? error.message : "Project runtime unavailable";
+      throw error;
+    }
+  };
+  const stopProject = async (attempt: Attempt) => {
+    const project = projects.get(attempt.id);
+    if (!project) return;
+    if (project.report.status === "cleanup-failed") return;
+    try {
+      await phase(
+        "project-cleanup",
+        allowances.cleanupMs,
+        attempt.phases,
+        (signal, remainingMs) => project.stop(signal, remainingMs),
+        true,
+      );
+      await progress.releaseResource(project.resource.id);
+      projects.delete(attempt.id);
+    } catch {
+      attempt.cleanup.status = "failed";
+      attempt.cleanup.resources.push(project.resource.id);
+    }
+  };
   const runJudge = async (
     attempt: Attempt,
     previousAssessmentId: string | null = null,
@@ -871,6 +943,8 @@ export const runImplementationBenchmark = async (
     );
     const phases: Attempt["phases"] = [];
     let runtime: BenchmarkRuntime | undefined;
+    let inspection:
+      Awaited<ReturnType<typeof serveBenchmarkProjectInspection>> | undefined;
     let stream = "",
       output = "",
       stdoutSeen = "";
@@ -928,6 +1002,60 @@ export const runImplementationBenchmark = async (
         phases,
         attempt,
       );
+      if (
+        launch.adapter.module &&
+        !projects.has(attempt.id) &&
+        attempt.project?.status !== "unavailable"
+      ) {
+        const checks = await phase(
+          "judge-project-worktree",
+          allowances.judgeMs,
+          phases,
+          async (signal) => {
+            const checks = await privateWorktree(
+              join(root, "project-checks"),
+              join(dirname(candidate.worktree), "storage.git"),
+              candidate.head,
+              signal,
+            );
+            await restoreChecks(plan, checks.worktree);
+            return checks;
+          },
+        );
+        const project = await prepareProject(attempt, checks.worktree, phases);
+        await phase(
+          "judge-project-capture",
+          allowances.judgeMs,
+          phases,
+          (signal, remainingMs) => project.capture(signal, remainingMs),
+        );
+      }
+      const project = projects.get(attempt.id);
+      if (project?.report.status === "ready") {
+        await phase(
+          "judge-project-integrity",
+          allowances.judgeMs,
+          phases,
+          (signal) => project.verify(signal),
+        );
+        const inspectionMs = Math.max(
+          1,
+          Math.min(
+            remaining(),
+            allowances.judgeMs -
+              phases
+                .filter((item) => item.name.startsWith("judge-"))
+                .reduce((total, item) => total + item.elapsedMs, 0),
+          ),
+        );
+        const inspectionDeadline = now() + inspectionMs;
+        inspection = await serveBenchmarkProjectInspection(
+          project,
+          join(root, "judge", "references", "inspection.sock"),
+          AbortSignal.any([signal, AbortSignal.timeout(inspectionMs)]),
+          () => Math.max(0, inspectionDeadline - now()),
+        );
+      }
       redact = runtime.redact?.bind(runtime) ?? redact;
       const provider = codex(plan.judge!.model, {
         effort: plan.judge!.effort as CodexOptions["effort"],
@@ -968,8 +1096,25 @@ export const runImplementationBenchmark = async (
           sha256: attempt.check.outputSha256,
           location: join(root, "judge", "references", "configured-check.log"),
         });
+      for (const [index, file] of (attempt.project?.evidence ?? []).entries()) {
+        const bytes = await readFile(file.path);
+        if (hash(bytes) !== file.sha256)
+          throw new Error("Candidate visual evidence changed");
+        const location = join(root, "judge", "references", `visual-${index}`);
+        await writeFile(location, bytes, { mode: 0o400 });
+        references.push({ path: file.id, sha256: file.sha256, location });
+      }
       const built = provider.buildPrintCommand({
-        prompt: judgePrompt(plan, attempt, assessment, checkOutput, references),
+        prompt: judgePrompt(
+          plan,
+          attempt,
+          assessment,
+          checkOutput,
+          references,
+          inspection
+            ? join(root, "judge", "references", "inspection.sock")
+            : undefined,
+        ),
         dangerouslySkipPermissions: false,
       });
       const observe = (line: string) => {
@@ -1008,6 +1153,16 @@ export const runImplementationBenchmark = async (
         observe(line);
       stream += redact(result.stderr);
       if (result.exitCode !== 0) throw new Error("Judge invocation failed");
+      if (inspection) {
+        const completedInspection = inspection;
+        inspection = undefined;
+        await phase(
+          "judge-project-inspection",
+          allowances.judgeMs,
+          phases,
+          () => completedInspection.close(),
+        );
+      }
       await phase(
         "assessment-complete",
         allowances.judgeMs,
@@ -1046,6 +1201,24 @@ export const runImplementationBenchmark = async (
         );
       }
     } finally {
+      if (inspection) {
+        try {
+          await phase(
+            "judge-sealing",
+            allowances.sealMs,
+            phases,
+            () => inspection!.close(),
+            true,
+          );
+        } catch {
+          failJudgeAssessment(
+            assessment,
+            "Owned candidate live inspection failed",
+          );
+          attempt.cleanup.status = "failed";
+          attempt.cleanup.resources.push(root);
+        }
+      }
       if (runtime)
         try {
           await stop(runtime, phases);
@@ -1113,6 +1286,7 @@ export const runImplementationBenchmark = async (
           attempt.cleanup.resources.push(root);
         }
       attempt.phases.push(...phases);
+      await stopProject(attempt);
       if (
         ["judge-pending", "completed", "assessment-incomplete"].includes(
           attempt.status,
@@ -1309,6 +1483,7 @@ export const runImplementationBenchmark = async (
         ledger.controls.results.push(result);
         await persist("control-started");
         let runtime: BenchmarkRuntime | undefined;
+        let controlAttempt: Attempt | undefined;
         try {
           const source = await phase(
             "worktree",
@@ -1336,11 +1511,47 @@ export const runImplementationBenchmark = async (
                 signal,
               ),
           );
-          runtime = await setup(
-            { plan, root, worktree: source.worktree, role: "control" },
-            controlPhases,
-          );
-          await prepareRuntime(runtime, controlPhases);
+          if (launch.adapter.module) {
+            const candidate = await phase(
+              "checker-control-sealing",
+              allowances.checksMs,
+              controlPhases,
+              (signal) =>
+                seal(
+                  plan,
+                  `control-${control.kind}`,
+                  source.worktree,
+                  protectedBase!.storage,
+                  (text) => text,
+                  signal,
+                ),
+            );
+            if (!candidate)
+              throw new Error("Control candidate could not be sealed");
+            controlAttempt = {
+              id: `control-${control.kind}`,
+              slotId: plan.slots[0]!.id,
+              armId: "control",
+              status: "running",
+              startedAt: new Date(now()).toISOString(),
+              phases: controlPhases,
+              resources: [],
+              cleanup: { status: "passed", resources: [] },
+              judge: {
+                status: "no-candidate",
+                model: plan.judge!.model,
+                effort: plan.judge!.effort,
+              },
+              candidate,
+            };
+            await prepareProject(controlAttempt, source.worktree);
+          } else {
+            runtime = await setup(
+              { plan, root, worktree: source.worktree, role: "control" },
+              controlPhases,
+            );
+            await prepareRuntime(runtime, controlPhases);
+          }
           await phase(
             "checker-input-integrity",
             allowances.checksMs,
@@ -1358,10 +1569,13 @@ export const runImplementationBenchmark = async (
             "control-check",
             allowances.checksMs,
             controlPhases,
-            (signal) => runtime!.exec({ command: plan.check!, signal }),
+            (signal, remainingMs) =>
+              controlAttempt
+                ? projects.get(controlAttempt.id)!.check(signal, remainingMs)
+                : runtime!.exec({ command: plan.check!, signal }),
           );
           const output =
-            runtime.redact?.(`${checked.stdout}\n${checked.stderr}`) ??
+            runtime?.redact?.(`${checked.stdout}\n${checked.stderr}`) ??
             `${checked.stdout}\n${checked.stderr}`;
           await writeFile(join(plan.output, `${control.kind}.log`), output, {
             mode: 0o600,
@@ -1399,6 +1613,16 @@ export const runImplementationBenchmark = async (
           }
           throw error;
         } finally {
+          if (controlAttempt) {
+            await stopProject(controlAttempt);
+            if (controlAttempt.cleanup.status === "failed") {
+              ledger.cleanup.status = "failed";
+              ledger.cleanup.resources.push(
+                ...controlAttempt.cleanup.resources,
+                root,
+              );
+            }
+          }
           try {
             if (runtime) await stop(runtime, controlPhases);
           } catch {
@@ -1709,17 +1933,21 @@ export const runImplementationBenchmark = async (
                       signal,
                     ),
                 );
-                checker = await setup(
-                  {
-                    plan,
-                    root: join(root, "checks"),
-                    worktree: checkWorkspace.worktree,
-                    role: "checks",
-                  },
-                  attempt.phases,
-                );
-                attempt.resources.push(checker.id);
-                await prepareRuntime(checker, attempt.phases, true);
+                if (launch.adapter.module)
+                  await prepareProject(attempt, checkWorkspace.worktree);
+                else {
+                  checker = await setup(
+                    {
+                      plan,
+                      root: join(root, "checks"),
+                      worktree: checkWorkspace.worktree,
+                      role: "checks",
+                    },
+                    attempt.phases,
+                  );
+                  attempt.resources.push(checker.id);
+                  await prepareRuntime(checker, attempt.phases, true);
+                }
                 await phase(
                   "checker-input-integrity",
                   allowances.checksMs,
@@ -1737,7 +1965,10 @@ export const runImplementationBenchmark = async (
                   "checks",
                   allowances.checksMs,
                   attempt.phases,
-                  (signal) => checker!.exec({ command: plan.check!, signal }),
+                  (signal, remainingMs) =>
+                    projects.has(attempt.id)
+                      ? projects.get(attempt.id)!.check(signal, remainingMs)
+                      : checker!.exec({ command: plan.check!, signal }),
                 );
                 const output = redact(`${checked.stdout}\n${checked.stderr}`);
                 await writeFile(
@@ -1773,6 +2004,14 @@ export const runImplementationBenchmark = async (
                   checked.exitCode !== 0
                 )
                   attempt.status = "check-failed";
+                if (projects.has(attempt.id))
+                  await phase(
+                    "checker-project-capture",
+                    allowances.checksMs,
+                    attempt.phases,
+                    (signal, remainingMs) =>
+                      projects.get(attempt.id)!.capture(signal, remainingMs),
+                  );
               }
             }
           } catch (error) {
@@ -1800,7 +2039,9 @@ export const runImplementationBenchmark = async (
               error instanceof PhaseFailure
                 ? error.message
                 : attempt.candidate
-                  ? "Protected checking runtime unavailable"
+                  ? error instanceof Error
+                    ? error.message
+                    : "Protected checking runtime unavailable"
                   : "Candidate sealing failed";
             if (attempt.candidate)
               attempt.check = {
@@ -1848,6 +2089,7 @@ export const runImplementationBenchmark = async (
             await persist();
           }
           await runJudge(attempt);
+          await stopProject(attempt);
           if (attempt.cleanup.status === "failed") {
             if (attempt.status === "judge-pending")
               attempt.status = "cleanup-failed";
@@ -1896,6 +2138,18 @@ export const runImplementationBenchmark = async (
     try {
       if (initialized) {
         ledger.budget.cleanupReservedMs = 0;
+        const retained = ledger.resources.filter(
+          (resource) => resource.status === "cleanup-failed",
+        );
+        if (retained.length) {
+          ledger.cleanup.status = "failed";
+          ledger.cleanup.resources = [
+            ...new Set([
+              ...ledger.cleanup.resources,
+              ...retained.map((resource) => resource.id),
+            ]),
+          ];
+        }
         const retainBase = attempts.some(
           (attempt) =>
             attempt.implementation &&

@@ -53,6 +53,13 @@ export type {
   BenchmarkRuntimeRequest,
   ImplementationBenchmarkDependencies,
 } from "./implementationBenchmark.js";
+export type {
+  BenchmarkProjectContext,
+  BenchmarkProjectIdentity,
+  BenchmarkProjectAdapter,
+  BenchmarkVisualCapture,
+  BenchmarkProjectEvidence,
+} from "./benchmarkProjectRuntime.js";
 export {
   readBenchmarkProgress,
   watchBenchmarkProgress,
