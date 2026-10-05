@@ -1,9 +1,18 @@
 import { exec } from "node:child_process";
-import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+
+const benchmarkDirectories: string[] = [];
+afterEach(async () => {
+  await Promise.all(
+    benchmarkDirectories
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
+  );
+});
 
 const execAsync = promisify(exec);
 
@@ -52,10 +61,20 @@ describe("sandcastle CLI", () => {
     expect(stdout).toContain("--ticket");
     expect(stdout).toContain("--arm");
     expect(stdout).toContain("--dry-run");
+    for (const option of [
+      "--project",
+      "--repository",
+      "--judge",
+      "--prompt",
+      "--contract",
+      "--preflight",
+    ])
+      expect(stdout).toContain(option);
   });
 
   it("plans any number of explicit arms without model calls", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "cli-benchmark-"));
+    benchmarkDirectories.push(hostDir);
     await initRepo(hostDir);
     await commitFile(
       hostDir,
@@ -81,6 +100,50 @@ describe("sandcastle CLI", () => {
       expect(stdout).toContain(`"effort": "${effort}"`);
     }
     expect(stdout).toContain('"slots": [');
+  });
+
+  it("plans a selected project and explicit fallback from another directory", async () => {
+    const project = await mkdtemp(join(tmpdir(), "cli-benchmark-project-"));
+    benchmarkDirectories.push(project);
+    await initRepo(project);
+    await commitFile(project, "task.md", "# Exact project task\n", "Base");
+    const { stdout } = await runCli(
+      `benchmark --project '${project}' --ticket task.md --judge gpt-6.1-sol:ExtraHigh --dry-run`,
+      process.cwd(),
+    );
+    const plan = JSON.parse(stdout);
+    expect(plan.cwd).toBe(project);
+    expect(plan.judge).toMatchObject({
+      model: "gpt-6.1-sol",
+      effort: "xhigh",
+      requested: "gpt-6.1-sol:ExtraHigh",
+    });
+    expect(plan.arms).toHaveLength(4);
+    expect(plan.readiness).toMatchObject({
+      mode: "scheduling",
+      executionReady: false,
+    });
+    const fallback = await runCli(
+      `benchmark --project '${project}' --ticket missing.md --prompt 'Explicit fallback' --dry-run`,
+      process.cwd(),
+    );
+    expect(JSON.parse(fallback.stdout).tickets[0]).toMatchObject({
+      text: "Explicit fallback",
+      missingSource: "missing.md",
+    });
+    await expect(
+      runCli(`benchmark --project '${project}' --dry-run`, process.cwd()),
+    ).rejects.toMatchObject({
+      stdout: expect.stringContaining("--ticket or --prompt"),
+    });
+    await expect(
+      runCli(
+        `benchmark --project '${project}' --prompt Task --dry-run --preflight`,
+        process.cwd(),
+      ),
+    ).rejects.toMatchObject({
+      stdout: expect.stringContaining("Choose --dry-run"),
+    });
   });
 
   it("docker --help shows build-image and remove-image subcommands", async () => {

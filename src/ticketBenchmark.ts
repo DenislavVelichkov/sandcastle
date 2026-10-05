@@ -19,22 +19,37 @@ import {
 } from "./AgentProvider.js";
 import { createSandbox } from "./createSandbox.js";
 import { defaultImageName, docker } from "./sandboxes/docker.js";
+import {
+  freezeLaunch,
+  parseBenchmarkIdentity,
+  projectRepository,
+  readLaunchContract,
+  resolveBenchmarkInputs,
+  resolveLaunchPrerequisites,
+  type BenchmarkReadiness,
+  type FrozenLaunch,
+  type LaunchDependencies,
+} from "./benchmarkLaunch.js";
 
 export const defaultTicketBenchmarkArms = [
-  "gpt-6.1-sol:high",
   "gpt-6-astra:medium",
-  "gpt-6-luna:max",
+  "gpt-6-astra:high",
+  "gpt-6-astra:xhigh",
+  "gpt-6-astra:max",
 ] as const;
 
-interface Ticket {
+export interface Ticket {
   readonly source: string;
   readonly title: string;
   readonly text: string;
   readonly sha256: string;
+  readonly missingSource?: string;
+  readonly state?: "OPEN" | "CLOSED";
 }
 
-interface Arm {
+export interface Arm {
   readonly model: string;
+  readonly requested?: string;
   readonly effort: NonNullable<CodexOptions["effort"]>;
 }
 
@@ -45,7 +60,7 @@ interface Slot {
 }
 
 export interface TicketBenchmarkPlan {
-  readonly version: 1;
+  readonly version: 1 | 2;
   readonly id: string;
   readonly cwd: string;
   readonly runnerHash: string;
@@ -53,6 +68,9 @@ export interface TicketBenchmarkPlan {
   readonly baseCommit: string;
   readonly tickets: readonly Ticket[];
   readonly arms: readonly Arm[];
+  readonly judge?: Arm;
+  readonly readiness?: BenchmarkReadiness;
+  readonly launch?: FrozenLaunch;
   readonly slots: readonly Slot[];
   readonly image: string;
   readonly prepare: string | null;
@@ -86,6 +104,12 @@ interface Ledger {
 
 export interface TicketBenchmarkOptions {
   readonly cwd: string;
+  readonly project?: string;
+  readonly repository?: string;
+  readonly prompt?: string;
+  readonly judge?: string;
+  readonly contract?: string;
+  readonly preflight?: boolean;
   readonly tickets?: readonly string[];
   readonly arms?: readonly string[];
   readonly base?: string;
@@ -94,6 +118,7 @@ export interface TicketBenchmarkOptions {
   readonly check?: string;
   readonly output?: string;
   readonly maxMinutes?: number;
+  readonly maxNewSlots?: number;
 }
 
 const sha256 = (value: string) =>
@@ -123,16 +148,7 @@ const atomicJson = async (path: string, value: unknown) => {
 
 const parseArms = (values: readonly string[]): Arm[] => {
   const arms = (values.length ? values : defaultTicketBenchmarkArms).map(
-    (value) => {
-      const [model, effort, extra] = value.split(":");
-      if (!model || !effort || extra || !/^[a-z0-9.-]+$/.test(model))
-        throw new Error(
-          `Invalid benchmark arm: ${value}; expected model:effort`,
-        );
-      if (!["low", "medium", "high", "xhigh", "max"].includes(effort))
-        throw new Error(`Unsupported reasoning effort: ${effort}`);
-      return { model, effort: effort as Arm["effort"] };
-    },
+    parseBenchmarkIdentity,
   );
   if (
     new Set(arms.map(({ model, effort }) => `${model}:${effort}`)).size !==
@@ -142,107 +158,52 @@ const parseArms = (values: readonly string[]): Arm[] => {
   return arms;
 };
 
-const githubIssue = (value: string) => {
-  if (/^#?\d+$/.test(value)) return true;
-  try {
-    const url = new URL(value);
-    return (
-      url.protocol === "https:" &&
-      url.hostname === "github.com" &&
-      /^\/[^/]+\/[^/]+\/issues\/\d+\/?$/.test(url.pathname)
-    );
-  } catch {
-    return false;
-  }
-};
-
-const readTicket = async (cwd: string, value: string): Promise<Ticket> => {
-  if (githubIssue(value)) {
-    const issue = JSON.parse(
-      command(cwd, "gh", ["issue", "view", value, "--json", "title,body,url"]),
-    ) as { title: string; body: string; url: string };
-    const text = `${issue.title}\n\n${issue.body}`;
-    if (!issue.title.trim() || !issue.body.trim())
-      throw new Error(`GitHub issue has no usable ticket text: ${value}`);
-    return {
-      source: issue.url,
-      title: issue.title,
-      text,
-      sha256: sha256(text),
-    };
-  }
-  const path = resolve(cwd, value);
-  const text = await readFile(path, "utf8");
-  if (!text.trim()) throw new Error(`Ticket file is empty: ${path}`);
-  const title = text.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? basename(path);
-  const source = relative(cwd, path).startsWith("..")
-    ? path
-    : relative(cwd, path);
-  return { source, title, text, sha256: sha256(text) };
-};
-
-const discoverTicket = (cwd: string): string => {
-  const files = git(
-    cwd,
-    "ls-files",
-    "--",
-    "tickets",
-    "docs/tickets",
-    ".sandcastle/tickets",
-  )
-    .split("\n")
-    .filter((name) => /\.(md|txt)$/i.test(name))
-    .sort();
-  if (files.length) return files[0]!;
-  let issues: { number: number; url: string }[];
-  try {
-    issues = JSON.parse(
-      command(cwd, "gh", [
-        "issue",
-        "list",
-        "--state",
-        "open",
-        "--label",
-        "Sandcastle",
-        "--limit",
-        "100",
-        "--json",
-        "number,url",
-      ]),
-    ) as { number: number; url: string }[];
-  } catch {
-    throw new Error(
-      "No local ticket found and GitHub issue discovery failed; pass --ticket",
-    );
-  }
-  if (!issues.length)
-    throw new Error("No eligible project ticket found; pass --ticket");
-  return issues.sort((a, b) => a.number - b.number)[0]!.url;
-};
-
 export const planTicketBenchmark = async (
   options: TicketBenchmarkOptions,
+  dependencies: LaunchDependencies = {},
 ): Promise<TicketBenchmarkPlan> => {
-  const cwd = resolve(options.cwd);
-  const runnerCommit = git(cwd, "rev-parse", "HEAD");
+  const cwd = git(
+    resolve(options.cwd, options.project ?? "."),
+    "rev-parse",
+    "--show-toplevel",
+  );
   const baseCommit = git(
     cwd,
     "rev-parse",
     "--verify",
     `${options.base ?? "HEAD"}^{commit}`,
   );
-  const inputs = options.tickets?.length
-    ? options.tickets
-    : [discoverTicket(cwd)];
-  const tickets = await Promise.all(
-    inputs.map((value) => readTicket(cwd, value)),
-  );
-  if (new Set(tickets.map((ticket) => ticket.source)).size !== tickets.length)
-    throw new Error("Benchmark tickets must be distinct");
   const arms = parseArms(options.arms ?? []);
+  const judge = parseBenchmarkIdentity(options.judge ?? "gpt-6.1-sol:xhigh");
+  const repository = projectRepository(cwd, options.repository);
+  const contract = await readLaunchContract(cwd, options.contract);
+  const { tickets, prerequisites } = await resolveBenchmarkInputs(
+    cwd,
+    options.tickets ?? [],
+    options.prompt,
+    repository,
+    dependencies,
+  );
+  prerequisites.push(
+    ...(await resolveLaunchPrerequisites(
+      cwd,
+      contract.config.prerequisites ?? [],
+      repository,
+      dependencies,
+    )),
+  );
   const maxMinutes = options.maxMinutes ?? 60;
-  if (!Number.isSafeInteger(maxMinutes) || maxMinutes < 1)
+  if (
+    !Number.isSafeInteger(maxMinutes) ||
+    maxMinutes < 1 ||
+    !Number.isSafeInteger(maxMinutes * 60_000)
+  )
     throw new Error("--max-minutes must be a positive integer");
+  if (
+    options.maxNewSlots !== undefined &&
+    (!Number.isSafeInteger(options.maxNewSlots) || options.maxNewSlots < 1)
+  )
+    throw new Error("--max-new-slots must be a positive integer");
   const slots = tickets.flatMap((_, ticket) =>
     arms.map((_, arm) => ({
       id: `ticket-${ticket + 1}-arm-${arm + 1}`,
@@ -250,23 +211,47 @@ export const planTicketBenchmark = async (
       arm,
     })),
   );
+  const image = options.image ?? defaultImageName(cwd);
+  const prepare = options.prepare ?? null;
+  const check = options.check ?? null;
+  const { launch, readiness, runnerCommit } = await freezeLaunch({
+    cwd,
+    baseCommit,
+    repository,
+    tickets,
+    prerequisites,
+    arms,
+    judge,
+    image,
+    prepare,
+    check,
+    overallMs: maxMinutes * 60_000,
+    maxNewSlots: options.maxNewSlots ?? null,
+    preflight: options.preflight ?? false,
+    contract,
+    dependencies,
+  });
   const frozen = {
-    version: 1 as const,
+    version: 2 as const,
     cwd,
     runnerHash: sha256(await readFile(fileURLToPath(import.meta.url), "utf8")),
     runnerCommit,
     baseCommit,
     tickets,
     arms,
+    judge,
+    launch,
+    readiness,
     slots,
-    image: options.image ?? defaultImageName(cwd),
-    prepare: options.prepare ?? null,
-    check: options.check ?? null,
+    image,
+    prepare,
+    check,
     overallLimitMs: maxMinutes * 60_000,
-    invocationLimitMs: 15 * 60_000,
+    invocationLimitMs: launch.allowances.implementationMs,
   };
   const id = sha256(JSON.stringify(frozen));
   const output = resolve(
+    cwd,
     options.output ??
       join(cwd, "..", `${basename(cwd)}-benchmark-${id.slice(0, 12)}`),
   );
@@ -279,6 +264,7 @@ export const planTicketBenchmark = async (
     throw new Error("Benchmark evidence directory must be outside the project");
   return {
     ...frozen,
+    version: 2,
     id,
     output,
   };
@@ -467,6 +453,10 @@ export const runTicketBenchmark = async (
   executeSlot: typeof liveSlot = liveSlot,
   maxNewSlots = Infinity,
 ): Promise<{ output: string; status: string; completed: number }> => {
+  if (plan.version === 2)
+    throw new Error(
+      "Implementation benchmark execution requires the private controller and judge consumer (#47–#49); use --dry-run or --preflight",
+    );
   if (
     maxNewSlots !== Infinity &&
     (!Number.isSafeInteger(maxNewSlots) || maxNewSlots < 1)

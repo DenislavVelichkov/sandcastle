@@ -106,18 +106,62 @@ The [issue #18 release adoption report](proofs/issue-18-release-adoption.md) rec
 
 ## Run the bounded benchmark
 
-Run the generic benchmark from a clean committed project with a Docker image that contains Codex and the project's tools. `--ticket` accepts a local ticket file, a GitHub issue URL, or an issue number; repeat it for multiple tickets. If omitted, the command selects the first tracked Markdown/text file under `tickets/`, `docs/tickets/`, or `.sandcastle/tickets/`, or the oldest open GitHub issue with the `Sandcastle` label. It prints that choice before model calls. Review the frozen plan first:
+Use the installed `sandcastle benchmark` command to select and freeze an implementation benchmark. `--project` selects the project independently of the directory containing the runner. `--ticket` accepts an exact local file, GitHub issue URL or issue number. Local paths and `--contract` are relative to the selected project root. Issue numbers use that project's GitHub origin or explicit `--repository owner/repo`; URLs must match the intended repository. Repeat `--ticket` for an explicit multi-task plan. No input selects another backlog task automatically.
 
 ```sh
-sandcastle benchmark --ticket tickets/example.md --dry-run
-sandcastle benchmark --ticket tickets/example.md --check 'pnpm run typecheck && pnpm run build && pnpm test'
+sandcastle benchmark --project /path/to/project --ticket tickets/example.md --dry-run
+sandcastle benchmark --project /path/to/project --repository owner/repo --ticket 94 --judge gpt-6-astra:high --dry-run
+sandcastle benchmark --project /path/to/project --prompt 'Implement this exact task' --dry-run
+sandcastle benchmark --project /path/to/project --ticket missing.md --prompt 'Explicit fallback instructions' --dry-run
+sandcastle benchmark --project /path/to/project --ticket tickets/example.md --image project-worker --prepare 'pnpm install --frozen-lockfile' --check 'pnpm run typecheck' --preflight
 ```
 
-The defaults are `gpt-6.1-sol:high`, `gpt-6-astra:medium`, and `gpt-6-luna:max`, in that order. Repeat `--arm model:effort` to supply any number of distinct Codex configurations instead. The plan has one invocation per ticket and arm, a 15-minute invocation cap and a 60-minute model-call window by default. Setup time counts against the remaining window before each model call. User-provided setup and check commands each have a five-minute timeout and may finish after the window. `--max-minutes` changes the model-call window. For account checks between calls, run with `--max-new-slots 1` and repeat the identical command to continue the saved ledger; completed slots never run again. An interrupted slot is retained as incomplete and blocks further calls. `--prepare` runs a setup command before each call, and `--check` runs an independent check afterward. Without `--check`, a committed candidate is marked unverified. The report and ledger live in the printed host directory outside the project and do not select or activate a routing policy.
+A missing local file or a confirmed missing GitHub issue can use the explicitly supplied `--prompt`. Authentication, network, repository-access and permission failures remain failures. Empty files are unusable, and path patterns require selection of an exact file. GitHub input freezes the issue title, body and every comment, plus declared dependencies and their current instructions/state. Dependencies come from GitHub's [issue dependency API](https://docs.github.com/en/rest/issues/issue-dependencies) and `Blocked by`, `Dependencies` or `Prerequisites` sections in task text and comments. An open or unresolved prerequisite blocks readiness. A local prerequisite document is satisfied only with explicit `status: closed`, `status: done` or `status: completed`; otherwise it remains unknown. A closed issue does not certify its project's other acceptance gates. Declare any additional gates through the project readiness probe.
 
-The previous five-arm, 40-slot study used the repository-owned protected entry at `.sandcastle/benchmark.mjs`. Its v3, v4, and v5 evidence remains historical. The older fixed and adaptive study APIs described below retain their original selection, account, grading and held-out rules; the generic command does not claim their model ranking or savings result.
+The default arms are `gpt-6-astra:medium`, `gpt-6-astra:high`, `gpt-6-astra:xhigh` and `gpt-6-astra:max`, in that order. Repeated `--arm model:effort` values replace these defaults. Dotted model IDs are preserved. `ExtraHigh`, `extra-high` and `extra_high` canonicalize to `xhigh`; invalid or duplicate arms are rejected. `--judge model:effort` configures an independent judge, defaulting to `gpt-6.1-sol:xhigh`, without altering the implementation arms. The fixed service tier is `default`. Catalog availability never stands in for observed per-response identities.
 
-The [one-ticket three-model pilot](proofs/issue-31-three-model-pilot/findings.md) completed all three default arms and passed the protected stream-log regression for each candidate. It validates this command on that ticket only; it establishes no model ranking or subscription savings.
+`--dry-run` makes no worker or model call. It prints a version-two frozen plan with `workerStatus: unchecked`, unless known prerequisites already block it. `--preflight` makes no model call but creates a disposable private checkout of the selected base and an isolated Docker worker. It checks subscription authentication and included-usage availability through that worker's Codex app server, every catalog page, requested model/effort pairs for both roles, tool availability, host and worker free bytes/inodes, the project's check or explicit adapter readiness command, and each requested environment probe. It verifies authentication with a model-free subscription-service request, copies authentication privately and never exports credentials or account details. Denied, exhausted or unavailable usage capacity blocks readiness. Preparation and grading probes each have a 60-second cap; environment probes have a 30-second cap, and the worker probe has a four-minute cap. Cleanup removes the private checkout and owned container; failures name the owned container requiring cleanup. No image is pulled automatically.
+
+A preflight exports only allowlisted observations and actionable blockers. `workerStatus` distinguishes passed worker checks from overall readiness. `executionReady` remains false and `status` is blocked while the private implementation controller, recovery and independent judge consumers in issues #47–#49 are pending. The command exits with code 1 for a blocked preflight after printing its plan. Running without `--dry-run` or `--preflight` refuses the new protocol before inference. This release delivers planning and readiness, not a new measured run. The retained version-one runner and historical fixed/adaptive protocols remain separate.
+
+Every plan binds the exact task and prerequisite text, base commit, committed project governing instructions, allowed edits, setup/check commands, dependency manifests/lockfiles, installed runner files/version and source commit when available, worker configuration, observed image/Codex/catalog identities or explicit unknowns, project adapter, rate inputs or unknowns, phase/call allowances, common judge prompt, criterion IDs, weights, applicability, partial-credit rules and evidence policy. The plan ID hashes those inputs. Task documents are read exactly as selected, while project instructions/dependencies come from `--base`, which defaults to HEAD. Dirty host files remain untouched. Extra governing files can be declared explicitly in the contract. `--output` selects an evidence directory outside the project; planning prints the plan without creating a run directory. Redirect stdout to retain it.
+
+Without a custom rubric, acceptance-list items become equally weighted criteria with stable task/criterion IDs, applicability `always`, code/check evidence and partial credit of 0.5. A task without an acceptance list becomes one criterion containing its complete instructions. This coarse default is frozen before inspection and does not establish project acceptance. Supply a precise rubric and required environment probes for tasks needing more specific applicability or visual evidence.
+
+Use `--contract launch.json` for a strict version-one JSON contract. Unknown fields and duplicate criterion IDs or environment names are rejected. This example declares a browser dependency and an independent grading readiness entry:
+
+```json
+{
+  "version": 1,
+  "allowedEdits": ["src/**", ".changeset/**"],
+  "instructions": ["docs/task-guidance.md"],
+  "tools": ["pnpm"],
+  "prerequisites": ["93"],
+  "adapter": {
+    "id": "project-browser-v1",
+    "readiness": "pnpm run verify:grading-readiness"
+  },
+  "environments": [
+    { "name": "browser", "probe": "pnpm run verify:browser-readiness" }
+  ],
+  "rubric": [
+    {
+      "id": "required-behavior",
+      "requirement": "The requested behavior works in the candidate application.",
+      "weight": 1,
+      "applicability": "always",
+      "partialCredit": 0.5,
+      "evidence": ["code", "check", "visual"]
+    }
+  ]
+}
+```
+
+Contract fields are optional except `version`. Omitted allowed edits permit project files via `**`; the future executor must enforce the frozen scope and protect grading inputs. Required tools always include `sh`, `node`, `git`, `codex` and `timeout`, plus `pnpm` for a pnpm project. The default adapter is `sandcastle-code-check-v1`, using the configured check on the frozen base as its readiness probe. A baseline that should fail needs a project-owned adapter probe that establishes grading readiness independently. Preparation/check configuration belongs in `--prepare` and `--check`. Minimum capacity defaults to 1 GiB and 10,000 free inodes; a filesystem that reports no inode accounting records that dimension as unavailable. Optional `minimumFreeBytes`, `minimumFreeInodes`, `implementationMinutes` and `judgeMinutes` override those values. `rateCard` accepts `{ "source": "dated source", "date": "YYYY-MM-DD", "inputs": {} }`; omission remains explicitly unknown and does not imply zero cost. Runtime controls are recorded as unknown until independently supplied by later execution tooling.
+
+The default overall allowance is 60 minutes, changed by `--max-minutes`. Each slot reserves one implementation call with 15 minutes and one judge call with 10 minutes, plus five minutes each for setup/checks and one minute for cleanup. The entire schedule may exceed the run allowance; the future controller must reserve judging before admitting each implementation and retain unrun slots. `--max-new-slots` freezes an optional positive slot limit per dispatch; each slot includes its implementation and judge calls. No call reservation or budget is spent by planning.
+
+The previous five-arm, 40-slot study used the protected repository entry `.sandcastle/benchmark.mjs`. Its v3–v5 evidence remains historical. The older fixed and adaptive APIs retain their original selection, account, grading and held-out rules. The [one-ticket three-model pilot](proofs/issue-31-three-model-pilot/findings.md) used its original three arms and validates that historical command on that task only; it establishes no four-Astra result, model ranking or subscription savings. Historical byte-bound manifests, receipts and exports remain unchanged.
 
 The original adaptive protocol below remains available to hosts that supply its own protected entry.
 

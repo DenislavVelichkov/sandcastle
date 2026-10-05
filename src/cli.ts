@@ -680,6 +680,39 @@ const podmanCommand = Command.make("podman", {}, () =>
 const benchmarkCommand = Command.make(
   "benchmark",
   {
+    project: Options.text("project").pipe(
+      Options.withDescription(
+        "Project directory independent of the launch directory",
+      ),
+      Options.optional,
+    ),
+    repository: Options.text("repository").pipe(
+      Options.withDescription("Intended GitHub owner/repo for issue inputs"),
+      Options.optional,
+    ),
+    prompt: Options.text("prompt").pipe(
+      Options.withDescription(
+        "Explicit input or fallback for a confirmed missing ticket",
+      ),
+      Options.optional,
+    ),
+    judge: Options.text("judge").pipe(
+      Options.withDescription(
+        "Independent judge model:effort (default: gpt-6.1-sol:xhigh)",
+      ),
+      Options.optional,
+    ),
+    contract: Options.text("contract").pipe(
+      Options.withDescription(
+        "Project-relative launch contract JSON with rubric and readiness probes",
+      ),
+      Options.optional,
+    ),
+    preflight: Options.boolean("preflight").pipe(
+      Options.withDescription(
+        "Observe actual worker readiness without inference; print the frozen plan",
+      ),
+    ),
     ticket: Options.text("ticket").pipe(
       Options.withDescription(
         "Ticket file, GitHub issue URL or issue number; repeat for multiple tickets",
@@ -688,7 +721,7 @@ const benchmarkCommand = Command.make(
     ),
     arm: Options.text("arm").pipe(
       Options.withDescription(
-        "Model:effort; repeat for any number of arms (default: Sol xhigh, Astra medium, Luna max)",
+        "Model:effort; replaces defaults (Astra medium, high, xhigh, max); ExtraHigh/extra-high/extra_high mean xhigh",
       ),
       Options.repeated,
     ),
@@ -720,7 +753,7 @@ const benchmarkCommand = Command.make(
     ),
     maxNewSlots: Options.text("max-new-slots").pipe(
       Options.withDescription(
-        "Stop after this many new model calls; resume with the same plan",
+        "Maximum new evaluation slots per dispatch; frozen in the plan",
       ),
       Options.optional,
     ),
@@ -731,6 +764,12 @@ const benchmarkCommand = Command.make(
     ),
   },
   ({
+    project,
+    repository,
+    prompt,
+    judge,
+    contract,
+    preflight,
     ticket,
     arm,
     base,
@@ -746,10 +785,28 @@ const benchmarkCommand = Command.make(
       const d = yield* Display;
       const optional = (value: Option.Option<string>) =>
         value._tag === "Some" ? value.value : undefined;
+      if (dryRun && preflight) {
+        return yield* Effect.fail(
+          new InitError({
+            message:
+              "Choose --dry-run for scheduling or --preflight for worker readiness",
+          }),
+        );
+      }
       const plan = yield* Effect.tryPromise({
         try: () =>
           planTicketBenchmark({
             cwd: process.cwd(),
+            project: optional(project),
+            repository: optional(repository),
+            prompt: optional(prompt),
+            judge: optional(judge),
+            contract: optional(contract),
+            preflight,
+            maxNewSlots:
+              maxNewSlots._tag === "Some"
+                ? Number(maxNewSlots.value)
+                : undefined,
             tickets: ticket,
             arms: arm,
             base: optional(base),
@@ -762,8 +819,10 @@ const benchmarkCommand = Command.make(
           }),
         catch: (error) => new InitError({ message: String(error) }),
       });
-      if (dryRun) {
+      if (dryRun || preflight) {
         console.log(JSON.stringify(plan, null, 2));
+        if (preflight && plan.readiness?.status === "blocked")
+          process.exitCode = 1;
         return;
       }
       yield* d.status(
