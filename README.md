@@ -14,6 +14,7 @@ The purpose of this fork is to make Sandcastle work with Codex for everyday deve
 
 - [What changed from upstream](#what-changed-from-upstream)
 - [Quick start with Codex](#quick-start-with-codex)
+- [Upgrade an existing installation](#upgrade-an-existing-installation)
 - [API](#api)
 - [CLI commands](#cli-commands)
 - [Configuration](#configuration)
@@ -55,10 +56,18 @@ The [routing decision](docs/workflow-user-guide.md#review-the-routing-decision) 
 
 ## Quick start with Codex
 
-1. Install this fork's [published `v0.12.0-dv8.25.0` archive](https://github.com/DenislavVelichkov/sandcastle/releases/tag/v0.12.0-dv8.25.0) and `tsx` in your project:
+1. Install this fork's current version, `0.12.0-dv8.26.0`, and `tsx` in your project. See the [changelog](CHANGELOG.md#0120-dv8260) for the new benchmark, recovery, judging and report capabilities.
+
+The release is currently prepared locally. Use the sealed archive in this checkout's `artifacts/releases/0.12.0-dv8.26.0/` directory, or a copy supplied by the maintainer. Replace the example path with the archive's absolute path:
 
 ```bash
-pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.25.0/ai-hero-sandcastle-0.12.0-dv8.25.0.tgz tsx
+pnpm add --save-dev /absolute/path/to/ai-hero-sandcastle-0.12.0-dv8.26.0.tgz tsx
+```
+
+After `v0.12.0-dv8.26.0` is published on GitHub, you can install its pinned archive directly:
+
+```bash
+pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.26.0/ai-hero-sandcastle-0.12.0-dv8.26.0.tgz tsx
 ```
 
 The fork keeps the `@ai-hero/sandcastle` package name and import paths. Installing that name from the npm registry selects the upstream package. Use the fork archive and retain your lockfile to pin these changes.
@@ -108,6 +117,41 @@ pnpm exec tsx .sandcastle/main.ts
 # For a main.mts scaffold:
 # pnpm exec tsx .sandcastle/main.mts
 ```
+
+## Upgrade an existing installation
+
+Run the upgrade in the project or package workspace that declares `@ai-hero/sandcastle` in its `package.json`.
+
+The commands below update a manual installation. For registered installations, use the project's [managed update procedure](docs/workflow-user-guide.md#change-an-installation) to change the package under the installation lock and defer busy projects.
+
+1. Finish or cancel existing benchmarks and wait for their cleanup to complete. Keep the original installation for any benchmark you intend to resume, because recovery verifies the installed runner bytes. Keep the old installation available while a durable workflow has an unfinished invocation, checkpoint or pending answer.
+
+2. Save the current `package.json` and lockfile, then replace the dependency with the new archive. While the release is local, use its absolute path:
+
+```bash
+pnpm add --save-dev /absolute/path/to/ai-hero-sandcastle-0.12.0-dv8.26.0.tgz
+```
+
+After publication, use the versioned GitHub archive:
+
+```bash
+pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.26.0/ai-hero-sandcastle-0.12.0-dv8.26.0.tgz
+```
+
+If Sandcastle is a production dependency in your project, omit `--save-dev`. Installing the package name from the npm registry selects upstream; the fork upgrade requires its archive.
+
+3. Check the installed version and the new benchmark command:
+
+```bash
+pnpm exec sandcastle --version
+pnpm exec sandcastle benchmark --help
+```
+
+The version must print `0.12.0-dv8.26.0`. Run your project's build and checks before starting new work. If a worker image installs Sandcastle separately, update its archive pin to the same version, rebuild that image with your existing Docker or Podman setup, and verify the worker's installed version too.
+
+4. Keep your existing `.sandcastle/` configuration, prompts, credentials and project scripts. The dependency upgrade does not regenerate them; initialization is for a new project. Commit the updated `package.json` and `pnpm-lock.yaml` so other installations can reproduce the upgrade with `pnpm install --frozen-lockfile`.
+
+For a local archive dependency, keep the archive at its recorded path for future installs. Once the release is published, replace that path with the pinned GitHub URL and commit the updated manifest and lockfile. To roll back before any new unfinished runs depend on this version, restore the saved manifest and lockfile and run `pnpm install --frozen-lockfile`.
 
 ## Sandbox providers
 
