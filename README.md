@@ -78,29 +78,21 @@ codex login
 cp .sandcastle/.env.example .sandcastle/.env
 ```
 
-4. Edit `.sandcastle/prompt.md` with your task. Update the generated `.sandcastle/main.ts`, or `main.mts` for a project without `"type": "module"`, to mount your Codex authentication file:
+4. Edit `.sandcastle/prompt.md` with your task and review `.sandcastle/startup.json`.
+   The generated launcher calls `prepareCodexStartup()` and passes its read-only
+   source mounts, writable container storage, and mandatory gate to every Codex
+   agent. It includes Ponytail and Unslop instructions explicitly in every session.
+   Install those selected plugins on the host, or choose your exact installed IDs.
 
-```typescript
-import { run, codex } from "@ai-hero/sandcastle";
-import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
-
-await run({
-  agent: codex("gpt-6.1-sol", { effort: "high" }),
-  sandbox: docker({
-    mounts: [
-      {
-        hostPath: "~/.codex/auth.json",
-        sandboxPath: "/home/agent/.codex/auth.json",
-        readonly: true,
-      },
-    ],
-  }),
-  branchStrategy: { type: "branch", branch: "codex/first-task" },
-  promptFile: ".sandcastle/prompt.md",
-});
-```
-
-If you use a custom Codex Home, set `hostPath` to its `auth.json`. This example writes commits to `codex/first-task` for review.
+The first launch registers hooks and stops until their exact definitions are
+trusted. Follow `.sandcastle/STARTUP.md` to review them through `/hooks` in the
+private startup home, then restart the launcher. Changed definitions require
+review again; unchanged trusted hashes and intentional disables are preserved.
+The generated config includes the complete host `hooks.state` table and the
+container path aliases. Each trusted hook must match its stored approval hash
+before and after the execution probes.
+The generated authentication mount uses the host Codex Home's `auth.json` when
+present. Set `CODEX_HOME` before launching if your host uses a custom home.
 
 5. Run the generated entry. Use its actual extension:
 
@@ -845,6 +837,19 @@ Select a template during `sandcastle init` when prompted, or re-run init in a fr
 
 ### `sandcastle init`
 
+Every template includes `startup.json` and `STARTUP.md`. Selecting Codex wires a
+mandatory activation gate into every planner, implementer, reviewer, merge agent,
+and resumed invocation. **Ticket work cannot start unless the required activation
+checks pass.** The runner compares selected versions and source files with the host,
+checks hook registration and exact-definition trust, exercises required lifecycle
+hooks, and verifies their execution receipts and injected instructions before
+sending the task prompt. Missing skills, untrusted hooks, execution errors,
+unobserved required events, and timeouts stop startup. This guarantee covers
+activation in the generated Codex launcher; it does not guarantee perfect model
+instruction adherence. Other providers require their own activation protocol.
+The probes use model turns. Built-in Codex delegation is disabled for ticket
+work; Sandcastle's planner and reviewer invocations each pass the gate.
+
 Scaffolds the `.sandcastle/` config directory and optionally builds the container image. Interactive init selects Codex by default. You choose a sandbox provider, Docker or Podman. Selecting Podman writes a `Containerfile` instead of `Dockerfile` and uses `sandcastle podman build-image` for the build step.
 
 Init detects your host package manager (npm, pnpm, yarn, or bun) from a `packageManager` field or lockfile, defaulting to pnpm. Templates whose `main` file imports a host dependency — the planner templates import [Zod](https://zod.dev) for their `<plan>` output schema — prompt you to install it with that package manager when it isn't already in your `package.json`, so the first `pnpm exec tsx .sandcastle/main.ts` doesn't fail with `ERR_MODULE_NOT_FOUND`.
@@ -872,8 +877,10 @@ Creates the following files:
 ├── Dockerfile      # Sandbox environment (customize as needed)
 ├── main.ts         # Entry, or main.mts without type: module
 ├── prompt.md       # Agent instructions
+├── startup.json    # Selected plugins, skills, and required hook files
+├── STARTUP.md      # Activation gate and exact hook trust review
 ├── .env.example    # Token placeholders
-└── .gitignore      # Ignores .env, logs/
+└── .gitignore      # Ignores .env, logs/, startup/
 ```
 
 Errors if `.sandcastle/` already exists to prevent overwriting customizations.

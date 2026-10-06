@@ -30,6 +30,8 @@ import {
 } from "./SessionStore.js";
 import type { BindMountSandboxHandle } from "./SandboxProvider.js";
 import type { TokenCounter } from "./workflowUsage.js";
+import type { CodexStartupCheck } from "./codexStartup.js";
+import { codexStartupWorker } from "./codexStartupWorker.js";
 
 const fileExists = async (path: string): Promise<boolean> => {
   try {
@@ -1005,6 +1007,8 @@ const parseCodexStreamLine = (line: string): ParsedStreamEvent[] => {
 
 /** Options for the codex agent provider. */
 export interface CodexOptions {
+  /** Mandatory activation probe before each session. Prepared by prepareCodexStartup(). */
+  readonly startupCheck?: CodexStartupCheck;
   /** Independent inspection with no approvals, project instructions or writes. */
   readonly readOnly?: boolean;
   readonly effort?: "low" | "medium" | "high" | "xhigh" | "max";
@@ -1043,13 +1047,49 @@ export const codex = (
   },
   env: options?.env ?? {},
   captureSessions: options?.captureSessions ?? true,
-  sessionStorage: makeCodexSessionStorage(options),
+  sessionStorage: makeCodexSessionStorage(
+    options?.startupCheck
+      ? {
+          ...options,
+          sessionStorage: {
+            ...options.sessionStorage,
+            sandboxSessionsDir: posix.join(
+              options.startupCheck.home,
+              "sessions",
+            ),
+          },
+        }
+      : options,
+  ),
 
   buildPrintCommand({
     prompt,
     resumeSession,
     forkSession,
   }: AgentCommandOptions): PrintCommand {
+    if (options?.startupCheck) {
+      if (options.approvalsReviewer === "auto_review")
+        throw new Error(
+          "Mandatory startup currently requires the never-approval policy inside the externally isolated sandbox",
+        );
+      const request = {
+        mode: "run",
+        ...options.startupCheck,
+        model,
+        options: {
+          effort: options.effort,
+          serviceTier: options.serviceTier,
+          readOnly: options.readOnly,
+        },
+        resumeSession,
+        forkSession,
+      };
+      const script = `(${codexStartupWorker.toString()})(${JSON.stringify(request)}).catch(error => { process.stderr.write('Sandcastle startup/work stopped: ' + error.message + '\\n', () => process.exit(1)); });`;
+      return {
+        command: `node --input-type=module -e ${shellEscape(script)}`,
+        stdin: prompt,
+      };
+    }
     const effortFlag = options?.effort
       ? ` -c ${shellEscape(`model_reasoning_effort="${options.effort}"`)}`
       : "";
@@ -1084,6 +1124,10 @@ export const codex = (
   },
 
   buildInteractiveArgs({ prompt }: AgentCommandOptions): string[] {
+    if (options?.startupCheck)
+      throw new Error(
+        "Mandatory startup checks use non-interactive Sandcastle sessions; interactive startup has no activation gate",
+      );
     const args = ["codex", "--model", model];
     if (options?.effort)
       args.push("-c", `model_reasoning_effort="${options.effort}"`);

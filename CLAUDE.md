@@ -31,6 +31,10 @@ Single-context layout: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/ag
 
 For benchmark implementation or review, installed-run readiness, historical pilots, evidence/reporting, or browser/Android runtime adapters, read [docs/agents/benchmark.md](docs/agents/benchmark.md).
 
+### Codex startup activation
+
+For init templates, Codex startup gates, hook registration/trust, or capability mounts, read [docs/agents/codex-startup.md](docs/agents/codex-startup.md).
+
 ### Visual acceptance
 
 A visual parity action exists only when the source requires a named production

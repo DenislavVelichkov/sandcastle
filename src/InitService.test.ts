@@ -888,9 +888,48 @@ describe("InitService scaffold", () => {
       join(dir, ".sandcastle", "main.mts"),
       "utf-8",
     );
-    expect(mainTs).toContain('codex("gpt-6.1-sol", { effort: "high" })');
+    expect(mainTs).toContain("startupCheck: startup.startupCheck");
+    expect(mainTs).toContain("prepareCodexStartup");
     expect(mainTs).not.toContain("claudeCode");
   });
+
+  it.each(listTemplates().map((template) => template.name))(
+    "gates every Codex session in the %s template for Docker and Podman",
+    async (templateName) => {
+      for (const provider of ["docker", "podman"]) {
+        const dir = await makeDir();
+        await runScaffold(dir, {
+          agent: codexAgent,
+          model: codexAgent.defaultModel,
+          templateName,
+          sandboxProvider: getSandboxProvider(provider)!,
+        });
+        const main = await readFile(join(dir, ".sandcastle/main.mts"), "utf8");
+        const calls = main.match(/(?:sandcastle\.)?codex\("[^\n]+/g) ?? [];
+        expect(calls.length).toBeGreaterThan(0);
+        for (const call of calls)
+          expect(call).toContain("startupCheck: startup.startupCheck");
+        expect(main).toContain('selectionFile: "./.sandcastle/startup.json"');
+        expect(main).not.toContain(`${provider}()`);
+        expect(main).toContain(
+          `${provider}({ mounts: startup.mounts, env: startup.env })`,
+        );
+        const policy = JSON.parse(
+          await readFile(join(dir, ".sandcastle/startup.json"), "utf8"),
+        );
+        expect(policy.alwaysSkills).toEqual(["ponytail", "unslop"]);
+        expect(policy.hookFiles).toContainEqual({
+          pluginId: "ponytail@dv8-marketplace",
+          path: "hooks/codex-hooks.json",
+        });
+        expect(
+          await readFile(join(dir, ".sandcastle/STARTUP.md"), "utf8"),
+        ).toContain(
+          "Ticket work cannot start unless the required activation checks pass.",
+        );
+      }
+    },
+  );
 
   it("scaffolds cursor agent with cursor Dockerfile", async () => {
     const dir = await makeDir();

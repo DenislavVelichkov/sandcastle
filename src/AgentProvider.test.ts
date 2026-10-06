@@ -649,6 +649,41 @@ describe("pi factory", () => {
 // ---------------------------------------------------------------------------
 
 describe("codex factory", () => {
+  const startupCheck = {
+    home: "/home/agent/.codex",
+    snapshot: "/home/agent/.codex/plugins/sandcastle-startup.json",
+    timeoutMs: 120000,
+  };
+  it("keeps the task out of the startup controller command and uses the guarded session home", () => {
+    const provider = codex("test-model", { startupCheck });
+    const command = provider.buildPrintCommand({
+      prompt: "PRIVATE_TICKET",
+      dangerouslySkipPermissions: true,
+      resumeSession: "existing",
+      forkSession: true,
+    });
+    expect(command.command).not.toContain("PRIVATE_TICKET");
+    expect(command.command).toContain("node --input-type=module");
+    expect(command.stdin).toBe("PRIVATE_TICKET");
+    expect(command.command).toContain(startupCheck.snapshot);
+  });
+  it("rejects interactive and auto-review modes that cannot enforce the gate", () => {
+    expect(() =>
+      codex("test-model", { startupCheck }).buildInteractiveArgs!({
+        prompt: "task",
+        dangerouslySkipPermissions: true,
+      }),
+    ).toThrow("interactive startup has no activation gate");
+    expect(() =>
+      codex("test-model", {
+        startupCheck,
+        approvalsReviewer: "auto_review",
+      }).buildPrintCommand({
+        prompt: "task",
+        dangerouslySkipPermissions: true,
+      }),
+    ).toThrow("never-approval policy");
+  });
   it("uses GPT-6.1 Sol High in print, resume and interactive commands", () => {
     const provider = codex("gpt-6.1-sol", { effort: "high" });
     expect(provider.codexConfiguration).toMatchObject({

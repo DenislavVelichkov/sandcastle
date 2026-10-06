@@ -1,6 +1,8 @@
 import { run, claudeCode } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
+// {{CODEX_STARTUP}}
+
 // Blank template: customize this to build your own orchestration.
 // Run this with: pnpm exec tsx .sandcastle/main.mts
 // Or add to package.json scripts: "sandcastle": "pnpm exec tsx .sandcastle/main.mts"

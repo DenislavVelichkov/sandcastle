@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "plugins": ["ponytail@dv8-marketplace", "cursor-codex@dv8-marketplace"],
+  "skills": "host",
+  "alwaysSkills": ["ponytail", "unslop"],
+  "hookFiles": [
+    {
+      "pluginId": "ponytail@dv8-marketplace",
+      "path": "hooks/codex-hooks.json"
+    }
+  ],
+  "disabledHooks": {},
+  "timeoutMs": 120000
+}

@@ -1,4 +1,10 @@
 export { run } from "./run.js";
+export { prepareCodexStartup } from "./codexStartup.js";
+export type {
+  CodexStartupOptions,
+  CodexStartupCheck,
+  CodexStartupPreparation,
+} from "./codexStartup.js";
 export {
   benchmarkFixtures,
   benchmarkSlots,

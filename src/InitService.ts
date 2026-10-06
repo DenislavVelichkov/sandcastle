@@ -9,6 +9,7 @@ import { InitError } from "./errors.js";
 const GITIGNORE = `.env
 logs/
 worktrees/
+startup/
 `;
 
 /**
@@ -652,6 +653,13 @@ export function getNextStepsLines(
   packageManager: PackageManager,
 ): string[] {
   const commands = packageCommands(packageManager);
+  const startupSteps =
+    agent.name === "codex"
+      ? [
+          "   Read .sandcastle/STARTUP.md and select plugins and skills in .sandcastle/startup.json. Every Codex session must pass activation checks before ticket work.",
+          "   The first launch registers hooks and stops for exact-definition trust review through /hooks; unchanged approvals are preserved.",
+        ]
+      : [];
   // The custom issue tracker scaffolds a broken-until-configured project, so
   // its next steps are about running the setup prompt — not the template's
   // normal "set env vars and go" flow. This branch wins over template-specific
@@ -664,6 +672,7 @@ export function getNextStepsLines(
       `   ${agent.setupCommand}`,
       `   (Runs on the host — you need the ${agent.label} CLI installed locally, since the sandbox image isn't built yet.)`,
       `3. Follow .sandcastle/${SETUP_ISSUE_TRACKER_DOC} to edit the scaffolded files in place, build the image, and verify.`,
+      ...startupSteps,
     ];
   }
   if (template === "blank") {
@@ -680,6 +689,7 @@ export function getNextStepsLines(
       "2. Read and customize .sandcastle/prompt.md to describe what you want the agent to do",
       `3. Customize .sandcastle/${mainFilename} — it uses the JS API (\`run()\`) to control how the agent runs`,
       `4. Add "sandcastle": "${commands.exec} tsx .sandcastle/${mainFilename}" to your package.json scripts`,
+      ...startupSteps,
       `5. Run \`${commands.run} sandcastle\` to start the agent`,
     );
     return lines;
@@ -714,6 +724,7 @@ export function getNextStepsLines(
       );
     }
     lines.push(
+      ...startupSteps,
       `${step++}. Run \`${commands.run} sandcastle\` to start the agent`,
     );
     return lines;
@@ -887,9 +898,28 @@ const rewriteMainTs = (
     content = content.replace(
       factoryCallRe,
       agent.name === "codex"
-        ? `codex("${model}", { effort: "high" })`
+        ? `codex("${model}", { effort: "high", startupCheck: startup.startupCheck })`
         : `${agent.factoryImport}("${model}")`,
     );
+
+    if (agent.name === "codex") {
+      const namespaced = content.includes("import * as sandcastle");
+      if (!namespaced)
+        content = content.replace(
+          "import { run, codex }",
+          "import { run, codex, prepareCodexStartup }",
+        );
+      content = content.replace(
+        "// {{CODEX_STARTUP}}",
+        `// Register capabilities and freeze host files before creating a sandbox.\n// Each codex() invocation performs fresh execution checks before receiving task work.\nconst startup = await ${namespaced ? "sandcastle." : ""}prepareCodexStartup({\n  selectionFile: "./.sandcastle/startup.json",\n});`,
+      );
+      content = content.replaceAll(
+        "docker()",
+        "docker({ mounts: startup.mounts, env: startup.env })",
+      );
+    } else {
+      content = content.replace("// {{CODEX_STARTUP}}\n", "");
+    }
 
     // Replace the sandbox provider. Templates always use `docker` as the
     // placeholder, where the registry name doubles as both the factory function
