@@ -56,15 +56,7 @@ The [routing decision](docs/workflow-user-guide.md#review-the-routing-decision) 
 
 ## Quick start with Codex
 
-1. Install this fork's current version, `0.12.0-dv8.26.0`, and `tsx` in your project. See the [changelog](CHANGELOG.md#0120-dv8260) for the new benchmark, recovery, judging and report capabilities.
-
-The release is currently prepared locally. Use the sealed archive in this checkout's `artifacts/releases/0.12.0-dv8.26.0/` directory, or a copy supplied by the maintainer. Replace the example path with the archive's absolute path:
-
-```bash
-pnpm add --save-dev /absolute/path/to/ai-hero-sandcastle-0.12.0-dv8.26.0.tgz tsx
-```
-
-After `v0.12.0-dv8.26.0` is published on GitHub, you can install its pinned archive directly:
+1. Install this fork's [release `0.12.0-dv8.26.0`](https://github.com/DenislavVelichkov/sandcastle/releases/tag/v0.12.0-dv8.26.0) and `tsx` in your project. See the [changelog](CHANGELOG.md#0120-dv8260) for the new benchmark, recovery, judging and report capabilities.
 
 ```bash
 pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.26.0/ai-hero-sandcastle-0.12.0-dv8.26.0.tgz tsx
@@ -126,13 +118,7 @@ The commands below update a manual installation. For registered installations, u
 
 1. Finish or cancel existing benchmarks and wait for their cleanup to complete. Keep the original installation for any benchmark you intend to resume, because recovery verifies the installed runner bytes. Keep the old installation available while a durable workflow has an unfinished invocation, checkpoint or pending answer.
 
-2. Save the current `package.json` and lockfile, then replace the dependency with the new archive. While the release is local, use its absolute path:
-
-```bash
-pnpm add --save-dev /absolute/path/to/ai-hero-sandcastle-0.12.0-dv8.26.0.tgz
-```
-
-After publication, use the versioned GitHub archive:
+2. Save the current `package.json` and lockfile, then replace the dependency with the versioned GitHub archive:
 
 ```bash
 pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.26.0/ai-hero-sandcastle-0.12.0-dv8.26.0.tgz
@@ -151,7 +137,7 @@ The version must print `0.12.0-dv8.26.0`. Run your project's build and checks be
 
 4. Keep your existing `.sandcastle/` configuration, prompts, credentials and project scripts. The dependency upgrade does not regenerate them; initialization is for a new project. Commit the updated `package.json` and `pnpm-lock.yaml` so other installations can reproduce the upgrade with `pnpm install --frozen-lockfile`.
 
-For a local archive dependency, keep the archive at its recorded path for future installs. Once the release is published, replace that path with the pinned GitHub URL and commit the updated manifest and lockfile. To roll back before any new unfinished runs depend on this version, restore the saved manifest and lockfile and run `pnpm install --frozen-lockfile`.
+To roll back before any new unfinished runs depend on this version, restore the saved manifest and lockfile and run `pnpm install --frozen-lockfile`.
 
 ## Sandbox providers
 
