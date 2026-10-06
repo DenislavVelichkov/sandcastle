@@ -1,5 +1,19 @@
 # @ai-hero/sandcastle
 
+## 0.12.0-dv8.26.0
+
+### Minor Changes
+
+- Launch bounded implementation benchmarks from an explicit project and local task, GitHub issue or prompt. Configure implementation models and the independent judge separately.
+- Run benchmark attempts in private worktrees, follow saved progress, cancel work and resume within the remaining time and call allowances. Retain candidates, check results and usage for review.
+- Judge retained candidates against frozen requirements and rubrics, with cited findings and evidence coverage. Report specification adherence separately from project checks and acceptance.
+- Run project-owned browser and native checks, capture visual evidence and let judges inspect the running candidate. Preserve resource ownership until stopping and cleanup are verified.
+- Open self-contained interactive reports with candidate findings, duration comparisons and separate implementation and judge cost estimates. Export JSON and CSV, or regenerate reports from retained evidence without model calls.
+
+### Patch Changes
+
+- Clarify upstream attribution, fork installation and authenticated Codex setup. Add an installed-consumer guide with reproducible benchmark and offline report checks.
+
 ## 0.12.0-dv8.25.0
 
 ### Patch Changes

@@ -151,6 +151,10 @@ existing historical pilots and byte-bound receipts without reformatting them.
 
 After building the stable candidate, run the repository's focused proof:
 
+Choose an empty output directory outside any pnpm workspace. The proof creates
+its temporary consumer there; pnpm otherwise inherits the surrounding
+workspace's configuration and lockfile.
+
 ```sh
 pnpm exec node scripts/prove-installed-benchmark.mjs /absolute/empty-proof
 pnpm exec node scripts/prove-installed-benchmark.mjs /absolute/another-empty-proof both

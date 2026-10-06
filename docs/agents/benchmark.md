@@ -4,7 +4,9 @@
 
 - Verify the consumer's installed CLI commands and actual entrypoint files before claiming benchmark readiness. A release number, package script, or guide can refer to commands absent from that installation.
 - For installed-run applicability, compare package metadata against pnpm's packed `package.json`, which can differ from the source file.
+- Keep installed fixture proof output outside any pnpm workspace. Its temporary consumer inherits the nearest workspace configuration and lockfile otherwise, so an output under the repository's `artifacts/` is unsuitable.
 - Benchmark guides and ADRs must describe the delivered runtime adapter and current readiness blockers; completed ticket numbers are not permanent missing-runtime gates.
+- If full-suite validation hits benchmark/CLI timeouts or cleanup `ENOTEMPTY` under default file parallelism, check the failing cases in isolation and rerun the full suite with `pnpm test --maxWorkers=2` before changing runtime behavior.
 
 Use the [installed consumer guide](../benchmark-installed-launch.md) for readiness checks and launch/recovery commands.
 
