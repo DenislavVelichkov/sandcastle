@@ -19,7 +19,7 @@ const { commits, branch } = await sandcastle.run({
     projectId: "sandcastle",
   }),
   name: "Test",
-  agent: sandcastle.claudeCode("claude-sonnet-4-6"),
+  agent: sandcastle.codex("gpt-6.1-sol", { effort: "high" }),
   prompt: "Add /foobar to the .gitignore, then commit.",
   hooks: {
     sandbox: {

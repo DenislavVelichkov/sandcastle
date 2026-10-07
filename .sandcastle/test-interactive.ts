@@ -7,7 +7,7 @@ const { commits, branch } = await sandcastle.interactive({
     type: "merge-to-head",
   },
   name: "Test",
-  agent: sandcastle.claudeCode("claude-sonnet-4-6"),
+  agent: sandcastle.codex("gpt-6.1-sol", { effort: "high" }),
   prompt: "Add /foobar to the .gitignore, then commit.",
   copyToWorktree: ["node_modules"],
 });

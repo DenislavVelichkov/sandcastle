@@ -1,7 +1,7 @@
 import * as sandcastle from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
-const agent = sandcastle.codex("gpt-6.1-sol", { effort: "high" });
+const agent = sandcastle.codex("gpt-6.1-sol", { effort: "xhigh" });
 const provider = docker({
   mounts: [
     {
