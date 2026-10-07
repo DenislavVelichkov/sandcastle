@@ -2,6 +2,6 @@
 "@ai-hero/sandcastle": minor
 ---
 
-Generate a mandatory Codex startup gate in every init template. Register required hooks, preserve intentional disables and unchanged approvals, mount plugin sources read-only with writable hook storage, and require file/version parity, successful lifecycle execution, and explicit Ponytail/Unslop instruction injection before releasing task work.
+Check selected Codex plugins, skills, hook trust, successful hook execution and required Ponytail/Unslop instructions before sending each task prompt, including resumed and forked sessions. Missing files, changed versions, untrusted hooks, execution failures and timeouts stop startup.
 
-Carry the host's full hook-state table into the container configuration and require trusted hooks' current definitions to match their stored approval hashes before and after activation probes.
+Include startup selection and a hook trust review guide in every generated template. Preserve intentional disables and approvals for unchanged hook definitions, with read-only plugin sources and writable hook storage in Docker and Podman workers.

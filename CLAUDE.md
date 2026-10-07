@@ -15,6 +15,10 @@ When changing public-facing behavior, check `README.md` to see if the documentat
 
 ## Agent skills
 
+### Fork releases
+
+For maintained GitHub archive releases, version preparation, packaging, verification or release formatting checks, read [docs/agents/releases.md](docs/agents/releases.md).
+
 ### Issue tracker
 
 Issues live as GitHub issues in `DenislavVelichkov/sandcastle`; external PRs are also a triage surface. For work on an existing issue, follow the progress and closure rules in `docs/agents/issue-tracker.md`.
