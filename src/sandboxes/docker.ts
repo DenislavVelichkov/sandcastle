@@ -13,7 +13,7 @@ import {
   type StdioOptions,
 } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { createInterface } from "node:readline";
+import { promisify } from "node:util";
 import { Effect } from "effect";
 import { startContainer, removeContainer } from "../DockerLifecycle.js";
 import {
@@ -31,8 +31,11 @@ import {
   resolveUserMounts,
   processFileMountParents,
 } from "../mountUtils.js";
-import { BoundedTail, MAX_TAIL_CHARS } from "../boundedTail.js";
+import { MAX_TAIL_CHARS } from "../boundedTail.js";
+import { collectProcessOutput } from "../collectProcessOutput.js";
 import { registerShutdown } from "../shutdownRegistry.js";
+
+const execFileAsync = promisify(execFile);
 
 export interface DockerOptions {
   /** Docker image name (default: derived from repo directory name). */
@@ -200,32 +203,20 @@ export const docker = (options?: DockerOptions): SandboxProvider => {
 
       // Create parent directories for file mounts and chown to the container user
       for (const dir of parentDirsToCreate) {
-        await new Promise<void>((resolve, reject) => {
-          execFile(
-            "docker",
-            [
-              "exec",
-              "--user",
-              "0:0",
-              containerName,
-              "sh",
-              "-c",
-              `mkdir -p "$1" && chown "$2" "$1"`,
-              "sh",
-              dir,
-              `${containerUid}:${containerGid}`,
-            ],
-            (error) => {
-              if (error) {
-                reject(
-                  new Error(
-                    `Failed to create parent directory '${dir}' in container: ${error.message}`,
-                  ),
-                );
-              } else {
-                resolve();
-              }
-            },
+        await execFileAsync("docker", [
+          "exec",
+          "--user",
+          "0:0",
+          containerName,
+          "sh",
+          "-c",
+          `mkdir -p "$1" && chown "$2" "$1"`,
+          "sh",
+          dir,
+          `${containerUid}:${containerGid}`,
+        ]).catch((error: Error) => {
+          throw new Error(
+            `Failed to create parent directory '${dir}' in container: ${error.message}`,
           );
         });
       }
@@ -247,7 +238,7 @@ export const docker = (options?: DockerOptions): SandboxProvider => {
       const handle: BindMountSandboxHandle = {
         worktreePath,
 
-        exec: (
+        exec: async (
           command: string,
           opts?: {
             onLine?: (line: string) => void;
@@ -262,60 +253,18 @@ export const docker = (options?: DockerOptions): SandboxProvider => {
           if (opts?.cwd) args.push("-w", opts.cwd);
           args.push(containerName, "sh", "-c", effectiveCommand);
 
-          return new Promise((resolve, reject) => {
-            const proc = spawn("docker", args, {
-              stdio: [
-                opts?.stdin !== undefined ? "pipe" : "ignore",
-                "pipe",
-                "pipe",
-              ],
-            });
-
-            if (opts?.stdin !== undefined) {
-              proc.stdin!.write(opts.stdin);
-              proc.stdin!.end();
-            }
-
-            proc.on("error", (error) => {
-              reject(new Error(`docker exec failed: ${error.message}`));
-            });
-
-            if (opts?.onLine) {
-              const onLine = opts.onLine;
-              const stdoutTail = new BoundedTail(maxOutputTailChars, "\n");
-              const stderrTail = new BoundedTail(maxOutputTailChars, "");
-              const rl = createInterface({ input: proc.stdout! });
-              rl.on("line", (line) => {
-                stdoutTail.push(line);
-                onLine(line);
-              });
-              proc.stderr!.on("data", (chunk: Buffer) => {
-                stderrTail.push(chunk.toString());
-              });
-              proc.on("close", (code) => {
-                resolve({
-                  stdout: stdoutTail.toString(),
-                  stderr: stderrTail.toString(),
-                  exitCode: code ?? 0,
-                });
-              });
-            } else {
-              const stdoutChunks: string[] = [];
-              const stderrChunks: string[] = [];
-              proc.stdout!.on("data", (chunk: Buffer) => {
-                stdoutChunks.push(chunk.toString());
-              });
-              proc.stderr!.on("data", (chunk: Buffer) => {
-                stderrChunks.push(chunk.toString());
-              });
-              proc.on("close", (code) => {
-                resolve({
-                  stdout: stdoutChunks.join(""),
-                  stderr: stderrChunks.join(""),
-                  exitCode: code ?? 0,
-                });
-              });
-            }
+          const proc = spawn("docker", args, {
+            stdio: [
+              opts?.stdin !== undefined ? "pipe" : "ignore",
+              "pipe",
+              "pipe",
+            ],
+          });
+          return collectProcessOutput(proc, {
+            stdin: opts?.stdin,
+            onLine: opts?.onLine,
+            maxOutputTailChars,
+            errorPrefix: "docker exec failed",
           });
         },
 
@@ -351,35 +300,31 @@ export const docker = (options?: DockerOptions): SandboxProvider => {
           });
         },
 
-        copyFileIn: (hostPath: string, sandboxPath: string): Promise<void> =>
-          new Promise((resolve, reject) => {
-            execFile(
-              "docker",
-              ["cp", hostPath, `${containerName}:${sandboxPath}`],
-              (error) => {
-                if (error) {
-                  reject(new Error(`docker cp (in) failed: ${error.message}`));
-                } else {
-                  resolve();
-                }
-              },
-            );
-          }),
+        copyFileIn: async (
+          hostPath: string,
+          sandboxPath: string,
+        ): Promise<void> => {
+          await execFileAsync("docker", [
+            "cp",
+            hostPath,
+            `${containerName}:${sandboxPath}`,
+          ]).catch((error: Error) => {
+            throw new Error(`docker cp (in) failed: ${error.message}`);
+          });
+        },
 
-        copyFileOut: (sandboxPath: string, hostPath: string): Promise<void> =>
-          new Promise((resolve, reject) => {
-            execFile(
-              "docker",
-              ["cp", `${containerName}:${sandboxPath}`, hostPath],
-              (error) => {
-                if (error) {
-                  reject(new Error(`docker cp (out) failed: ${error.message}`));
-                } else {
-                  resolve();
-                }
-              },
-            );
-          }),
+        copyFileOut: async (
+          sandboxPath: string,
+          hostPath: string,
+        ): Promise<void> => {
+          await execFileAsync("docker", [
+            "cp",
+            `${containerName}:${sandboxPath}`,
+            hostPath,
+          ]).catch((error: Error) => {
+            throw new Error(`docker cp (out) failed: ${error.message}`);
+          });
+        },
 
         close: async (): Promise<void> => {
           unregisterShutdown();
@@ -395,45 +340,38 @@ export const docker = (options?: DockerOptions): SandboxProvider => {
 // Re-export for backwards compatibility
 export { defaultImageName };
 
-const checkImageUid = (imageName: string, expectedUid: number): Promise<void> =>
-  new Promise<void>((resolve, reject) => {
-    execFile(
-      "docker",
-      ["image", "inspect", imageName, "--format", "{{.Config.User}}"],
-      (error, stdout) => {
-        if (error) {
-          reject(
-            new Error(
-              `Image '${imageName}' not found locally. Build it first with 'sandcastle docker build-image'.`,
-            ),
-          );
-          return;
-        }
-        const imageUser = (stdout ?? "").toString().trim();
-        if (!imageUser) {
-          // No USER directive in image — skip check
-          resolve();
-          return;
-        }
-        const uidPart = imageUser.split(":")[0]!;
-        const imageUid = parseInt(uidPart, 10);
-        if (isNaN(imageUid)) {
-          // Non-numeric user (e.g. "agent") — can't compare, skip check
-          resolve();
-          return;
-        }
-        if (imageUid !== expectedUid) {
-          reject(
-            new Error(
-              `UID mismatch: image '${imageName}' was built with UID ${imageUid}, ` +
-                `but the expected UID is ${expectedUid}. ` +
-                `Rebuild the image with 'sandcastle docker build-image', ` +
-                `or pass containerUid: ${imageUid} to docker() to match the image.`,
-            ),
-          );
-        } else {
-          resolve();
-        }
-      },
+const checkImageUid = async (
+  imageName: string,
+  expectedUid: number,
+): Promise<void> => {
+  const { stdout } = await execFileAsync("docker", [
+    "image",
+    "inspect",
+    imageName,
+    "--format",
+    "{{.Config.User}}",
+  ]).catch(() => {
+    throw new Error(
+      `Image '${imageName}' not found locally. Build it first with 'sandcastle docker build-image'.`,
     );
   });
+  const imageUser = (stdout ?? "").toString().trim();
+  if (!imageUser) {
+    // No USER directive in image — skip check
+    return;
+  }
+  const uidPart = imageUser.split(":")[0]!;
+  const imageUid = parseInt(uidPart, 10);
+  if (isNaN(imageUid)) {
+    // Non-numeric user (e.g. "agent") — can't compare, skip check
+    return;
+  }
+  if (imageUid !== expectedUid) {
+    throw new Error(
+      `UID mismatch: image '${imageName}' was built with UID ${imageUid}, ` +
+        `but the expected UID is ${expectedUid}. ` +
+        `Rebuild the image with 'sandcastle docker build-image', ` +
+        `or pass containerUid: ${imageUid} to docker() to match the image.`,
+    );
+  }
+};

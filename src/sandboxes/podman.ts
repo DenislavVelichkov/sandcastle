@@ -13,7 +13,7 @@ import {
   type StdioOptions,
 } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { createInterface } from "node:readline";
+import { promisify } from "node:util";
 import {
   createBindMountSandboxProvider,
   type SandboxProvider,
@@ -30,8 +30,11 @@ import {
   formatVolumeMount,
   processFileMountParents,
 } from "../mountUtils.js";
-import { BoundedTail, MAX_TAIL_CHARS } from "../boundedTail.js";
+import { MAX_TAIL_CHARS } from "../boundedTail.js";
+import { collectProcessOutput } from "../collectProcessOutput.js";
 import { registerShutdown } from "../shutdownRegistry.js";
+
+const execFileAsync = promisify(execFile);
 
 export interface PodmanOptions {
   /** Podman image name (default: derived from repo directory name). */
@@ -220,67 +223,45 @@ export const podman = (options?: PodmanOptions): SandboxProvider => {
         options?.cpus !== undefined ? ["--cpus", String(options.cpus)] : [];
 
       // Start container via podman run
-      await new Promise<void>((resolve, reject) => {
-        execFile(
-          "podman",
-          [
-            "run",
-            "-d",
-            "--name",
-            containerName,
-            ...userArgs,
-            ...usernsArgs,
-            ...networkArgs,
-            ...groupArgs,
-            ...deviceArgs,
-            ...cpusArgs,
-            "-w",
-            worktreePath,
-            ...envArgs,
-            ...volumeArgs,
-            "--entrypoint",
-            "sleep",
-            imageName,
-            "infinity",
-          ],
-          (error) => {
-            if (error) {
-              reject(new Error(`podman run failed: ${error.message}`));
-            } else {
-              resolve();
-            }
-          },
-        );
+      await execFileAsync("podman", [
+        "run",
+        "-d",
+        "--name",
+        containerName,
+        ...userArgs,
+        ...usernsArgs,
+        ...networkArgs,
+        ...groupArgs,
+        ...deviceArgs,
+        ...cpusArgs,
+        "-w",
+        worktreePath,
+        ...envArgs,
+        ...volumeArgs,
+        "--entrypoint",
+        "sleep",
+        imageName,
+        "infinity",
+      ]).catch((error: Error) => {
+        throw new Error(`podman run failed: ${error.message}`);
       });
 
       // Create parent directories for file mounts and chown to the container user
       for (const dir of parentDirsToCreate) {
-        await new Promise<void>((resolve, reject) => {
-          execFile(
-            "podman",
-            [
-              "exec",
-              "--user",
-              "0:0",
-              containerName,
-              "sh",
-              "-c",
-              `mkdir -p "$1" && chown "$2" "$1"`,
-              "sh",
-              dir,
-              `${containerUid}:${containerGid}`,
-            ],
-            (error) => {
-              if (error) {
-                reject(
-                  new Error(
-                    `Failed to create parent directory '${dir}' in container: ${error.message}`,
-                  ),
-                );
-              } else {
-                resolve();
-              }
-            },
+        await execFileAsync("podman", [
+          "exec",
+          "--user",
+          "0:0",
+          containerName,
+          "sh",
+          "-c",
+          `mkdir -p "$1" && chown "$2" "$1"`,
+          "sh",
+          dir,
+          `${containerUid}:${containerGid}`,
+        ]).catch((error: Error) => {
+          throw new Error(
+            `Failed to create parent directory '${dir}' in container: ${error.message}`,
           );
         });
       }
@@ -303,7 +284,7 @@ export const podman = (options?: PodmanOptions): SandboxProvider => {
       const handle: BindMountSandboxHandle = {
         worktreePath,
 
-        exec: (
+        exec: async (
           command: string,
           opts?: {
             onLine?: (line: string) => void;
@@ -318,60 +299,18 @@ export const podman = (options?: PodmanOptions): SandboxProvider => {
           if (opts?.cwd) args.push("-w", opts.cwd);
           args.push(containerName, "sh", "-c", effectiveCommand);
 
-          return new Promise((resolve, reject) => {
-            const proc = spawn("podman", args, {
-              stdio: [
-                opts?.stdin !== undefined ? "pipe" : "ignore",
-                "pipe",
-                "pipe",
-              ],
-            });
-
-            if (opts?.stdin !== undefined) {
-              proc.stdin!.write(opts.stdin);
-              proc.stdin!.end();
-            }
-
-            proc.on("error", (error) => {
-              reject(new Error(`podman exec failed: ${error.message}`));
-            });
-
-            if (opts?.onLine) {
-              const onLine = opts.onLine;
-              const stdoutTail = new BoundedTail(maxOutputTailChars, "\n");
-              const stderrTail = new BoundedTail(maxOutputTailChars, "");
-              const rl = createInterface({ input: proc.stdout! });
-              rl.on("line", (line) => {
-                stdoutTail.push(line);
-                onLine(line);
-              });
-              proc.stderr!.on("data", (chunk: Buffer) => {
-                stderrTail.push(chunk.toString());
-              });
-              proc.on("close", (code) => {
-                resolve({
-                  stdout: stdoutTail.toString(),
-                  stderr: stderrTail.toString(),
-                  exitCode: code ?? 0,
-                });
-              });
-            } else {
-              const stdoutChunks: string[] = [];
-              const stderrChunks: string[] = [];
-              proc.stdout!.on("data", (chunk: Buffer) => {
-                stdoutChunks.push(chunk.toString());
-              });
-              proc.stderr!.on("data", (chunk: Buffer) => {
-                stderrChunks.push(chunk.toString());
-              });
-              proc.on("close", (code) => {
-                resolve({
-                  stdout: stdoutChunks.join(""),
-                  stderr: stderrChunks.join(""),
-                  exitCode: code ?? 0,
-                });
-              });
-            }
+          const proc = spawn("podman", args, {
+            stdio: [
+              opts?.stdin !== undefined ? "pipe" : "ignore",
+              "pipe",
+              "pipe",
+            ],
+          });
+          return collectProcessOutput(proc, {
+            stdin: opts?.stdin,
+            onLine: opts?.onLine,
+            maxOutputTailChars,
+            errorPrefix: "podman exec failed",
           });
         },
 
@@ -407,47 +346,39 @@ export const podman = (options?: PodmanOptions): SandboxProvider => {
           });
         },
 
-        copyFileIn: (hostPath: string, sandboxPath: string): Promise<void> =>
-          new Promise((resolve, reject) => {
-            execFile(
-              "podman",
-              ["cp", hostPath, `${containerName}:${sandboxPath}`],
-              (error) => {
-                if (error) {
-                  reject(new Error(`podman cp (in) failed: ${error.message}`));
-                } else {
-                  resolve();
-                }
-              },
-            );
-          }),
+        copyFileIn: async (
+          hostPath: string,
+          sandboxPath: string,
+        ): Promise<void> => {
+          await execFileAsync("podman", [
+            "cp",
+            hostPath,
+            `${containerName}:${sandboxPath}`,
+          ]).catch((error: Error) => {
+            throw new Error(`podman cp (in) failed: ${error.message}`);
+          });
+        },
 
-        copyFileOut: (sandboxPath: string, hostPath: string): Promise<void> =>
-          new Promise((resolve, reject) => {
-            execFile(
-              "podman",
-              ["cp", `${containerName}:${sandboxPath}`, hostPath],
-              (error) => {
-                if (error) {
-                  reject(new Error(`podman cp (out) failed: ${error.message}`));
-                } else {
-                  resolve();
-                }
-              },
-            );
-          }),
+        copyFileOut: async (
+          sandboxPath: string,
+          hostPath: string,
+        ): Promise<void> => {
+          await execFileAsync("podman", [
+            "cp",
+            `${containerName}:${sandboxPath}`,
+            hostPath,
+          ]).catch((error: Error) => {
+            throw new Error(`podman cp (out) failed: ${error.message}`);
+          });
+        },
 
         close: async (): Promise<void> => {
           unregisterShutdown();
-          await new Promise<void>((resolve, reject) => {
-            execFile("podman", ["rm", "-f", containerName], (error) => {
-              if (error) {
-                reject(new Error(`podman rm failed: ${error.message}`));
-              } else {
-                resolve();
-              }
-            });
-          });
+          await execFileAsync("podman", ["rm", "-f", containerName]).catch(
+            (error: Error) => {
+              throw new Error(`podman rm failed: ${error.message}`);
+            },
+          );
         },
       };
 
@@ -459,48 +390,32 @@ export const podman = (options?: PodmanOptions): SandboxProvider => {
 // Re-export for backwards compatibility
 export { defaultImageName };
 
-const checkImageExists = (imageName: string): Promise<void> =>
-  new Promise<void>((resolve, reject) => {
-    execFile("podman", ["image", "inspect", imageName], (error) => {
-      if (error) {
-        reject(
-          new Error(
-            `Image '${imageName}' not found locally. Build it first with 'podman build -t ${imageName} .'`,
-          ),
-        );
-      } else {
-        resolve();
-      }
-    });
+const checkImageExists = async (imageName: string): Promise<void> => {
+  await execFileAsync("podman", ["image", "inspect", imageName]).catch(() => {
+    throw new Error(
+      `Image '${imageName}' not found locally. Build it first with 'podman build -t ${imageName} .'`,
+    );
   });
+};
 
 const podmanMachineError = () =>
   new Error(
     "Podman Machine is not running. Run 'podman machine init && podman machine start' first.",
   );
 
-const checkPodmanMachine = (): Promise<void> =>
-  new Promise<void>((resolve, reject) => {
-    execFile(
-      "podman",
-      ["machine", "list", "--format", "json"],
-      (error, stdout) => {
-        if (error) {
-          reject(podmanMachineError());
-          return;
-        }
-        try {
-          const machines = JSON.parse(stdout.toString()) as Array<{
-            Running?: boolean;
-          }>;
-          if (machines.some((m) => m.Running)) {
-            resolve();
-          } else {
-            reject(podmanMachineError());
-          }
-        } catch {
-          reject(podmanMachineError());
-        }
-      },
-    );
-  });
+const checkPodmanMachine = async (): Promise<void> => {
+  try {
+    const { stdout } = await execFileAsync("podman", [
+      "machine",
+      "list",
+      "--format",
+      "json",
+    ]);
+    const machines = JSON.parse(stdout.toString()) as Array<{
+      Running?: boolean;
+    }>;
+    if (!machines.some((m) => m.Running)) throw podmanMachineError();
+  } catch {
+    throw podmanMachineError();
+  }
+};

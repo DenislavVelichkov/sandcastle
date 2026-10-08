@@ -17,7 +17,7 @@ import { SyncError } from "./errors.js";
  * Execute a command on the host side, returning stdout.
  * Fails with SyncError on non-zero exit.
  */
-const execHost = (
+export const execHost = (
   command: string,
   cwd: string,
 ): Effect.Effect<string, SyncError> =>
@@ -41,7 +41,7 @@ const execHost = (
 /**
  * Execute a command in the sandbox, failing with SyncError if it exits non-zero.
  */
-const execOk = (
+export const execOk = (
   handle: IsolatedSandboxHandle,
   command: string,
   options?: { cwd?: string },

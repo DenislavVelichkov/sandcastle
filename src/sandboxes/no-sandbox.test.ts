@@ -58,6 +58,54 @@ describe("noSandbox", () => {
       expect(result.exitCode).toBe(0);
     });
 
+    itPosix.each(["", "line-1\nline-2"])(
+      "exec pipes stdin and closes it in buffered and streaming modes: %j",
+      async (stdin) => {
+        const handle = await noSandbox().create({
+          worktreePath: process.cwd(),
+          env: {},
+        });
+
+        for (const onLine of [undefined, () => {}]) {
+          const result = await handle.exec("cat", { stdin, onLine });
+          expect(result).toEqual({ stdout: stdin, stderr: "", exitCode: 0 });
+        }
+      },
+    );
+
+    itPosix(
+      "retains full buffered output even when the streaming tail is small",
+      async () => {
+        const handle = await noSandbox({ maxOutputTailChars: 3 }).create({
+          worktreePath: process.cwd(),
+          env: {},
+        });
+
+        const result = await handle.exec(
+          'printf "complete stdout\\n"; printf "complete stderr\\n" >&2; exit 7',
+        );
+        expect(result).toEqual({
+          stdout: "complete stdout\n",
+          stderr: "complete stderr\n",
+          exitCode: 7,
+        });
+      },
+    );
+
+    itPosix(
+      "preserves the exec error when the process cannot start",
+      async () => {
+        const handle = await noSandbox().create({
+          worktreePath: process.cwd(),
+          env: {},
+        });
+
+        await expect(
+          handle.exec("echo test", { cwd: "/nonexistent/sandcastle-test" }),
+        ).rejects.toThrow("exec failed: spawn sh ENOENT");
+      },
+    );
+
     itPosix("exec respects cwd option", async () => {
       const provider = noSandbox();
       const handle = await provider.create({

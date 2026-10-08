@@ -5,10 +5,24 @@ vi.mock("node:child_process", async () => {
     await vi.importActual<typeof import("node:child_process")>(
       "node:child_process",
     );
+  const { promisify } = await import("node:util");
+  const execFile = vi.fn();
+  Object.assign(execFile, {
+    [promisify.custom]: (...args: unknown[]) =>
+      new Promise((resolve, reject) => {
+        execFile(
+          ...args,
+          (error: Error | null, stdout: string, stderr: string) => {
+            if (error) reject(error);
+            else resolve({ stdout, stderr });
+          },
+        );
+      }),
+  });
 
   return {
     ...actual,
-    execFile: vi.fn(),
+    execFile,
     execFileSync: vi.fn(),
     spawn: vi.fn(),
   };
@@ -396,6 +410,43 @@ describe("podman()", () => {
     }
   });
 
+  it("starts the container when Podman Machine is running on macOS", async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "darwin" });
+
+    try {
+      mockExecFile.mockImplementation((_command, args, ...rest: any[]) => {
+        const callback = rest[rest.length - 1];
+        callback(
+          null,
+          Array.isArray(args) && args[0] === "machine"
+            ? '[{"Running":true}]'
+            : "",
+          "",
+        );
+        return undefined as any;
+      });
+
+      const handle = await podman().create({
+        worktreePath: "/tmp/worktree",
+        hostRepoPath: "/tmp/repo",
+        mounts: [
+          { hostPath: "/tmp/worktree", sandboxPath: "/home/agent/workspace" },
+        ],
+        env: {},
+      });
+
+      expect(
+        mockExecFile.mock.calls.some(
+          ([, args]) => Array.isArray(args) && args[0] === "run",
+        ),
+      ).toBe(true);
+      await handle.close();
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform });
+    }
+  });
+
   it("accepts a network option as a string", () => {
     const provider = podman({ network: "my-network" });
     expect(provider.tag).toBe("bind-mount");
@@ -758,7 +809,10 @@ describe("podman()", () => {
     await handle.close();
   });
 
-  it("copyFileIn rejects when podman cp fails", async () => {
+  it.each([
+    ["copyFileIn", "in"],
+    ["copyFileOut", "out"],
+  ] as const)("%s preserves the podman cp error", async (method, direction) => {
     mockExecFile.mockImplementation((_command, args, ...rest: any[]) => {
       const callback = rest[rest.length - 1];
       if (Array.isArray(args) && args[0] === "cp") {
@@ -781,8 +835,8 @@ describe("podman()", () => {
 
     const bmHandle = handle as BindMountSandboxHandle;
     await expect(
-      bmHandle.copyFileIn("/nonexistent", "/sandbox/file.txt"),
-    ).rejects.toThrow("podman cp (in) failed");
+      bmHandle[method]("/nonexistent", "/sandbox/file.txt"),
+    ).rejects.toThrow(`podman cp (${direction}) failed: no such file`);
 
     await handle.close();
   });

@@ -21,7 +21,6 @@ import type {
   ScaffoldOptions,
 } from "./InitService.js";
 import { SANDBOX_REPO_DIR } from "./SandboxFactory.js";
-import { SKELETON_PROMPT } from "./templates.js";
 
 const makeDir = () => mkdtemp(join(tmpdir(), "init-service-"));
 

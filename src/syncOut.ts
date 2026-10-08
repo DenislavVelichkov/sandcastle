@@ -29,6 +29,7 @@ import type { ExecResult, SandboxService } from "./SandboxFactory.js";
 import type { IsolatedSandboxHandle } from "./SandboxProvider.js";
 import { buildRecoveryMessage, type FailedStep } from "./RecoveryMessage.js";
 import { SyncError } from "./errors.js";
+import { execHost, execOk } from "./syncIn.js";
 
 /**
  * Sandbox-owned ref tracking the last-synced commit. Lives inside the sandbox's
@@ -36,60 +37,6 @@ import { SyncError } from "./errors.js";
  * and never crosses to the host — sync-out ships commits, not refs. ADR 0017.
  */
 export const SYNC_BASE_REF = "refs/sandcastle/sync-base";
-
-/**
- * Execute a command on the host side, returning stdout.
- * Fails with SyncError on non-zero exit.
- */
-const execHost = (
-  command: string,
-  cwd: string,
-): Effect.Effect<string, SyncError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const { exec } = await import("node:child_process");
-      const { promisify } = await import("node:util");
-      const execAsync = promisify(exec);
-      const { stdout } = await execAsync(command, {
-        cwd,
-        maxBuffer: 10 * 1024 * 1024,
-      });
-      return stdout;
-    },
-    catch: (e) =>
-      new SyncError({
-        message: `Host command failed: ${command}\n${e instanceof Error ? e.message : String(e)}`,
-      }),
-  });
-
-/**
- * Execute a command in the sandbox, failing with SyncError if it exits non-zero.
- */
-const execOk = (
-  handle: IsolatedSandboxHandle,
-  command: string,
-  options?: { cwd?: string },
-): Effect.Effect<
-  { stdout: string; stderr: string; exitCode: number },
-  SyncError
-> =>
-  Effect.tryPromise({
-    try: () => handle.exec(command, options),
-    catch: (e) =>
-      new SyncError({
-        message: `Sandbox exec failed: ${command}\n${e instanceof Error ? e.message : String(e)}`,
-      }),
-  }).pipe(
-    Effect.flatMap((result) =>
-      result.exitCode !== 0
-        ? Effect.fail(
-            new SyncError({
-              message: `Sandbox command failed (exit ${result.exitCode}): ${command}\n${result.stderr}`,
-            }),
-          )
-        : Effect.succeed(result),
-    ),
-  );
 
 /**
  * Execute a command in the sandbox, returning the result without failing on non-zero exit.

@@ -5,10 +5,24 @@ vi.mock("node:child_process", async () => {
     await vi.importActual<typeof import("node:child_process")>(
       "node:child_process",
     );
+  const { promisify } = await import("node:util");
+  const execFile = vi.fn();
+  Object.assign(execFile, {
+    [promisify.custom]: (...args: unknown[]) =>
+      new Promise((resolve, reject) => {
+        execFile(
+          ...args,
+          (error: Error | null, stdout: string, stderr: string) => {
+            if (error) reject(error);
+            else resolve({ stdout, stderr });
+          },
+        );
+      }),
+  });
 
   return {
     ...actual,
-    execFile: vi.fn(),
+    execFile,
     execFileSync: vi.fn(),
     spawn: vi.fn(),
   };
@@ -728,7 +742,10 @@ describe("docker()", () => {
     rmdirSync(tmpDir);
   });
 
-  it("copyFileIn rejects when docker cp fails", async () => {
+  it.each([
+    ["copyFileIn", "in"],
+    ["copyFileOut", "out"],
+  ] as const)("%s preserves the docker cp error", async (method, direction) => {
     mockExecFile.mockImplementation((_command, args, ...rest: any[]) => {
       const callback = rest[rest.length - 1];
       if (Array.isArray(args) && args[0] === "cp") {
@@ -751,8 +768,8 @@ describe("docker()", () => {
 
     const bmHandle = handle as BindMountSandboxHandle;
     await expect(
-      bmHandle.copyFileIn("/nonexistent", "/sandbox/file.txt"),
-    ).rejects.toThrow("docker cp (in) failed");
+      bmHandle[method]("/nonexistent", "/sandbox/file.txt"),
+    ).rejects.toThrow(`docker cp (${direction}) failed: no such file`);
 
     await handle.close();
   });

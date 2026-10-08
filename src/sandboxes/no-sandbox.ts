@@ -12,14 +12,14 @@
  */
 
 import { spawn, type StdioOptions } from "node:child_process";
-import { createInterface } from "node:readline";
 import type {
   NoSandboxProvider,
   NoSandboxHandle,
   ExecResult,
   InteractiveExecOptions,
 } from "../SandboxProvider.js";
-import { BoundedTail, MAX_TAIL_CHARS } from "../boundedTail.js";
+import { MAX_TAIL_CHARS } from "../boundedTail.js";
+import { collectProcessOutput } from "../collectProcessOutput.js";
 
 export interface NoSandboxOptions {
   /** Environment variables injected by this provider. Merged at launch time. */
@@ -54,7 +54,7 @@ export const noSandbox = (options?: NoSandboxOptions): NoSandboxProvider => ({
     const handle: NoSandboxHandle = {
       worktreePath,
 
-      exec: (
+      exec: async (
         command: string,
         opts?: {
           onLine?: (line: string) => void;
@@ -75,63 +75,21 @@ export const noSandbox = (options?: NoSandboxOptions): NoSandboxProvider => ({
           ? ["/d", "/s", "/c", command]
           : ["-c", command];
 
-        return new Promise((resolve, reject) => {
-          const proc = spawn(shellCmd, shellArgs, {
-            cwd,
-            env: processEnv,
-            stdio: [
-              opts?.stdin !== undefined ? "pipe" : "ignore",
-              "pipe",
-              "pipe",
-            ],
-            windowsVerbatimArguments: isWindows,
-          });
-
-          if (opts?.stdin !== undefined) {
-            proc.stdin!.write(opts.stdin);
-            proc.stdin!.end();
-          }
-
-          proc.on("error", (error) => {
-            reject(new Error(`exec failed: ${error.message}`));
-          });
-
-          if (opts?.onLine) {
-            const onLine = opts.onLine;
-            const stdoutTail = new BoundedTail(maxOutputTailChars, "\n");
-            const stderrTail = new BoundedTail(maxOutputTailChars, "");
-            const rl = createInterface({ input: proc.stdout! });
-            rl.on("line", (line) => {
-              stdoutTail.push(line);
-              onLine(line);
-            });
-            proc.stderr!.on("data", (chunk: Buffer) => {
-              stderrTail.push(chunk.toString());
-            });
-            proc.on("close", (code) => {
-              resolve({
-                stdout: stdoutTail.toString(),
-                stderr: stderrTail.toString(),
-                exitCode: code ?? 0,
-              });
-            });
-          } else {
-            const stdoutChunks: string[] = [];
-            const stderrChunks: string[] = [];
-            proc.stdout!.on("data", (chunk: Buffer) => {
-              stdoutChunks.push(chunk.toString());
-            });
-            proc.stderr!.on("data", (chunk: Buffer) => {
-              stderrChunks.push(chunk.toString());
-            });
-            proc.on("close", (code) => {
-              resolve({
-                stdout: stdoutChunks.join(""),
-                stderr: stderrChunks.join(""),
-                exitCode: code ?? 0,
-              });
-            });
-          }
+        const proc = spawn(shellCmd, shellArgs, {
+          cwd,
+          env: processEnv,
+          stdio: [
+            opts?.stdin !== undefined ? "pipe" : "ignore",
+            "pipe",
+            "pipe",
+          ],
+          windowsVerbatimArguments: isWindows,
+        });
+        return collectProcessOutput(proc, {
+          stdin: opts?.stdin,
+          onLine: opts?.onLine,
+          maxOutputTailChars,
+          errorPrefix: "exec failed",
         });
       },
 
