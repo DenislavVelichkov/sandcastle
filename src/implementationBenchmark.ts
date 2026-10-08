@@ -62,6 +62,7 @@ import {
   type JudgeAssessment,
 } from "./benchmarkJudge.js";
 import { writeImplementationBenchmarkReport } from "./implementationBenchmarkReport.js";
+import { prepareBenchmarkInstructions } from "./benchmarkInstructions.js";
 
 const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
@@ -150,6 +151,7 @@ export interface ImplementationAttempt {
     candidateHead?: string;
     candidateTree?: string;
     frozenInputsSha256?: string;
+    failure?: string;
   };
   candidate?: Candidate;
   project?: BenchmarkProjectEvidence;
@@ -990,6 +992,12 @@ export const runImplementationBenchmark = async (
       status: "owned",
     });
     try {
+      const instructionReferences = await prepareBenchmarkInstructions(
+        launch,
+        join(root, "judge"),
+        "judge",
+        candidate.changedFiles,
+      );
       const source = await phase(
         "judge-worktree",
         allowances.judgeMs,
@@ -1134,12 +1142,13 @@ export const runImplementationBenchmark = async (
         references.push({ path: file.id, sha256: file.sha256, location });
       }
       const built = provider.buildPrintCommand({
-        prompt: judgePrompt(
+        prompt: await judgePrompt(
           plan,
           attempt,
           assessment,
           checkOutput,
           references,
+          instructionReferences,
           inspection
             ? join(root, "judge", "references", "inspection.sock")
             : undefined,
@@ -1708,6 +1717,11 @@ export const runImplementationBenchmark = async (
                   signal,
                 ),
             );
+            const instructionReferences = await prepareBenchmarkInstructions(
+              launch,
+              join(root, "implementation"),
+              "implementation",
+            );
             runtime = await setup(
               {
                 plan,
@@ -1725,7 +1739,7 @@ export const runImplementationBenchmark = async (
               effort: arm.effort as CodexOptions["effort"],
               serviceTier: "default",
             });
-            const prompt = `Implement exactly this frozen task in one invocation. Do not delegate or invoke another agent. Keep edits inside ${JSON.stringify(launch.allowedEdits)}. Candidate commits or completion messages do not establish acceptance.\n\n${plan.tickets[slot.ticket]!.text}\n\nFrozen governing instructions:\n${launch.instructions.map((file) => `${file.path}\n${file.text}`).join("\n\n")}`;
+            const prompt = `Implement exactly this frozen task in one invocation. Do not delegate or invoke another agent. Keep edits inside ${JSON.stringify(launch.allowedEdits)}. Candidate commits or completion messages do not establish acceptance.\n\n${plan.tickets[slot.ticket]!.text}\n\nFrozen governing instructions, available read-only:\n${JSON.stringify(instructionReferences)}\nRead root governing files before editing. Read nested governing files for each directory you edit and follow their reference loading conditions. Resolve linked reference paths against the frozen file's location. Review criteria are applied by the independent judge.`;
             const built = provider.buildPrintCommand({
               prompt,
               dangerouslySkipPermissions: true,
@@ -1886,14 +1900,10 @@ export const runImplementationBenchmark = async (
                   attempt.status = "scope-violation";
                   attempt.reason = "Candidate edits exceed the frozen scope";
                 }
-                if (
-                  signal.aborted ||
-                  attempt.status === "timed-out" ||
-                  attempt.status === "cancelled"
-                )
+                if (signal.aborted || attempt.status === "cancelled")
                   throw new PhaseFailure(
                     signal.aborted ? "cancelled" : "timed-out",
-                    "Configured checks did not run after interrupted implementation",
+                    "Configured checks did not run after cancellation",
                   );
                 const checkWorkspace = await phase(
                   "checker-worktree",
@@ -2027,7 +2037,7 @@ export const runImplementationBenchmark = async (
               attempt.status === "running"
             )
               attempt.status = outcome;
-            attempt.reason =
+            const checkingFailure =
               error instanceof PhaseFailure
                 ? error.message
                 : attempt.candidate
@@ -2035,9 +2045,11 @@ export const runImplementationBenchmark = async (
                     ? error.message
                     : "Protected checking runtime unavailable"
                   : "Candidate sealing failed";
+            attempt.reason ??= checkingFailure;
             if (attempt.candidate)
               attempt.check = {
                 ...attempt.check,
+                failure: checkingFailure,
                 status:
                   error instanceof PhaseFailure &&
                   ["cancelled", "timed-out"].includes(error.outcome)

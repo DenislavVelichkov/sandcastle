@@ -43,6 +43,10 @@ Keep the startup registration home ignored; approvals belong to the local host.
   `hook/completed` success receipts and full context entries before task dispatch.
 - SessionStart executes at the first turn, not at `thread/start`. Start with a
   harmless activation prompt. No ticket text goes into that probe.
+- Require exactly one completed shell command in that probe's owning thread
+  and turn, with exit code zero and the exact activation output. A successful
+  turn or hook receipt cannot substitute for shell execution. Apply the same
+  check after reconnecting for a resumed session or child lifecycle probe.
 - Keep model probes read-only. Grant the requested task sandbox policy only
   after the activation gate passes; hook runtime storage remains writable.
 - An already loaded `thread/resume` does not rerun SessionStart. Reconnect the

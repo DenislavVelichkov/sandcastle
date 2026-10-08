@@ -57,6 +57,10 @@ readline.createInterface({input:process.stdin}).on('line', line => {
       turn++;
       const id = 'turn-' + turn;
       reply({turn:{id}});
+      if (message.params.input[0].text.includes('mandatory activation probe') && fixture.failure !== 'shell-missing') {
+        const failed = fixture.failure === 'shell-failed' || fixture.failure === 'resumed-shell-failed' && process.argv.includes('agents.enabled=false');
+        notify('item/completed', {threadId:fixture.failure === 'shell-other-thread' ? 'child-1' : 'thread-1', turnId:fixture.failure === 'shell-other-turn' ? 'old-turn' : id, item:{type:'commandExecution', command:"printf 'sandcastle activation probe\\n'", status:'completed', exitCode:failed ? 1 : 0, aggregatedOutput:failed ? 'bwrap: No permissions to create a new namespace' : fixture.failure === 'shell-output' ? 'wrong output' : 'sandcastle activation probe\n'}});
+      }
       if(turn === 1) fixture.snapshot.hooks.filter(hook => hook.enabled && hook.eventName !== 'sessionStart').forEach(receipt);
       else notify('item/completed',{threadId:'thread-1',item:{type:'agentMessage',text:'Task completed'}});
       notify('turn/completed',{threadId:'thread-1',turn:{id,status:'completed'}});
@@ -241,6 +245,14 @@ describe("mandatory Codex activation gate", () => {
     ["post-hash", "exact definition changed"],
     ["post-version", "Plugin activation/version"],
     ["post-source", "Source changed during activation"],
+    ["shell-failed", "Activation shell probe did not execute successfully"],
+    ["shell-missing", "Activation shell probe did not execute successfully"],
+    ["shell-output", "Activation shell probe did not execute successfully"],
+    [
+      "shell-other-thread",
+      "Activation shell probe did not execute successfully",
+    ],
+    ["shell-other-turn", "Activation shell probe did not execute successfully"],
   ])("withholds the task for %s failure", async (mode, message) => {
     failure = mode;
     await expect(
@@ -289,6 +301,19 @@ describe("mandatory Codex activation gate", () => {
     snapshot.instructions = "Incomplete mandatory instructions";
     await expect(run()).rejects.toThrow("Injected skill instructions differ");
     expect(await transcript()).toBe("");
+  });
+  it("withholds task work when the shell fails after reconnecting for a child probe", async () => {
+    snapshot.hooks.push({
+      ...snapshot.hooks[0],
+      key: "child",
+      eventName: "subagentStart",
+      displayOrder: 3,
+    });
+    failure = "resumed-shell-failed";
+    await expect(run()).rejects.toThrow(
+      "Activation shell probe did not execute successfully",
+    );
+    expect(await transcript()).not.toContain("PRIVATE_TICKET_PROMPT");
   });
   it.each([
     [false, "thread/resume"],

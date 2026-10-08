@@ -31,6 +31,7 @@ report's candidate links supply the exact recorded paths and availability.
 | `report.html`                                | Interactive report that opens directly in a browser.                                         |
 | `report.json`, `evaluations.csv`             | Detailed records, the five inspection actions, judge checklist counts and comparison data.   |
 | `manifest.json`, `execution.json`            | Frozen tasks, instructions, rubric and execution/identity records.                           |
+| `events.jsonl`, `progress-inputs/`           | Ordered progress checkpoints/deltas and immutable shared candidate inventories for replay.   |
 | `candidates/<candidate-key>/worktree/`       | Generated source for the exact original attempt or linked retry.                             |
 | `candidates/<candidate-key>/candidate.patch` | Binary-capable changes against the frozen starting commit.                                   |
 | `assessments/<assessment-id>.json`           | Sealed judge findings and evidence citations.                                                |
@@ -61,6 +62,12 @@ The [installed launch guide](benchmark-installed-launch.md) connects package
 verification, task selection, observer recovery and report opening. Its focused
 offline proof opens an isolated HTML file, exercises keyboard controls and
 verifies browser downloads against the embedded JSON/CSV.
+
+New report JSON uses version 2. Candidate `paths` fields contain an
+`inventorySha256` reference; `candidateInventories` maps each hash to the shared
+path array. CSV uses the same references, resolved through that JSON table.
+The HTML embeds both exports and the inventories, so its downloads stay
+self-contained. Older reports keep their original format.
 
 Regenerate through the same report entry without starting an implementation,
 judge, browser or native runtime:
@@ -155,6 +162,13 @@ they remain in applicable weight for coverage and whole-rubric bounds.
 Coverage is assessed weight divided by all applicable weight. Only frozen
 task/protocol applicability excludes a requirement. Missing evidence never makes
 one inapplicable. No assessed weight means an unavailable score.
+
+Live status labels a terminal missing score "Score unavailable", active grading
+"Score pending", and a valid assessed zero "Score 0%". Status retains separate
+implementation, check and judge failures. A safely sealed timed-out partial
+candidate can have a protected check and an assessment while its implementation
+status stays timed out. The wall-clock allowance and reserved phase time remain
+separate from the allowance available for admitting another slot.
 
 For a synthetic example, one met requirement of weight 2 and one partial
 requirement of weight 2 with a 0.25 partial-credit fraction yield 62.5% adherence.

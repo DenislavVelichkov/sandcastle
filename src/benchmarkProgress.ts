@@ -14,6 +14,10 @@ import {
   truncate,
 } from "node:fs/promises";
 import { hostname } from "node:os";
+import {
+  restoreProgressExecution,
+  storeProgressExecution,
+} from "./benchmarkProgressStorage.js";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { IterationUsage } from "./AgentProvider.js";
 import type {
@@ -106,6 +110,8 @@ export interface BenchmarkSnapshot {
   };
   allowance: ImplementationExecution["budget"] & {
     remainingMs: number;
+    wallClockRemainingMs: number;
+    reservedMs: number;
     remainingCalls: number;
   };
   attempts: {
@@ -126,6 +132,8 @@ export interface BenchmarkSnapshot {
     } | null;
     evidence: string[];
     reason: string | null;
+    scoreLabel: string;
+    failures: string[];
   }[];
   unrun: string[];
   resources: BenchmarkResource[];
@@ -141,6 +149,7 @@ interface RecordEntry {
   snapshot: BenchmarkSnapshot;
   execution: ImplementationExecution;
 }
+const progressWrites = new Map<string, Promise<void>>();
 const executionView = (
   plan: TicketBenchmarkPlan,
   saved: ImplementationExecution,
@@ -180,6 +189,14 @@ const executionView = (
     },
     allowance: {
       ...saved.budget,
+      wallClockRemainingMs: Math.max(
+        0,
+        saved.budget.limitMs - saved.budget.elapsedMs,
+      ),
+      reservedMs:
+        saved.budget.judgeReservedMs +
+        saved.budget.cleanupReservedMs +
+        saved.budget.activeReservedMs,
       remainingMs: Math.max(
         0,
         saved.budget.limitMs -
@@ -231,6 +248,24 @@ const executionView = (
         ]) ?? []),
       ].filter((path): path is string => Boolean(path)),
       reason: item.reason ?? null,
+      scoreLabel:
+        item.judge.assessments?.at(-1)?.score.value != null
+          ? `Score ${item.judge.assessments.at(-1)!.score.value}%`
+          : saved.status === "running" &&
+              (["pending", "running"].includes(item.judge.status) ||
+                item.status === "running")
+            ? "Score pending"
+            : "Score unavailable",
+      failures: [
+        ...new Set(
+          [
+            item.reason,
+            item.check?.failure,
+            item.project?.failure,
+            item.judge.assessments?.at(-1)?.failure,
+          ].filter((reason): reason is string => Boolean(reason)),
+        ),
+      ],
     })),
     unrun: saved.unrun,
     resources: saved.resources,
@@ -272,13 +307,35 @@ const onceJson = async <T>(path: string, value: T): Promise<T> => {
 const commitRecord = async (directory: string, record: RecordEntry) => {
   const journal = await open(join(directory, "events.jsonl"), "a", 0o600);
   try {
-    await journal.writeFile(`${JSON.stringify(record)}\n`);
+    const execution = await storeProgressExecution(directory, record.execution);
+    await journal.writeFile(`${JSON.stringify({ ...record, execution })}\n`);
     await journal.sync();
   } finally {
     await journal.close();
   }
   await atomicJson(join(directory, "execution.json"), record.execution);
   await atomicJson(join(directory, "status.json"), record.snapshot);
+};
+interface ProgressDelta {
+  event: BenchmarkEvent;
+  telemetry: Pick<
+    BenchmarkSnapshot,
+    "controllerHeartbeat" | "lastImplementationEvent" | "lastJudgeEvent"
+  > & { elapsedMs: number };
+}
+const commitDelta = async (
+  directory: string,
+  delta: ProgressDelta,
+  snapshot: BenchmarkSnapshot,
+) => {
+  const journal = await open(join(directory, "events.jsonl"), "a", 0o600);
+  try {
+    await journal.writeFile(`${JSON.stringify(delta)}\n`);
+    await journal.sync();
+  } finally {
+    await journal.close();
+  }
+  await atomicJson(join(directory, "status.json"), snapshot);
 };
 const boundedRecovery = async (
   operation: () => Promise<void>,
@@ -426,7 +483,42 @@ const records = async (directory: string, after = 0, limit = 0) => {
     const lines = pending.split("\n");
     pending = lines.pop()!;
     for (const line of lines) {
-      const record = JSON.parse(line) as RecordEntry;
+      let record = JSON.parse(line) as RecordEntry & Partial<ProgressDelta>;
+      if (record.telemetry) {
+        if (
+          !latest ||
+          !Number.isFinite(record.telemetry.elapsedMs) ||
+          record.telemetry.elapsedMs < latest.execution.budget.elapsedMs
+        )
+          throw new Error("Benchmark progress delta is inconsistent");
+        const { elapsedMs, ...telemetry } = record.telemetry;
+        latest.execution.budget.elapsedMs = elapsedMs;
+        const allowance = latest.snapshot.allowance;
+        record = {
+          event: record.event,
+          execution: latest.execution,
+          snapshot: {
+            ...latest.snapshot,
+            ...telemetry,
+            at: record.event.at,
+            sequence: record.event.sequence,
+            phase: record.event.phase,
+            allowance: {
+              ...allowance,
+              elapsedMs,
+              wallClockRemainingMs: Math.max(0, allowance.limitMs - elapsedMs),
+              remainingMs: Math.max(
+                0,
+                allowance.limitMs -
+                  elapsedMs -
+                  allowance.judgeReservedMs -
+                  allowance.cleanupReservedMs -
+                  allowance.activeReservedMs,
+              ),
+            },
+          },
+        };
+      }
       if (
         record.event.version !== 1 ||
         record.event.sequence !== (latest?.event.sequence ?? 0) + 1 ||
@@ -446,6 +538,10 @@ const records = async (directory: string, after = 0, limit = 0) => {
     }
   }
   if (!latest) throw new Error("Benchmark has no committed progress records");
+  latest.execution = await restoreProgressExecution(
+    directory,
+    latest.execution,
+  );
   return { latest, events, committedBytes };
 };
 
@@ -503,6 +599,7 @@ export const readBenchmarkProgress = async (
   directory: string,
   options: { after?: number; limit?: number } = {},
 ) => {
+  await progressWrites.get(directory);
   const after = options.after ?? 0;
   const limit = options.limit ?? 500;
   if (
@@ -554,6 +651,40 @@ export const readBenchmarkProgress = async (
         .filter((attempt) => !attempt.retryOf && attempt.judge === "complete")
         .map((attempt) => attempt.slotId),
     ).size;
+  }
+  // Derive display fields again after evidence validation, including legacy snapshots.
+  const allowance = latest.snapshot.allowance;
+  allowance.wallClockRemainingMs = Math.max(
+    0,
+    allowance.limitMs - allowance.elapsedMs,
+  );
+  allowance.reservedMs =
+    allowance.judgeReservedMs +
+    allowance.cleanupReservedMs +
+    allowance.activeReservedMs;
+  for (const attempt of latest.snapshot.attempts) {
+    const recorded = latest.execution.attempts.find(
+      (item) => item.id === attempt.id,
+    );
+    const score = attempt.assessment?.score.value;
+    attempt.scoreLabel =
+      score != null
+        ? `Score ${score}%`
+        : latest.snapshot.status === "running" &&
+            (["pending", "running"].includes(attempt.judge) ||
+              attempt.status === "running")
+          ? "Score pending"
+          : "Score unavailable";
+    attempt.failures = [
+      ...new Set(
+        [
+          attempt.reason,
+          recorded?.check?.failure,
+          recorded?.project?.failure,
+          attempt.assessment?.failure,
+        ].filter((reason): reason is string => Boolean(reason)),
+      ),
+    ];
   }
   return {
     snapshot: latest.snapshot,
@@ -1120,10 +1251,12 @@ export const openBenchmarkProgress = async (
     : cancellation.signal;
   let queue = Promise.resolve();
   let failure: unknown;
+  let heartbeats = 0;
   const publish = (
     kind: string,
     phase?: string,
     attempt?: ImplementationAttempt,
+    transient = false,
   ) => {
     execution.budget.elapsedMs = Math.max(
       execution.budget.elapsedMs,
@@ -1153,8 +1286,8 @@ export const openBenchmarkProgress = async (
         kind: kind.slice("implementation-".length),
       };
     if (kind.startsWith("judge-")) lastJudgeEvent = event;
-    const saved = structuredClone(execution);
-    const snapshot: BenchmarkSnapshot = {
+    const saved = transient ? execution : structuredClone(execution);
+    const snapshot: BenchmarkSnapshot = structuredClone({
       version: 1,
       runId: saved.runId,
       planId: saved.planId,
@@ -1173,12 +1306,23 @@ export const openBenchmarkProgress = async (
       recovery: released
         ? "Use benchmark-resume with the unchanged manifest and remaining allowance. Explicit retries must name an interrupted attempt."
         : "Execution belongs to the recorded owner. Observers may disconnect; do not start a replacement owner.",
-    };
+    });
     const record: RecordEntry = { event, snapshot, execution: saved };
+    const delta: ProgressDelta = {
+      event,
+      telemetry: {
+        elapsedMs: saved.budget.elapsedMs,
+        controllerHeartbeat: heartbeat,
+        lastImplementationEvent,
+        lastJudgeEvent,
+      },
+    };
     queue = queue.then(async () => {
       if (failure) throw failure;
-      await commitRecord(plan.output, record);
+      if (transient) await commitDelta(plan.output, delta, snapshot);
+      else await commitRecord(plan.output, record);
     });
+    progressWrites.set(plan.output, queue);
     // Always observe asynchronous failures, including events emitted by synchronous streams.
     void queue.catch((error) => {
       failure = error;
@@ -1224,7 +1368,7 @@ export const openBenchmarkProgress = async (
   }, 100);
   cancellationTimer.unref();
   const timer = setInterval(() => {
-    void publish("heartbeat");
+    void publish("heartbeat", undefined, undefined, ++heartbeats % 30 !== 0);
   }, 2000);
   timer.unref();
   return {
@@ -1246,6 +1390,7 @@ export const openBenchmarkProgress = async (
         `${role}-${kind}`,
         role === "judge" ? "judge-assessment" : "implementation",
         attempt,
+        kind !== "usage",
       );
     },
     log: (
@@ -1263,6 +1408,7 @@ export const openBenchmarkProgress = async (
           { mode: 0o600 },
         ),
       );
+      progressWrites.set(plan.output, queue);
       void queue.catch((error) => {
         failure = error;
         cancellation.abort(error);
@@ -1298,6 +1444,7 @@ export const openBenchmarkProgress = async (
       try {
         await beforeRelease?.();
       } finally {
+        progressWrites.delete(plan.output);
         if (released)
           await rm(join(plan.output, "benchmark.lock"), { recursive: true });
       }

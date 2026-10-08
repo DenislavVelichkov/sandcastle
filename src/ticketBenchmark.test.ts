@@ -193,6 +193,7 @@ const worker = (request: WorkerRequest): WorkerObservation => ({
   freeBytes: 2_147_483_648,
   freeInodes: 100_000,
   gradingReady: true,
+  readOnlySandbox: { ready: true, detail: null },
   environments: Object.fromEntries(
     request.capabilities.environments.map((environment) => [
       environment.name,
@@ -317,6 +318,7 @@ it("reports environment, authentication, capacity, grading and dependency blocke
         freeBytes: 1,
         freeInodes: 1,
         gradingReady: false,
+        readOnlySandbox: { ready: false, detail: "Read-only command failed" },
         tools: { codex: "/usr/bin/codex" },
         environments: { browser: false },
       }),
@@ -327,6 +329,7 @@ it("reports environment, authentication, capacity, grading and dependency blocke
     "worker-usage-capacity",
     "worker-capacity",
     "grading-readiness",
+    "worker-read-only-sandbox",
     "environment:browser",
     "tool:pnpm",
     "prerequisite",
@@ -387,6 +390,58 @@ it("binds frozen identity to task, rubric, judge, dependencies and base instruct
   );
   const current = await planTicketBenchmark(options);
   expect(current.launch?.dependencies[0]?.text).toBe("Changed dependencies\n");
+});
+
+it("freezes linked governing references and separate phase allowances", async () => {
+  const { repo, git } = await project();
+  await mkdir(join(repo, "docs"));
+  await writeFile(
+    join(repo, "AGENTS.md"),
+    "Read [policy](<docs/review policy.md>) and [literal](docs/100%.md).\n",
+  );
+  await writeFile(
+    join(repo, "docs", "review policy.md"),
+    "Frozen review boundary. [More](more.md#checks)\n",
+  );
+  await writeFile(
+    join(repo, "docs", "more.md"),
+    "Frozen checks. [Policy](review%20policy.md)\n",
+  );
+  await writeFile(join(repo, "docs", "100%.md"), "Literal path.\n");
+  git("add", ".");
+  git("commit", "-m", "Linked instructions");
+  await writeFile(
+    join(repo, "launch.json"),
+    JSON.stringify({
+      version: 1,
+      implementationMinutes: 24,
+      checksMinutes: 8,
+      controls: { knownBad: "HEAD", knownGood: "HEAD" },
+    }),
+  );
+  const plan = await planTicketBenchmark({
+    cwd: repo,
+    tickets: ["task.md"],
+    contract: "launch.json",
+  });
+  expect(plan.launch?.instructions.map((file) => file.path)).toEqual([
+    "AGENTS.md",
+    "docs/review policy.md",
+    "docs/100%.md",
+    "docs/more.md",
+  ]);
+  expect(plan.launch?.grading.prompt).not.toContain("Frozen review boundary");
+  expect(plan.launch?.allowances).toMatchObject({
+    implementationMs: 24 * 60_000,
+    checksMs: 8 * 60_000,
+    controlsMs: 2 * 14 * 60_000,
+  });
+  await writeFile(join(repo, "docs", "more.md"), "Uncommitted policy edit");
+  expect(
+    (
+      await planTicketBenchmark({ cwd: repo, tickets: ["task.md"] })
+    ).launch?.instructions.at(-1)?.text,
+  ).toContain("Frozen checks");
 });
 
 it("uses the selected project and explicit prompt fallback without backlog discovery", async () => {
@@ -471,7 +526,7 @@ it("freezes explicit rubric rules and declared satisfied prerequisites before wo
   expect(plan.launch?.prerequisites[0]?.state).toBe("satisfied");
   expect(plan.launch?.grading.rubric).toEqual(config.rubric);
   expect(plan.launch?.allowedEdits).toEqual(["src/**", ".changeset/**"]);
-  expect(plan.launch?.grading.prompt).toContain("required-stream");
+  expect(plan.launch?.grading.rubric[0]?.id).toBe("required-stream");
   await writeFile(
     join(repo, "launch.json"),
     JSON.stringify({ ...config, rubric: [...config.rubric, ...config.rubric] }),

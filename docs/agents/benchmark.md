@@ -7,6 +7,7 @@
 - Keep installed fixture proof output outside any pnpm workspace. Its temporary consumer inherits the nearest workspace configuration and lockfile otherwise, so an output under the repository's `artifacts/` is unsuitable.
 - Benchmark guides and ADRs must describe the delivered runtime adapter and current readiness blockers; completed ticket numbers are not permanent missing-runtime gates.
 - If full-suite validation hits benchmark/CLI timeouts or cleanup `ENOTEMPTY` under default file parallelism, check the failing cases in isolation and rerun the full suite with `pnpm test --maxWorkers=2` before changing runtime behavior.
+- Verify actual Codex sandbox reading and denied writing, not just a completed model turn. The tested SELinux Docker host needs the frozen `seccomp=unconfined`, `label=disable` profile for Bubblewrap namespaces and devpts; use the same options for preflight and execution.
 
 Use the [installed consumer guide](../benchmark-installed-launch.md) for readiness checks and launch/recovery commands.
 
@@ -17,6 +18,7 @@ Use the [installed consumer guide](../benchmark-installed-launch.md) for readine
 - Use NUL-separated Git path discovery for frozen benchmark inputs; line-oriented Git output quotes Unicode filenames and can silently omit protected checks.
 - **CRITICAL**: Fixed benchmark task scopes must include `.changeset`; historical candidates follow this repository's changeset rule, and a `src`-only scope rejects them after reviews.
 - Freeze visual applicability per selected benchmark task; a scoped visual criterion must not waive another task's nonvisual requirements.
+- Calibrate a common implementation allowance for the selected ticket before comparison. Prove known-bad and known-good protected-check controls; reserve checks separately and preserve a timed-out implementation status when checking its safely sealed partial candidate.
 
 ## Evidence, reporting and accounting
 
@@ -26,6 +28,8 @@ Use the [installed consumer guide](../benchmark-installed-launch.md) for readine
 - Generate final benchmark exports after the terminal controller snapshot is persisted and before releasing its ownership lock; closing progress changes the ledger hash.
 - Never regenerate reports inside retained candidate worktrees or evidence subdirectories. The report API must reject these destinations and export aliases before writes; fixed export filenames alone do not preserve sealed source. Create temporary exports exclusively so a pre-existing symlink cannot redirect the write.
 - In-flight benchmark activities reserve their maximum time in `budget.json`; the ledger replaces that reservation with elapsed time when the activity finishes.
+- Retain `progress-inputs/` with the event journal. Its immutable candidate inventories are shared by compact checkpoints and are required for recovery.
+- Missing terminal scores are unavailable, active grading is pending, and an assessed zero is a valid score. Show implementation, check and judge failures together and distinguish wall-clock time from reserved admission allowance.
 
 Use the [benchmark report guide](../benchmark-reports.md) for result interpretation.
 

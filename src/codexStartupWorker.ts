@@ -263,6 +263,9 @@ export async function codexStartupWorker(request: {
       } else {
         if (
           message.method === "turn/completed" ||
+          (!work &&
+            message.method === "item/completed" &&
+            message.params?.item?.type === "commandExecution") ||
           message.method?.startsWith("hook/")
         )
           notifications.push(message);
@@ -530,6 +533,28 @@ export async function codexStartupWorker(request: {
       throw new Error(
         `Activation probe failed: ${JSON.stringify(completed.params.turn.error)}`,
       );
+    const verifyShellProbe = (start: number, root: string, turn: string) => {
+      const commands = notifications
+        .slice(start)
+        .filter(
+          (message) =>
+            message.method === "item/completed" &&
+            message.params?.threadId === root &&
+            message.params?.turnId === turn &&
+            message.params.item?.type === "commandExecution",
+        );
+      if (
+        commands.length !== 1 ||
+        commands[0].params.item.exitCode !== 0 ||
+        commands[0].params.item.status !== "completed" ||
+        commands[0].params.item.aggregatedOutput?.trim() !==
+          "sandcastle activation probe"
+      )
+        throw new Error(
+          "Activation shell probe did not execute successfully with the expected output; ticket work cannot start",
+        );
+    };
+    verifyShellProbe(before, threadId!, probe.turn.id);
     // Built-in delegation has a fail-open SubagentStart contract. Sandcastle's
     // ticket agents use separate guarded invocations; only the harmless probe
     // may exercise Codex's child lifecycle.
@@ -608,6 +633,7 @@ export async function codexStartupWorker(request: {
         throw new Error(
           `Resumed activation probe failed: ${JSON.stringify(rootCompleted.params.turn.error)}`,
         );
+      verifyShellProbe(rootBefore, threadId!, rootProbe.turn.id);
       await verifyRuns(
         required.filter(
           (hook: any) =>

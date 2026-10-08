@@ -335,7 +335,7 @@ const readReport = async (input: {
         (attempt) => attempt.judge.records ?? [],
       ),
       generator: {
-        version: "implementation-report-v2-inspection",
+        version: "implementation-report-v3-shared-inventories",
         sha256: hash(
           Buffer.concat(
             await Promise.all(
@@ -377,7 +377,18 @@ export const writeImplementationBenchmarkReport = async (input: {
     report.attempts,
   );
   const rows = report.rows;
-  const jsonText = `${JSON.stringify(report, null, 2)}\n`;
+  const candidateInventories = new Map<string, string[]>();
+  const compact = JSON.parse(
+    JSON.stringify(report, (key, value) => {
+      if (key !== "paths" || !Array.isArray(value)) return value;
+      const sha256 = hash(JSON.stringify(value));
+      candidateInventories.set(sha256, value);
+      return { inventorySha256: sha256 };
+    }),
+  );
+  compact.version = 2;
+  compact.candidateInventories = Object.fromEntries(candidateInventories);
+  const jsonText = `${JSON.stringify(compact, null, 2)}\n`;
   const bindings = {
     manifestSha256: report.identities.manifestSha256,
     ledgerSha256: report.identities.ledgerSha256,
@@ -387,7 +398,10 @@ export const writeImplementationBenchmarkReport = async (input: {
     generatorVersion: report.identities.generator.version,
     generatorSha256: report.identities.generator.sha256,
   };
-  const csvRows = rows.map((row) => ({ ...row, ...bindings }));
+  const csvRows = (compact.rows as typeof rows).map((row) => ({
+    ...row,
+    ...bindings,
+  }));
   const fields = Object.keys(csvRows[0] ?? { slotId: null, ...bindings });
   const csvText =
     [
@@ -398,7 +412,7 @@ export const writeImplementationBenchmarkReport = async (input: {
           .join(","),
       ),
     ].join("\n") + "\n";
-  const htmlText = implementationReportHtml(report, jsonText, csvText);
+  const htmlText = implementationReportHtml(compact, jsonText, csvText);
   const output = resolve(input.outputDirectory);
   await mkdir(output, { recursive: true, mode: 0o700 });
   const write = async (name: string, bytes: string) => {

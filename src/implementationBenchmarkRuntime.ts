@@ -153,6 +153,9 @@ export const createBenchmarkRuntime = async (
         "--init",
         "--name",
         name,
+        ...(request.plan.launch!.worker.securityOptions ?? []).flatMap(
+          (option) => ["--security-opt", option],
+        ),
         "--label",
         `sandcastle.benchmark.run=${request.runId}`,
         "--user",
@@ -173,6 +176,12 @@ export const createBenchmarkRuntime = async (
         "OPENAI_KEY=",
         "-v",
         `${request.root}:${request.root}:z`,
+        ...(["implementation", "judge"].includes(request.role)
+          ? [
+              "-v",
+              `${join(request.root, "instructions")}:${join(request.root, "instructions")}:ro,z`,
+            ]
+          : []),
         ...(request.role === "judge"
           ? [
               "-v",

@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import type { ModelCatalogPage } from "./workflowUsage.js";
 import type { FrozenLaunch } from "./benchmarkLaunch.js";
+import { probeBenchmarkReadOnlySandbox } from "./benchmarkSandbox.js";
 
 const execute = promisify(execFile);
 export interface WorkerRequest {
@@ -18,6 +19,7 @@ export interface WorkerRequest {
   readonly check: string | null;
   readonly adapter: { readonly id: string; readonly readiness: string } | null;
   readonly capabilities: FrozenLaunch["capabilities"];
+  readonly securityOptions: readonly string[];
 }
 export interface WorkerObservation {
   readonly imageDigest: string;
@@ -31,6 +33,10 @@ export interface WorkerObservation {
   readonly freeBytes: number;
   readonly freeInodes: number | null;
   readonly gradingReady: boolean;
+  readonly readOnlySandbox: {
+    readonly ready: boolean;
+    readonly detail: string | null;
+  };
   readonly environments: Readonly<Record<string, boolean>>;
 }
 
@@ -57,12 +63,18 @@ export const workerObservationSchema = z
     freeBytes: z.number().finite().nonnegative(),
     freeInodes: z.number().finite().nonnegative().nullable(),
     gradingReady: z.boolean(),
+    readOnlySandbox: z
+      .object({ ready: z.boolean(), detail: z.string().nullable() })
+      .strict(),
     environments: z.record(z.string(), z.boolean()),
   })
   .strict();
 
 // Serialized into the private worker. Only this allowlisted result is exported.
-const observeWorker = async (request: WorkerRequest) => {
+const observeWorker = async (
+  request: WorkerRequest,
+  sandboxProbe: typeof probeBenchmarkReadOnlySandbox,
+) => {
   const { execFileSync, spawn } = await import("node:child_process");
   const { createHash } = await import("node:crypto");
   const { mkdirSync, copyFileSync, writeFileSync, readFileSync, statfsSync } =
@@ -87,6 +99,7 @@ const observeWorker = async (request: WorkerRequest) => {
     }
   };
   const prepared = !request.prepare || succeeds(request.prepare, 60);
+  const readOnlySandbox = await sandboxProbe();
   const tools: Record<string, string | null> = {};
   for (const tool of request.capabilities.tools) {
     try {
@@ -256,6 +269,7 @@ const observeWorker = async (request: WorkerRequest) => {
       freeBytes: capacity.bavail * capacity.bsize,
       freeInodes: capacity.files === 0 ? null : capacity.ffree,
       gradingReady,
+      readOnlySandbox,
       environments,
     }),
   );
@@ -315,7 +329,7 @@ export const inspectBenchmarkWorker = async (
     });
     await writeFile(
       join(root, "probe.cjs"),
-      `(${observeWorker.toString()})(${JSON.stringify(request)}).catch(() => { process.exitCode = 1; });\n`,
+      `const sandboxProbe = ${probeBenchmarkReadOnlySandbox.toString()};\n(${observeWorker.toString()})(${JSON.stringify(request)}, sandboxProbe).catch(() => { process.exitCode = 1; });\n`,
       { mode: 0o600 },
     );
     const observed = await execute(
@@ -325,6 +339,10 @@ export const inspectBenchmarkWorker = async (
         "--rm",
         "--name",
         container,
+        ...request.securityOptions.flatMap((option) => [
+          "--security-opt",
+          option,
+        ]),
         "--user",
         `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`,
         "--entrypoint",

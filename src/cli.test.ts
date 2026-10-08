@@ -129,6 +129,7 @@ describe("sandcastle CLI", () => {
           freeBytes: 2 ** 32,
           freeInodes: 100000,
           gradingReady: true,
+          readOnlySandbox: { ready: true, detail: null },
           environments: {},
         }),
       },

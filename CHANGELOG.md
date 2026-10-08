@@ -1,5 +1,18 @@
 # @ai-hero/sandcastle
 
+## 0.12.0-dv8.30.0
+
+### Minor Changes
+
+- Export benchmark report JSON version 2 with shared candidate path inventories. Candidate `paths` fields reference the report's `candidateInventories` table; CSV uses the same references, and offline HTML downloads include the complete table.
+
+### Patch Changes
+
+- Verify successful Codex activation shell receipts and an actual read-only sandbox before benchmark dispatch. Use the same Docker security profile for preflight and execution, including SELinux hosts.
+- Run protected checks on safely sealed timed-out candidates within a separate configurable check allowance. Document implementation budget calibration and known-good and known-bad controls.
+- Generate judge citations from verified available evidence and reference frozen instructions through read-only mounts, avoiding repeated task and instruction text.
+- Show terminal score failures and separate wall-clock and reserved allowances. Store compact progress events with shared candidate inventories while preserving legacy progress reads and retained historical evidence.
+
 ## 0.12.0-dv8.29.0
 
 ### Minor Changes

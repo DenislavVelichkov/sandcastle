@@ -60,7 +60,9 @@ if (tool === "gh") {
       arg.endsWith(":/tmp/sandcastle-probe.cjs:ro,z"),
     );
     const probe = readFileSync(mount.slice(0, mount.indexOf(":/tmp/")), "utf8");
-    const request = JSON.parse(/\)\((\{[^\n]+\})\)\.catch/.exec(probe)[1]);
+    const request = JSON.parse(
+      /\)\((\{[^\n]+\}), sandboxProbe\)\.catch/.exec(probe)[1],
+    );
     json({
       codexVersion: "deterministic-fixture",
       nodeVersion: process.version,
@@ -79,6 +81,7 @@ if (tool === "gh") {
       freeBytes: 2 ** 40,
       freeInodes: 100000,
       gradingReady: true,
+      readOnlySandbox: { ready: true, detail: null },
       environments: {},
     });
   } else if (args[0] === "run") {

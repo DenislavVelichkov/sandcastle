@@ -86,11 +86,30 @@ A required runtime without its frozen adapter remains blocked. After readiness
 passes, an operator can explicitly launch the supplied task by removing
 `--preflight` and adding `--output /absolute/empty-evidence`.
 
+Worker readiness includes a real Codex read-only sandbox probe: it must read a
+canary and deny an attempted write without changing its bytes. The frozen Docker
+profile uses `seccomp=unconfined` and `label=disable` to permit Bubblewrap inside
+the nonroot worker. The preflight and execution use the same profile. On the
+tested SELinux host, seccomp alone allowed namespace creation but still blocked
+the private devpts mount. A completed activation turn also needs the successful
+shell-command receipt before task work can start, including after resume.
+
+Calibrate the implementation allowance against the selected ticket before
+freezing a comparison. Use a separate calibration run, include startup and
+required implementation work, and record the measured basis for the common
+`implementationMinutes` value. The default 15 minutes is an admission limit,
+not evidence that a ticket fits. Declare `controls.knownBad` and
+`controls.knownGood` to prove that the protected check rejects a broken candidate
+and accepts a correction before measuring the arms.
+
 `--max-minutes` bounds the whole run, including setup, checks, judging and
 cleanup. Admission reserves each phase's maximum, so an allowance smaller than
 those reservations can leave every slot unrun. `--max-new-slots` limits dispatch,
 not the frozen comparison denominator. The contract can bound implementation
-and judge minutes and total calls. A real benchmark needs a supplied task and
+and judge minutes, independent `checksMinutes` (default five minutes), and total
+calls. A safely sealed timed-out candidate still runs the protected check within
+its reserved check allowance and can be judged; its implementation remains
+timed out. Cancellation skips further checks. A real benchmark needs a supplied task and
 an explicit bounded allowance; the fixture proofs below do not launch one.
 
 ## Observe and recover through the installed command
@@ -110,6 +129,15 @@ cursor, drain pages while `hasMore` is true, and keep the cursor with its run ID
 Closing a chat does not promise notifications or stop the controller. The
 observer cannot change worker instructions. Use cancellation explicitly when
 the run should stop.
+
+Status distinguishes `wallClockRemainingMs` from `reservedMs`; `remainingMs` is
+the allowance still available for admission after those reservations. Each
+attempt exposes a `scoreLabel` and `failures`. A terminal missing grade is
+"Score unavailable", active grading is "Score pending", and an assessed zero
+is "Score 0%". Implementation, check and judge failures remain visible together.
+Activity events store compact deltas; periodic checkpoints share immutable
+candidate inventories under `progress-inputs/`. Keep that directory with the
+journal for cursor replay and recovery.
 
 Recovery verifies the unchanged manifest/runner, remaining time/calls and the
 recorded owner before dispatch. Completed implementations are not replayed.
@@ -149,7 +177,8 @@ Keep the evidence at its frozen location. Candidate worktrees under `candidates/
 are retained evidence needed for current assessment verification. Remove only
 verified disposable worker installations, runtime/device data and source
 fixtures after their owned processes stop and compact proof is sealed. A
-cleanup failure is actionable, not permission to delete the directory. Preserve
+cleanup failure is actionable, not permission to delete the directory. Retain
+`progress-inputs/` as part of the journal's evidence. Preserve
 existing historical pilots and byte-bound receipts without reformatting them.
 
 ## Reproduce installed-path fixture proof
