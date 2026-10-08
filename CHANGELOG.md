@@ -1,5 +1,12 @@
 # @ai-hero/sandcastle
 
+## 0.12.0-dv8.28.0
+
+### Patch Changes
+
+- Share subprocess output collection across Docker, Podman, and no-sandbox providers while preserving streamed output limits, complete buffered output, stdin, and execution errors.
+- Use Node's promisified container commands and reuse sync execution helpers. Remove the unused skeleton prompt, unused test setup helpers, and redundant direct printer dev dependencies.
+
 ## 0.12.0-dv8.27.0
 
 ### Minor Changes
