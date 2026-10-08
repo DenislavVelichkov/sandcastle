@@ -56,10 +56,10 @@ The [routing decision](docs/workflow-user-guide.md#review-the-routing-decision) 
 
 ## Quick start with Codex
 
-1. Install this fork's [release `0.12.0-dv8.30.0`](https://github.com/DenislavVelichkov/sandcastle/releases/tag/v0.12.0-dv8.30.0) and `tsx` in your project. See the [changelog](CHANGELOG.md#0120-dv8300) for this release's benchmark sandbox, grading and progress fixes, including report JSON version 2.
+1. Install this fork's [release `0.12.0-dv8.31.0`](https://github.com/DenislavVelichkov/sandcastle/releases/tag/v0.12.0-dv8.31.0) and `tsx` in your project. See the [changelog](CHANGELOG.md#0120-dv8310) for this release's overall benchmark budget, explicit implementation caps and incomplete-score labels.
 
 ```bash
-pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.30.0/ai-hero-sandcastle-0.12.0-dv8.30.0.tgz tsx
+pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.31.0/ai-hero-sandcastle-0.12.0-dv8.31.0.tgz tsx
 ```
 
 The fork keeps the `@ai-hero/sandcastle` package name and import paths. Installing that name from the npm registry selects the upstream package. Use the fork archive and retain your lockfile to pin these changes.
@@ -113,7 +113,7 @@ The commands below update a manual installation. For registered installations, u
 2. Save the current `package.json` and lockfile, then replace the dependency with the versioned GitHub archive:
 
 ```bash
-pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.30.0/ai-hero-sandcastle-0.12.0-dv8.30.0.tgz
+pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.31.0/ai-hero-sandcastle-0.12.0-dv8.31.0.tgz
 ```
 
 If Sandcastle is a production dependency in your project, omit `--save-dev`. Installing the package name from the npm registry selects upstream; the fork upgrade requires its archive.
@@ -125,7 +125,7 @@ pnpm exec sandcastle --version
 pnpm exec sandcastle benchmark --help
 ```
 
-The version must print `0.12.0-dv8.30.0`. Run your project's build and checks before starting new work. If a worker image installs Sandcastle separately, update its archive pin to the same version, rebuild that image with your existing Docker or Podman setup, and verify the worker's installed version too.
+The version must print `0.12.0-dv8.31.0`. Run your project's build and checks before starting new work. If a worker image installs Sandcastle separately, update its archive pin to the same version, rebuild that image with your existing Docker or Podman setup, and verify the worker's installed version too.
 
 4. Keep your existing `.sandcastle/` configuration, prompts, credentials and project scripts. The dependency upgrade does not regenerate them; initialization is for a new project. Commit the updated `package.json` and `pnpm-lock.yaml` so other installations can reproduce the upgrade with `pnpm install --frozen-lockfile`.
 

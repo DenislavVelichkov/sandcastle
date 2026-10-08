@@ -1,5 +1,12 @@
 # @ai-hero/sandcastle
 
+## 0.12.0-dv8.31.0
+
+### Minor Changes
+
+- Default new benchmark contracts to no individual implementation deadline. Support explicit null and preserve numeric caps. Use the remaining overall budget while reserving sealing, checks, judging and cleanup time, and tell each worker its effective deadline.
+- Distinguish implementation deadline expiry from cancellation and overall budget exhaustion. Label incomplete dashboard scores with their evidence coverage.
+
 ## 0.12.0-dv8.30.0
 
 ### Minor Changes
