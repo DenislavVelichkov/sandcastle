@@ -22,7 +22,9 @@ Use the [installed consumer guide](../benchmark-installed-launch.md) for readine
 
 - **CRITICAL**: Native proof receipts and applicability records are bound by byte hashes. Preserve exported evidence JSON exactly; formatting changes invalidate their recorded hashes.
 - Implementation `finishedAt` precedes independent judging and cleanup. Report end-to-end duration from retained `settledAt`; older ledgers without it must remain unknown.
+- Interrupted-source recovery can seal under `candidates/<attempt-id>-recovered-<UUID>/` without creating a retry. Inspection must use the exact retained worktree and patch paths rather than reconstructing them from the slot ID.
 - Generate final benchmark exports after the terminal controller snapshot is persisted and before releasing its ownership lock; closing progress changes the ledger hash.
+- Never regenerate reports inside retained candidate worktrees or evidence subdirectories. The report API must reject these destinations and export aliases before writes; fixed export filenames alone do not preserve sealed source. Create temporary exports exclusively so a pre-existing symlink cannot redirect the write.
 - In-flight benchmark activities reserve their maximum time in `budget.json`; the ledger replaces that reservation with elapsed time when the activity finishes.
 
 Use the [benchmark report guide](../benchmark-reports.md) for result interpretation.

@@ -136,6 +136,11 @@ estimates, not subscription spending. Observer and other grading costs remain
 separate; failed/interrupted calls still contribute recorded usage. See
 [cost assumptions and judge interpretation](benchmark-reports.md).
 
+Follow the canonical [post-run inspection guide](benchmark-reports.md#locate-generated-code-and-evidence)
+for the artifact map, exact original/retry paths and each candidate's five
+task-specific inspection actions. The percentage remains the weighted judge
+score; the human guide records no sign-off.
+
 Judgment, rendering and fixture success grant no project or human acceptance.
 Task-specific reviews, frozen visual references, human approval and baseline
 promotion remain the selected project's gates.
@@ -154,6 +159,9 @@ After building the stable candidate, run the repository's focused proof:
 Choose an empty output directory outside any pnpm workspace. The proof creates
 its temporary consumer there; pnpm otherwise inherits the surrounding
 workspace's configuration and lockfile.
+The install uses pnpm's offline cache. If a dependency tarball is missing, fill
+that cache from a disposable consumer outside the workspace before rerunning;
+the proof stops before benchmark execution in this case.
 
 ```sh
 pnpm exec node scripts/prove-installed-benchmark.mjs /absolute/empty-proof

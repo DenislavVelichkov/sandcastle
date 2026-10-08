@@ -320,7 +320,11 @@ try {
       ...extra,
     ]);
   const complete = join(output, "complete");
-  await launch(complete);
+  const completion = (await launch(complete)).stdout;
+  assert(completion.includes(`xdg-open '${join(complete, "report.html")}'`));
+  assert(completion.includes(join(complete, "candidates")));
+  assert(completion.includes("docs/benchmark-reports.md"));
+  await writeFile(join(output, "completion.txt"), completion);
   const ledger = await read(join(complete, "execution.json"));
   assert.equal(ledger.status, "complete");
   assert.equal(ledger.attempts.length, 4);
@@ -422,15 +426,31 @@ try {
     interrupted.resources.some((resource) => resource.status !== "released"),
   );
   await controls();
-  await invoke(["benchmark-resume", "--directory", cancelled]);
+  const resumed = await invoke(["benchmark-resume", "--directory", cancelled]);
+  assert.equal(JSON.parse(resumed.stdout).status, "complete");
+  assert(
+    resumed.stderr.includes(`xdg-open '${join(cancelled, "report.html")}'`),
+  );
+  assert(resumed.stderr.includes(join(cancelled, "candidates")));
+  assert(resumed.stderr.includes("docs/benchmark-reports.md"));
+  await writeFile(join(output, "resume-instructions.txt"), resumed.stderr);
   const recovered = await read(join(cancelled, "execution.json"));
   assert.equal(recovered.budget.implementationCalls, 1);
   assert.equal(recovered.cleanup.status, "passed");
   assert(recovered.attempts[0].implementation.usage);
+  const recoveredReport = await read(join(cancelled, "report.json"));
+  assert(
+    recoveredReport.rows[0].inspection.artifacts
+      .filter((file) => ["worktree", "patch"].includes(file.id))
+      .every((file) => file.state === "available"),
+  );
   proof.recovery = {
     observerReconnected: true,
     implementationReplayed: false,
     failedCleanupRetained: true,
+    recoveredCandidateLinks: true,
+    jsonStdoutPreserved: true,
+    completionInstructionsOnStderr: true,
   };
   proof.usageRetained = true;
   proof.runtimes = [];
@@ -490,13 +510,16 @@ try {
   const before = await readFile(join(tools, "calls.jsonl"));
   const manifest = await readFile(join(complete, "manifest.json"));
   const reportDirectory = join(output, "regenerated");
-  await invoke([
+  const regeneration = await invoke([
     "benchmark-report",
     "--directory",
     complete,
     "--output",
     reportDirectory,
   ]);
+  assert(regeneration.stdout.includes(join(reportDirectory, "report.html")));
+  assert(regeneration.stdout.includes(join(complete, "candidates")));
+  await writeFile(join(output, "regeneration.txt"), regeneration.stdout);
   for (const name of ["report.html", "report.json", "evaluations.csv"]) {
     assert.deepEqual(
       await readFile(join(complete, name)),
@@ -520,6 +543,31 @@ try {
     hash(await readFile(join(complete, "execution.json"))),
   );
   assert.equal(report.projectAcceptance, "not assessed");
+  assert(report.rows.every((row) => row.inspection.steps.length === 5));
+  assert(
+    report.rows.every((row) => row.inspection.humanReview === "not-recorded"),
+  );
+  assert(
+    report.rows.every((row) => row.candidateId === row.assessment.candidateId),
+  );
+  assert(
+    report.rows.every((row) => row.inspection.checklist.state === "all-met"),
+  );
+  for (const row of report.rows)
+    for (const artifact of row.inspection.artifacts.filter(
+      (file) => file.state === "available",
+    ))
+      await readFile(
+        artifact.id === "worktree"
+          ? join(artifact.path, "value.txt")
+          : artifact.path,
+      );
+  proof.humanInspection = {
+    completionInstructions: true,
+    frozenArtifactLinks: true,
+    stepsPerCandidate: 5,
+    humanReview: "not-recorded",
+  };
   proof.offlineRegeneration = true;
   for (const directory of [
     complete,

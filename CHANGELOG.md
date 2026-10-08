@@ -1,5 +1,16 @@
 # @ai-hero/sandcastle
 
+## 0.12.0-dv8.29.0
+
+### Minor Changes
+
+- Print report-opening instructions after benchmark completion, regeneration and resume. Link the post-run guide to the exact retained source, patch and evidence locations.
+- Add five task-specific human inspection actions, full frozen requirements, verified artifact links and judge checklist status to offline reports and JSON/CSV exports. Keep judge scores, coverage, retries and project acceptance distinct.
+
+### Patch Changes
+
+- Reject report destinations inside retained candidate or evidence directories, including directory symlinks and export aliases. Create temporary exports exclusively to protect sealed evidence.
+
 ## 0.12.0-dv8.28.0
 
 ### Patch Changes

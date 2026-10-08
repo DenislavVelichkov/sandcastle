@@ -3,6 +3,16 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  benchmarkInspection,
+  benchmarkReportGuide,
+  inspectionSourceUrl,
+  judgeScoreBasis,
+} from "./benchmarkInspection.js";
+import {
+  assertBenchmarkReportDestination,
+  destinationSourceUrl,
+} from "./benchmarkReportDestination.js";
+import {
   compareBenchmarkCandidates,
   judgeProtocolId,
   readBenchmarkAssessments,
@@ -153,72 +163,83 @@ const readReport = async (input: {
   };
   const implementationTotal = totals("implementation");
   const judgeTotal = totals("judge");
-  const rows = plan.slots.flatMap((slot) => {
-    const arm = plan.arms[slot.arm]!;
-    const attempts = execution.attempts.filter(
-      (attempt) => attempt.slotId === slot.id,
-    );
-    return (attempts.length ? attempts : [null]).map((attempt) => {
-      const current = assessments.find(
-        (item) =>
-          item.attemptId === attempt?.id &&
-          item.assessment.id === attempt?.judge.assessments?.at(-1)?.id,
+  const rows = await Promise.all(
+    plan.slots.flatMap((slot) => {
+      const arm = plan.arms[slot.arm]!;
+      const attempts = execution.attempts.filter(
+        (attempt) => attempt.slotId === slot.id,
       );
-      const assessment = current?.assessment ?? null;
-      return {
-        slotId: slot.id,
-        attemptId: attempt?.id ?? null,
-        retryOf: attempt?.retryOf ?? null,
-        model: arm.model,
-        effort: arm.effort,
-        task: slot.ticket + 1,
-        title: plan.tickets[slot.ticket]!.title,
-        taskSha256: plan.tickets[slot.ticket]!.sha256,
-        status: attempt?.status ?? "unrun",
-        sampleCount: attempt && !attempt.retryOf ? 1 : 0,
-        candidate: attempt?.candidate ?? null,
-        rubricSha256: plan.launch!.grading.rubricSha256,
-        assessmentId: assessment?.id ?? null,
-        assessmentStatus:
-          assessment?.status ?? attempt?.judge.status ?? "unrun",
-        applicable: current?.applicable ?? false,
-        applicabilityReason: current?.reason ?? null,
-        score: current?.applicable ? assessment!.score.value : null,
-        coverage: current?.applicable ? assessment!.score.coverage : null,
-        scoreRange: current?.applicable ? assessment!.score.range : null,
-        check: attempt?.check?.status ?? "not-run",
-        mandatoryChecks:
-          assessment?.mandatoryChecks ?? attempt?.check?.status ?? "not-run",
-        projectAcceptance: "not_assessed" as const,
-        reason: attempt?.reason ?? assessment?.failure ?? null,
-        assessment,
-        phases: attempt?.phases ?? [],
-        implementationMs:
-          attempt?.phases.find((phase) => phase.name === "implementation")
-            ?.elapsedMs ?? null,
-        judgeMs:
-          attempt?.phases
-            .filter((phase) => phase.name.startsWith("judge-"))
-            .reduce((sum, phase) => sum + phase.elapsedMs, 0) ?? null,
-        endToEndMs: attempt?.settledAt
-          ? Math.max(
-              0,
-              Date.parse(attempt.settledAt) - Date.parse(attempt.startedAt),
-            )
-          : null,
-        measuredPhaseMs: attempt
-          ? attempt.phases.reduce((sum, phase) => sum + phase.elapsedMs, 0)
-          : null,
-        costs: attempt
-          ? costsByAttempt.get(attempt.id)!
-          : {
-              implementation: emptyCost(),
-              judge: emptyCost(),
-              full: emptyCost(),
-            },
-      };
-    });
-  });
+      return (attempts.length ? attempts : [null]).map(async (attempt) => {
+        const current = assessments.find(
+          (item) =>
+            item.attemptId === attempt?.id &&
+            item.assessment.id === attempt?.judge.assessments?.at(-1)?.id,
+        );
+        const assessment = current?.assessment ?? null;
+        const inspection = await benchmarkInspection(
+          plan,
+          slot.ticket + 1,
+          attempt,
+          current,
+        );
+        return {
+          slotId: slot.id,
+          attemptId: attempt?.id ?? null,
+          retryOf: attempt?.retryOf ?? null,
+          model: arm.model,
+          effort: arm.effort,
+          task: slot.ticket + 1,
+          title: plan.tickets[slot.ticket]!.title,
+          taskSha256: plan.tickets[slot.ticket]!.sha256,
+          status: attempt?.status ?? "unrun",
+          sampleCount: attempt && !attempt.retryOf ? 1 : 0,
+          candidate: attempt?.candidate ?? null,
+          candidateId: inspection.candidateId,
+          judgeChecklistStatus: inspection.checklist.summary,
+          inspection,
+          rubricSha256: plan.launch!.grading.rubricSha256,
+          assessmentId: assessment?.id ?? null,
+          assessmentStatus:
+            assessment?.status ?? attempt?.judge.status ?? "unrun",
+          applicable: current?.applicable ?? false,
+          applicabilityReason: current?.reason ?? null,
+          score: current?.applicable ? assessment!.score.value : null,
+          coverage: current?.applicable ? assessment!.score.coverage : null,
+          scoreRange: current?.applicable ? assessment!.score.range : null,
+          check: attempt?.check?.status ?? "not-run",
+          mandatoryChecks:
+            assessment?.mandatoryChecks ?? attempt?.check?.status ?? "not-run",
+          projectAcceptance: "not_assessed" as const,
+          reason: attempt?.reason ?? assessment?.failure ?? null,
+          assessment,
+          phases: attempt?.phases ?? [],
+          implementationMs:
+            attempt?.phases.find((phase) => phase.name === "implementation")
+              ?.elapsedMs ?? null,
+          judgeMs:
+            attempt?.phases
+              .filter((phase) => phase.name.startsWith("judge-"))
+              .reduce((sum, phase) => sum + phase.elapsedMs, 0) ?? null,
+          endToEndMs: attempt?.settledAt
+            ? Math.max(
+                0,
+                Date.parse(attempt.settledAt) - Date.parse(attempt.startedAt),
+              )
+            : null,
+          measuredPhaseMs: attempt
+            ? attempt.phases.reduce((sum, phase) => sum + phase.elapsedMs, 0)
+            : null,
+          costs: attempt
+            ? costsByAttempt.get(attempt.id)!
+            : {
+                implementation: emptyCost(),
+                judge: emptyCost(),
+                full: emptyCost(),
+              },
+        };
+      });
+    }),
+  );
   const originals = rows.filter((row) => !row.retryOf);
   const evaluated = originals.filter(
     (row) => row.applicable && row.assessmentStatus === "complete",
@@ -250,6 +271,9 @@ const readReport = async (input: {
   };
   const report = {
     version: 1,
+    inspectionGuide: benchmarkReportGuide,
+    scoreBasis: judgeScoreBasis,
+    evidenceDirectory: plan.output,
     status: execution.status,
     evaluated,
     judge: plan.judge,
@@ -311,13 +335,17 @@ const readReport = async (input: {
         (attempt) => attempt.judge.records ?? [],
       ),
       generator: {
-        version: "implementation-report-v1",
+        version: "implementation-report-v2-inspection",
         sha256: hash(
           Buffer.concat(
             await Promise.all(
-              [import.meta.url, reportCostsSourceUrl, reportHtmlSourceUrl].map(
-                (url) => readFile(fileURLToPath(url)),
-              ),
+              [
+                import.meta.url,
+                reportCostsSourceUrl,
+                reportHtmlSourceUrl,
+                inspectionSourceUrl,
+                destinationSourceUrl,
+              ].map((url) => readFile(fileURLToPath(url))),
             ),
           ),
         ),
@@ -343,6 +371,11 @@ export const writeImplementationBenchmarkReport = async (input: {
   outputDirectory: string;
 }) => {
   const report = await readReport(input);
+  await assertBenchmarkReportDestination(
+    input.directory,
+    input.outputDirectory,
+    report.attempts,
+  );
   const rows = report.rows;
   const jsonText = `${JSON.stringify(report, null, 2)}\n`;
   const bindings = {
@@ -371,7 +404,7 @@ export const writeImplementationBenchmarkReport = async (input: {
   const write = async (name: string, bytes: string) => {
     const path = join(output, name);
     const temporary = `${path}.${process.pid}.tmp`;
-    await writeFile(temporary, bytes, { mode: 0o600 });
+    await writeFile(temporary, bytes, { mode: 0o600, flag: "wx" });
     await rename(temporary, path);
     return path;
   };

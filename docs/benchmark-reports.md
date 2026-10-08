@@ -2,9 +2,60 @@
 
 `sandcastle benchmark` writes `report.html`, `report.json` and `evaluations.csv`
 from its retained version-two manifest, execution ledger and judge assessments.
-Open the HTML directly as a local file. It embeds its data, interactions and
+Completion prints an opening command, browser URL, export paths, retained
+candidate location and this post-run guide. Open the HTML directly as a local
+file. It embeds its data, interactions and
 downloads, so it also works when copied without adjacent JSON or CSV files.
 There are no external fonts, chart libraries or services.
+`benchmark-resume` prints the same opening guidance on stderr and preserves its
+JSON result on stdout for callers that parse it.
+
+Open the report from the chosen benchmark output directory:
+
+```sh
+xdg-open '/absolute/path/to/evidence/report.html'
+```
+
+On macOS use `open` with the same quoted path. On Windows use
+`Start-Process -FilePath 'C:\path\to\evidence\report.html'` in PowerShell, or
+open the printed browser URL. Paths containing spaces or shell characters need
+quoting; completion supplies the platform's quoted command.
+
+## Locate generated code and evidence
+
+These locations are relative to the frozen benchmark output directory. The
+report's candidate links supply the exact recorded paths and availability.
+
+| Location                                     | What you'll find                                                                             |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `report.html`                                | Interactive report that opens directly in a browser.                                         |
+| `report.json`, `evaluations.csv`             | Detailed records, the five inspection actions, judge checklist counts and comparison data.   |
+| `manifest.json`, `execution.json`            | Frozen tasks, instructions, rubric and execution/identity records.                           |
+| `candidates/<candidate-key>/worktree/`       | Generated source for the exact original attempt or linked retry.                             |
+| `candidates/<candidate-key>/candidate.patch` | Binary-capable changes against the frozen starting commit.                                   |
+| `assessments/<assessment-id>.json`           | Sealed judge findings and evidence citations.                                                |
+| `<candidate-key>-check.log`                  | Configured check output, including failed checks.                                            |
+| `visuals/<runtime-id>/`                      | Runtime captures, live-inspection records and evidence receipts when supplied by an adapter. |
+
+For an original attempt, `<candidate-key>` is its slot ID, such as
+`ticket-1-arm-1`. For a retry it is the exact attempt ID, such as
+`ticket-1-arm-1-attempt-2`. `<assessment-id>` is the assessment's UUID, not the
+candidate or slot ID. Rejudging retains the previous assessment and creates a
+new assessment ID for the same candidate. The report shows slot, attempt,
+candidate ID, commit, retry link and assessment ID; use those identities to
+avoid inspecting another arm's work.
+If recovery seals interrupted source before judging, the candidate key is
+`<attempt-id>-recovered-<UUID>`; it is still the same attempt. Use its recorded
+worktree and patch paths. Recovery does not create another independent sample
+or invent a completed check log.
+
+Worktree, patch, check-log and assessment navigation does not depend on whether
+the judge cited that artifact. The generator checks added artifact links against
+recorded bytes and bindings. Missing, changed and unrecorded artifacts have
+explicit states without an available-file link. The original check result stays
+visible separately from the log's present availability.
+Availability describes the snapshot at report generation. Regenerate after
+evidence changes; opening an existing HTML file does not revalidate the disk.
 
 The [installed launch guide](benchmark-installed-launch.md) connects package
 verification, task selection, observer recovery and report opening. Its focused
@@ -28,6 +79,51 @@ or ledger during generation rejects the snapshot. Regeneration leaves these
 inputs unchanged and produces identical exports for unchanged inputs and
 generator bytes. Inspect a settled snapshot when the controller is still active.
 
+Regenerated exports can live outside the evidence directory. Embedded data and
+downloads work without adjacent files; code/check/visual links still point to
+the original frozen evidence. Copying HTML alone does not copy those artifacts.
+The report API rejects destinations inside `candidates/`, `assessments/`,
+`visuals/`, `runtime/`, `protected/` or a retained candidate worktree, including
+symlink aliases. It also rejects export paths that would overwrite retained
+evidence and existing export symlinks or hard links. Temporary exports are
+created exclusively before atomic replacement. This protection applies to both
+CLI and public API calls.
+
+Keep candidate worktrees, patches, assessments and runtime evidence at their
+frozen location. Do not edit or reformat hash-bound evidence. Remove only
+verified disposable resources after their owning controller stops them;
+retained candidates and historical pilots are evidence, not disposable runtime
+folders. Use a separate copy if you want to modify or execute generated code.
+
+## Inspect each exact candidate
+
+Open a graph point with click, focus, Enter or Space, or expand its row under
+"Findings behind every result". Each exact model/effort/task candidate has five
+numbered inspection actions:
+
+1. Read the frozen task and full rubric. Follow its criterion links and inspect
+   requirement text, weights, partial credit, applicability and required evidence.
+2. Open the generated source worktree and patch. Inspect the cited code and line
+   ranges against that task's code criteria, including surrounding behavior.
+3. Read the log for the frozen configured check. Inspect failures against the
+   linked check criteria; a positive judge score cannot override them.
+4. Inspect applicable runtime captures, receipts and frozen visual references.
+   A nonvisual task states that visuals are not required. Missing required
+   runtime evidence stays pending. Embedded reference downloads preserve the
+   frozen bytes; regeneration does not restart the application.
+5. Read partial, unmet and pending findings, coverage and comparison limits.
+   Make any human or project acceptance decision through the project's own gates.
+
+The actions link the selected task's exact criteria and candidate artifacts.
+Arms for that frozen task use the same criteria. Unrun candidates retain the
+same guide and explicit unavailable evidence. Retries keep their own code and
+evidence and contribute no additional independent sample.
+
+This is an unsaved human inspection guide. It contains no human verdicts,
+checkbox pass percentage or sign-off. Judge requirement status is separate.
+Stale judge observations are labeled historical and cannot supply a current
+score or checklist claim. Older evidence needs no human-review record.
+
 Historical pilots retain their existing protocol and report behavior. Their
 `benchmark-report` invocation still requires `--policy-id` and uses its existing
 pilot activity budget. An optional `--manifest` binds the historical host
@@ -43,6 +139,35 @@ coverage, verdicts, concise observations and explanations, evidence links,
 configured checks, duration, cost basis and assumptions. Left and right arrow
 keys move between points. The evidence section offers the same information
 without the graph. Links open retained local code/check/visual artifacts.
+
+Visible graph labels include the arm, judge percentage, exact attempt ID,
+abbreviated commit, requirement status and coverage. Point details and the
+accessible table retain full candidate/commit identities, original/retry sample
+counts, and all met/partial/unmet/pending counts. Every scheduled or retry row
+remains in the table, including its reason for being unplotted in the selected
+task/cost view.
+
+The selected percentage is **judge specification adherence**:
+`100 × earned rubric weight / assessed applicable rubric weight`. A met verdict
+earns full weight, a partial verdict earns its frozen partial-credit fraction,
+and not met earns zero. Pending requirements do not enter that score denominator;
+they remain in applicable weight for coverage and whole-rubric bounds.
+Coverage is assessed weight divided by all applicable weight. Only frozen
+task/protocol applicability excludes a requirement. Missing evidence never makes
+one inapplicable. No assessed weight means an unavailable score.
+
+For a synthetic example, one met requirement of weight 2 and one partial
+requirement of weight 2 with a 0.25 partial-credit fraction yield 62.5% adherence.
+If a required visual criterion of weight 6 is pending, coverage is 40%, with
+whole-rubric bounds of 25% to 85%. The requirement counts are 1 met, 1 partial
+and 1 pending. This is not a percentage of boxes passed or measured model
+performance.
+
+"All applicable judge requirements met" requires every applicable requirement
+to be met with none partial, unmet or pending under a current assessment.
+Recorded required check status and log availability stay alongside it. A failed
+required check prevents an overall validated claim regardless of the score.
+Neither judge status nor the inspection guide records human/project acceptance.
 
 Switch between API-equivalent dollars and Codex Standard token-derived credits,
 and between implementation-only and implementation-plus-judge costs. The latter
@@ -165,7 +290,12 @@ API-equivalent dollars are not an actual bill.
 JSON preserves the frozen plan, execution records, assessments, applicability
 decisions, raw usage, valuation inputs, assumptions and report rows. Manifest,
 ledger, candidate, assessment, grader protocol, rate-card and generator identities
-bind the snapshot. CSV repeats the manifest, ledger, grader and generator
+bind the snapshot. Report rows include `candidateId`, `judgeChecklistStatus`
+and `inspection`, whose versioned structure retains full criteria, supporting
+counts, five actions and artifact availability. HTML renders that same data;
+CSV retains structured fields as quoted JSON cells. `score`, `coverage` and
+`scoreRange` retain the existing judge values and semantics. No human metric
+exists. CSV repeats the manifest, ledger, grader and generator
 bindings on every scheduled slot and linked retry, with explicit states and
 empty unknown values. It quotes text and protects leading
 spreadsheet formula characters. JSON retains the original text. Embedded

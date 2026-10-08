@@ -3,7 +3,7 @@ import { FileSystem } from "@effect/platform";
 import { Effect, Option } from "effect";
 import * as clack from "@clack/prompts";
 import { execSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { styleText } from "node:util";
 
 import { Display } from "./Display.js";
@@ -30,6 +30,7 @@ import {
 import { defaultImageName } from "./sandboxes/docker.js";
 import { withBenchmarkActivity } from "./benchmark.js";
 import { writeBenchmarkReport } from "./benchmarkReport.js";
+import { benchmarkPostRunInstructions } from "./benchmarkPostRun.js";
 import { planTicketBenchmark, runTicketBenchmark } from "./ticketBenchmark.js";
 import {
   cancelBenchmark,
@@ -852,9 +853,11 @@ const benchmarkCommand = Command.make(
         catch: (error) => new InitError({ message: String(error) }),
       });
       yield* d.status(
-        `${result.status}: ${result.completed}/${plan.slots.length} slots attempted; ${result.output}/report.html`,
+        `${result.status}: ${result.completed}/${plan.slots.length} slots attempted`,
         result.status === "complete" ? "success" : "info",
       );
+      for (const line of benchmarkPostRunInstructions(result.output))
+        yield* d.status(line, "info");
       if (result.status !== "judge-pending" && result.status !== "complete")
         process.exitCode = result.status === "cancelled" ? 130 : 1;
     }),
@@ -907,8 +910,16 @@ const benchmarkReportCommand = Command.make(
         },
         catch: (error) => new InitError({ message: String(error) }),
       });
-      yield* d.status(`Report: ${files.html}`, "success");
-      yield* d.status(`Evidence: ${files.json}, ${files.csv}`, "info");
+      if (policyId._tag === "Some") {
+        yield* d.status(`Report: ${files.html}`, "success");
+        yield* d.status(`Evidence: ${files.json}, ${files.csv}`, "info");
+      } else {
+        for (const line of benchmarkPostRunInstructions(
+          directory,
+          dirname(files.html),
+        ))
+          yield* d.status(line, "info");
+      }
     }),
 );
 
@@ -1077,6 +1088,8 @@ const benchmarkResumeCommand = Command.make(
           ),
         );
         console.log(JSON.stringify(result));
+        for (const line of benchmarkPostRunInstructions(result.output))
+          console.error(line);
         if (!["judge-pending", "complete"].includes(result.status))
           process.exitCode = result.status === "cancelled" ? 130 : 1;
       },

@@ -1,15 +1,19 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
+import { runInNewContext } from "node:vm";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   lstat,
+  link,
   appendFile,
   mkdtemp,
   mkdir,
   readFile,
+  readdir,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1022,6 +1026,31 @@ it("computes weighted partial scores and leaves missing visuals outside assessed
     verdict: "not_assessed",
     gaps: ["visual"],
   });
+  const report = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  expect(report.rows[0]).toMatchObject({
+    score: 62.5,
+    coverage: 0.4,
+    scoreRange: [25, 85],
+    inspection: {
+      humanReview: "not-recorded",
+      checklist: {
+        state: "pending",
+        counts: {
+          applicable: 3,
+          met: 1,
+          partial: 1,
+          pending: 1,
+          notApplicable: 0,
+        },
+      },
+    },
+  });
+  expect(report.rows[0].inspection.steps).toHaveLength(5);
+  expect(report.rows[0].inspection.artifacts).toContainEqual(
+    expect.objectContaining({ id: "visual:missing", state: "not-recorded" }),
+  );
 });
 
 it("links explicit rejudging without replaying implementation or rewriting a prior assessment", async () => {
@@ -1280,6 +1309,506 @@ it("regenerates an offline judge-score report and exports without changing retai
     ),
   ).toEqual(sources);
 });
+
+it("links exact frozen criteria and uncited artifacts in five inspection steps with matching exports", async () => {
+  const { plan } = await fixture(
+    {},
+    {
+      rubric: [
+        {
+          id: "value",
+          requirement: "value.txt contains the specified value",
+          weight: 3,
+          partialCredit: 0.25,
+          applicability: "nonvisual",
+          evidence: ["code"],
+        },
+      ],
+    },
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) =>
+      controlledJudge(request, (output) => {
+        output.requirements[0].evidence = [output.requirements[0].evidence[0]];
+      }),
+  });
+  const files = await writeBenchmarkReport({
+    directory: plan.output,
+    outputDirectory: join(dirname(plan.output), "report copy"),
+  });
+  const report = JSON.parse(await readFile(files.json, "utf8"));
+  const row = report.rows[0];
+  expect(row.candidateId).toBe(row.assessment.candidateId);
+  expect(row.inspection).toMatchObject({
+    humanReview: "not-recorded",
+    visualRequired: false,
+    checklist: {
+      state: "all-met",
+      counts: { total: 1, applicable: 1, met: 1, pending: 0 },
+    },
+    criteria: [
+      {
+        id: "value",
+        requirement: "value.txt contains the specified value",
+        weight: 3,
+        partialCredit: 0.25,
+      },
+    ],
+  });
+  expect(row.inspection.steps).toHaveLength(5);
+  expect(
+    report.rows[1].inspection.steps.map((step: any) => step.criterionIds),
+  ).toEqual(row.inspection.steps.map((step: any) => step.criterionIds));
+  expect(report.rows[1].inspection).toMatchObject({
+    checklist: { state: "no-assessment", counts: { met: 0, pending: 1 } },
+    humanReview: "not-recorded",
+  });
+  expect(
+    row.inspection.artifacts
+      .filter((file: any) =>
+        ["worktree", "patch", "check", "assessment"].includes(file.id),
+      )
+      .every((file: any) => file.state === "available"),
+  ).toBe(true);
+  const html = await readFile(files.html, "utf8");
+  expect(html).toContain("Full frozen rubric");
+  expect(html).toContain("value.txt contains the specified value");
+  expect(html).toContain("Human inspection guide");
+  expect(html).toContain("Unplotted: judge score unavailable");
+  expect(html).toContain(`file://${row.candidate.patch}`);
+  expect(html).toContain(`file://${plan.output}/${row.slotId}-check.log`);
+  expect(html).not.toContain('type="checkbox"');
+  const embedded = JSON.parse(
+    /id="report-data">([\s\S]*?)<\/script>/.exec(html)![1]!,
+  );
+  expect(embedded).toEqual(report);
+  expect(JSON.parse(/id="csv-data">([\s\S]*?)<\/script>/.exec(html)![1]!)).toBe(
+    await readFile(files.csv, "utf8"),
+  );
+  expect(await readFile(files.csv, "utf8")).toContain('"judgeChecklistStatus"');
+  await assertOfflineReportInteractions(
+    html,
+    await readFile(files.csv, "utf8"),
+  );
+});
+
+it("marks changed patches, missing uncited logs and stale candidate findings without inventing review results", async () => {
+  const { plan } = await fixture(
+    {},
+    {
+      rubric: [
+        {
+          id: "value",
+          requirement: "The value works",
+          weight: 1,
+          partialCredit: 0.5,
+          applicability: "always",
+          evidence: ["code"],
+        },
+      ],
+    },
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) =>
+      controlledJudge(request, (output) => {
+        output.requirements[0].evidence = [output.requirements[0].evidence[0]];
+      }),
+  });
+  const saved = await readBenchmarkAssessments(plan.output);
+  const candidate = saved.execution.attempts[0]!.candidate!;
+  const assessmentPath = saved.execution.attempts[0]!.judge.records![0]!.path;
+  const before = await readFile(assessmentPath);
+  await writeFile(candidate.patch, "changed patch");
+  await rm(join(plan.output, `${plan.slots[0]!.id}-check.log`));
+  const files = await writeBenchmarkReport({
+    directory: plan.output,
+    outputDirectory: join(plan.output, "changed-report"),
+  });
+  let row = JSON.parse(await readFile(files.json, "utf8")).rows[0];
+  expect(row.score).toBe(100);
+  expect(row.inspection.artifacts).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: "patch", state: "changed" }),
+      expect.objectContaining({ id: "check", state: "missing" }),
+    ]),
+  );
+  expect(await readFile(files.html, "utf8")).not.toContain(
+    `href="file://${candidate.patch}"`,
+  );
+  await writeFile(join(candidate.worktree, "value.txt"), "changed source\n");
+  await writeBenchmarkReport({
+    directory: plan.output,
+    outputDirectory: join(plan.output, "changed-report"),
+  });
+  row = JSON.parse(await readFile(files.json, "utf8")).rows[0];
+  expect(row).toMatchObject({
+    score: null,
+    coverage: null,
+    applicable: false,
+    inspection: {
+      humanReview: "not-recorded",
+      checklist: { state: "stale", counts: { met: 0, pending: 1 } },
+      criteria: [{ verdict: "not_assessed", historicalVerdict: "met" }],
+    },
+  });
+  expect(await readFile(files.html, "utf8")).toContain(
+    "These retained judge observations are historical",
+  );
+  expect(await readFile(assessmentPath)).toEqual(before);
+});
+
+it("rejects report destinations inside sealed evidence through API and CLI including symlink aliases", async () => {
+  const { plan } = await fixture();
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => controlledJudge(request),
+  });
+  const saved = await readBenchmarkAssessments(plan.output);
+  const attempt = saved.execution.attempts[0]!;
+  const candidate = attempt.candidate!;
+  const alias = join(dirname(plan.output), "candidate-alias");
+  await symlink(candidate.worktree, alias, "dir");
+  const paths = [
+    join(plan.output, "manifest.json"),
+    join(plan.output, "execution.json"),
+    join(plan.output, `${attempt.slotId}-check.log`),
+    candidate.patch,
+    ...candidate.paths.map((path) => join(candidate.worktree, path)),
+    ...attempt.judge.records!.map((record) => record.path),
+  ];
+  const before = await Promise.all(paths.map((path) => readFile(path)));
+  for (const output of [
+    candidate.worktree,
+    join(candidate.worktree, "new-report"),
+    join(alias, "new-report"),
+    ...["assessments", "visuals", "runtime", "protected"].map((name) =>
+      join(plan.output, name, "new-report"),
+    ),
+  ])
+    await expect(
+      writeBenchmarkReport({ directory: plan.output, outputDirectory: output }),
+    ).rejects.toThrow("outside retained candidate and evidence");
+  await expect(
+    promisify(execFile)(process.execPath, [
+      join(import.meta.dirname, "..", "dist", "main.js"),
+      "benchmark-report",
+      "--directory",
+      plan.output,
+      "--output",
+      join(alias, "cli-report"),
+    ]),
+  ).rejects.toMatchObject({ code: 1 });
+  for (const [index, name] of [
+    "report.html",
+    "report.json",
+    "evaluations.csv",
+  ].entries()) {
+    const copy = join(dirname(plan.output), `export-alias-${index}`);
+    await mkdir(copy);
+    await symlink(paths[index]!, join(copy, name));
+    await expect(
+      writeBenchmarkReport({ directory: plan.output, outputDirectory: copy }),
+    ).rejects.toThrow("must not alias retained evidence");
+    expect(await readdir(copy)).toEqual([name]);
+  }
+  const hardlinkCopy = join(dirname(plan.output), "export-hardlink");
+  await mkdir(hardlinkCopy);
+  await link(candidate.patch, join(hardlinkCopy, "report.html"));
+  await expect(
+    writeBenchmarkReport({
+      directory: plan.output,
+      outputDirectory: hardlinkCopy,
+    }),
+  ).rejects.toThrow("must not alias retained evidence");
+  const temporaryCopy = join(dirname(plan.output), "temporary-alias");
+  await mkdir(temporaryCopy);
+  await symlink(
+    candidate.patch,
+    join(temporaryCopy, `report.html.${process.pid}.tmp`),
+  );
+  await expect(
+    writeBenchmarkReport({
+      directory: plan.output,
+      outputDirectory: temporaryCopy,
+    }),
+  ).rejects.toMatchObject({ code: "EEXIST" });
+  await expect(
+    promisify(execFile)(process.execPath, [
+      join(import.meta.dirname, "..", "dist", "main.js"),
+      "benchmark-report",
+      "--directory",
+      plan.output,
+      "--output",
+      join(dirname(plan.output), "export-alias-0"),
+    ]),
+  ).rejects.toMatchObject({ code: 1 });
+  expect(await Promise.all(paths.map((path) => readFile(path)))).toEqual(
+    before,
+  );
+  expect(
+    (await readdir(candidate.worktree)).filter((name) =>
+      [
+        "report.html",
+        "report.json",
+        "evaluations.csv",
+        "new-report",
+        "cli-report",
+      ].includes(name),
+    ),
+  ).toEqual([]);
+  expect(
+    (await readBenchmarkAssessments(plan.output)).assessments[0]!.applicable,
+  ).toBe(true);
+});
+
+it("retains a positive judge score alongside failed required checks without an acceptance claim", async () => {
+  const { plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"] },
+    {
+      rubric: [
+        {
+          id: "value",
+          requirement: "The value works",
+          weight: 1,
+          partialCredit: 0.5,
+          applicability: "always",
+          evidence: ["code"],
+        },
+      ],
+    },
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => {
+      const runtime = controlledJudge(request, (output) => {
+        output.requirements[0].evidence = [output.requirements[0].evidence[0]];
+      });
+      const exec = runtime.exec;
+      runtime.exec = async (input) =>
+        input.command === plan.check
+          ? { stdout: "required check failed", stderr: "", exitCode: 1 }
+          : exec(input);
+      return runtime;
+    },
+  });
+  const report = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  expect(report.rows[0]).toMatchObject({
+    score: 100,
+    check: "failed",
+    projectAcceptance: "not_assessed",
+    inspection: {
+      humanReview: "not-recorded",
+      checklist: { state: "all-met" },
+    },
+  });
+  expect(report.rows[0].judgeChecklistStatus).toContain(
+    "required checks failed",
+  );
+  expect(await readFile(join(plan.output, "report.html"), "utf8")).toContain(
+    "Mandatory failure",
+  );
+});
+
+it("keeps a frozen inapplicable rubric distinct from missing evidence and a numeric score", async () => {
+  const { plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"] },
+    {
+      visualRequired: false,
+      rubric: [
+        {
+          id: "visual",
+          requirement: "Only for a visual task",
+          weight: 1,
+          partialCredit: 0.5,
+          applicability: "visual",
+          evidence: ["visual"],
+        },
+      ],
+    },
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) =>
+      controlledJudge(request, (output) => {
+        output.requirements[0].verdict = "not_applicable";
+        output.requirements[0].evidence = [];
+      }),
+  });
+  const report = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  expect(report.rows[0]).toMatchObject({
+    score: null,
+    inspection: {
+      checklist: {
+        state: "no-applicable-requirements",
+        counts: { applicable: 0, met: 0, pending: 0, notApplicable: 1 },
+      },
+    },
+  });
+  expect(await readFile(join(plan.output, "report.html"), "utf8")).toContain(
+    "No applicable judge requirements",
+  );
+  expect(await readFile(join(plan.output, "report.html"), "utf8")).toContain(
+    "No applicable rubric weight",
+  );
+});
+
+// Execute the emitted offline script in a DOM double. This checks interaction
+// logic and download bytes, not native browser rendering or keyboard behavior.
+const assertOfflineReportInteractions = async (html: string, csv: string) => {
+  const element = (dataset: Record<string, string> = {}) => ({
+    dataset,
+    hidden: false,
+    open: false,
+    value: "",
+    textContent: "",
+    listeners: new Map<string, (event: any) => void>(),
+    addEventListener(type: string, listener: (event: any) => void) {
+      this.listeners.set(type, listener);
+    },
+    dispatch(type: string, event: any = {}) {
+      this.listeners.get(type)?.(event);
+    },
+  });
+  const scope = element(),
+    unit = element(),
+    task = element();
+  scope.value = "full";
+  unit.value = "api";
+  task.value = "1";
+  const graphs = [
+    element({ graph: "full:api", task: "1" }),
+    element({ graph: "implementation:codexStandard", task: "1" }),
+    element({ graph: "implementation:codexStandard", task: "2" }),
+  ];
+  const costs = [
+    element({ costView: "full:api" }),
+    element({ costView: "implementation:codexStandard" }),
+  ];
+  const replaceChildren = vi.fn();
+  const points = [0, 1].map((index) => ({
+    ...element({ point: String(index) }),
+    closest: () => ({ querySelectorAll: () => points }),
+    focus() {
+      this.dispatch("focus");
+    },
+  }));
+  const exports = [element({ export: "json" }), element({ export: "csv" })];
+  const candidate = element(),
+    frozenTask = element();
+  const json = /id="report-data">([\s\S]*?)<\/script>/.exec(html)![1]!;
+  const csvData = /id="csv-data">([\s\S]*?)<\/script>/.exec(html)![1]!;
+  const nodes: Record<string, any> = {
+    '[name="cost-scope"]:checked': scope,
+    '[name="cost-unit"]:checked': unit,
+    "#task-choice": task,
+    "#point-detail": { replaceChildren },
+    "#cost-basis": element(),
+    "#candidate-1": candidate,
+    "#frozen-task-1": frozenTask,
+    "#report-data": { textContent: json },
+    "#csv-data": { textContent: csvData },
+    ...Object.fromEntries(
+      points.map((_, index) => [
+        `#detail-${index}`,
+        { content: { cloneNode: () => ({ index }) } },
+      ]),
+    ),
+  };
+  const lists: Record<string, any[]> = {
+    "[data-graph]": graphs,
+    "[data-cost-view]": costs,
+    "[data-point]": points,
+    '[name="cost-unit"], [name="cost-scope"], #task-choice': [
+      scope,
+      unit,
+      task,
+    ],
+    "[data-export]": exports,
+  };
+  const downloads: { href: string; download: string; click(): void }[] = [];
+  const document = {
+    ...element(),
+    querySelector: (selector: string) => {
+      if (!(selector in nodes))
+        throw new Error(`Unexpected selector: ${selector}`);
+      return nodes[selector];
+    },
+    querySelectorAll: (selector: string) => {
+      if (!(selector in lists))
+        throw new Error(`Unexpected selector: ${selector}`);
+      return lists[selector];
+    },
+    createElement: () => {
+      const anchor = { href: "", download: "", click: vi.fn() };
+      downloads.push(anchor);
+      return anchor;
+    },
+  };
+  const blobs: Blob[] = [],
+    timers: (() => void)[] = [];
+  const revokeObjectURL = vi.fn();
+  runInNewContext(/<script>([\s\S]*?)<\/script>/.exec(html)![1]!, {
+    document,
+    Blob,
+    URL: {
+      createObjectURL: (blob: Blob) => {
+        blobs.push(blob);
+        return `blob:fixture-${blobs.length}`;
+      },
+      revokeObjectURL,
+    },
+    setTimeout: (callback: () => void) => timers.push(callback),
+  });
+  expect(graphs.map((node) => node.hidden)).toEqual([false, true, true]);
+  scope.value = "implementation";
+  unit.value = "codexStandard";
+  scope.dispatch("change");
+  expect(graphs.map((node) => node.hidden)).toEqual([true, false, true]);
+  expect(costs.map((node) => node.hidden)).toEqual([true, false]);
+  expect(nodes["#cost-basis"].textContent).toContain("Implementation only");
+  task.value = "2";
+  task.dispatch("change");
+  expect(graphs.map((node) => node.hidden)).toEqual([true, true, false]);
+  points[0]!.dispatch("focus");
+  expect(replaceChildren).toHaveBeenLastCalledWith({ index: 0 });
+  const preventDefault = vi.fn();
+  points[0]!.dispatch("keydown", { key: "ArrowRight", preventDefault });
+  expect(replaceChildren).toHaveBeenLastCalledWith({ index: 1 });
+  points[0]!.dispatch("keydown", { key: "ArrowLeft", preventDefault });
+  expect(replaceChildren).toHaveBeenLastCalledWith({ index: 1 });
+  for (const key of ["Enter", " "])
+    points[0]!.dispatch("keydown", { key, preventDefault });
+  expect(replaceChildren).toHaveBeenLastCalledWith({ index: 0 });
+  expect(preventDefault).toHaveBeenCalledTimes(4);
+  // The anchor can be inserted by a point-detail clone after listeners attach.
+  document.dispatch("click", {
+    target: {
+      closest: (selector: string) =>
+        selector === "[data-open-task]" ? { dataset: { openTask: "1" } } : null,
+    },
+  });
+  expect(frozenTask.open).toBe(true);
+  document.dispatch("click", {
+    target: {
+      closest: (selector: string) =>
+        selector === "[data-open-row]" ? { dataset: { openRow: "1" } } : null,
+    },
+  });
+  expect(candidate.open).toBe(true);
+  exports.forEach((node) => node.dispatch("click"));
+  expect(downloads.map((link) => link.download)).toEqual([
+    "report.json",
+    "evaluations.csv",
+  ]);
+  expect(JSON.parse(await blobs[0]!.text())).toEqual(JSON.parse(json));
+  expect(await blobs[1]!.text()).toBe(csv);
+  timers.forEach((callback) => callback());
+  expect(revokeObjectURL.mock.calls.flat()).toEqual([
+    "blob:fixture-1",
+    "blob:fixture-2",
+  ]);
+};
 
 const syntheticReportRates: NonNullable<LaunchContract["rateCard"]> = {
   source: "Synthetic report accounting fixture, not official prices",
@@ -1628,7 +2157,7 @@ it("returns success through the built CLI for a completed code assessment", asyn
   await runTicketBenchmark(plan, undefined, 1, {
     createRuntime: async (request) => controlledJudge(request),
   });
-  const stdout = execFileSync(
+  const { stdout, stderr } = await promisify(execFile)(
     process.execPath,
     [
       join(process.cwd(), "dist", "main.js"),
@@ -1642,6 +2171,9 @@ it("returns success through the built CLI for a completed code assessment", asyn
     status: "complete",
     completed: 1,
   });
+  expect(stderr).toContain(`xdg-open '${join(plan.output, "report.html")}'`);
+  expect(stderr).toContain(join(plan.output, "candidates"));
+  expect(stderr).toContain("docs/benchmark-reports.md");
 }, 10000);
 
 it.each([true, false])(
@@ -2761,6 +3293,38 @@ it("links an explicit retry to the interrupted attempt without replacing evidenc
     implementationCalls: 2,
   });
   expect(snapshot.unrun).toEqual([plan.slots[1]!.id]);
+  const report = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  const attempts = report.rows.filter(
+    (row: any) => row.slotId === original.slotId,
+  );
+  expect(attempts).toHaveLength(2);
+  expect(attempts.map((row: any) => row.sampleCount)).toEqual([1, 0]);
+  expect(attempts[1].retryOf).toBe(original.id);
+  expect(attempts[0].candidate.head).not.toBe(attempts[1].candidate.head);
+  expect(attempts[0].inspection.criteria).toEqual(
+    attempts[1].inspection.criteria,
+  );
+  for (const [index, key] of [
+    original.slotId,
+    snapshot.attempts[1]!.id,
+  ].entries()) {
+    expect(attempts[index].inspection.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "worktree",
+          path: join(plan.output, "candidates", key, "worktree"),
+          state: "available",
+        }),
+        expect.objectContaining({
+          id: "patch",
+          path: join(plan.output, "candidates", key, "candidate.patch"),
+          state: "available",
+        }),
+      ]),
+    );
+  }
   expect(
     await readFile(
       join(plan.output, `${plan.slots[0]!.id}-implementation.jsonl`),
