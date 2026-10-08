@@ -111,7 +111,7 @@ const contractSchema = z
       .optional(),
     minimumFreeBytes: z.number().int().positive().optional(),
     minimumFreeInodes: z.number().int().positive().optional(),
-    implementationMinutes: z.number().int().positive().optional(),
+    implementationMinutes: z.number().int().positive().nullable().optional(),
     judgeMinutes: z.number().int().positive().optional(),
     checksMinutes: z.number().int().positive().optional(),
     protectedFiles: z.array(z.string().min(1)).optional(),
@@ -226,7 +226,7 @@ export interface FrozenLaunch {
   readonly allowances: {
     readonly implementationCallsPerSlot: 1;
     readonly judgeCallsPerSlot: 1;
-    readonly implementationMs: number;
+    readonly implementationMs: number | null;
     readonly judgeMs: number;
     readonly setupMs: number;
     readonly checksMs: number;
@@ -1088,7 +1088,10 @@ export const freezeLaunch = async (input: {
     allowances: {
       implementationCallsPerSlot: 1,
       judgeCallsPerSlot: 1,
-      implementationMs: (config.implementationMinutes ?? 15) * 60_000,
+      implementationMs:
+        config.implementationMinutes == null
+          ? null
+          : config.implementationMinutes * 60_000,
       judgeMs: (config.judgeMinutes ?? 10) * 60_000,
       setupMs: 300_000,
       checksMs: (config.checksMinutes ?? 5) * 60_000,

@@ -74,7 +74,7 @@ const coverageText = (row: Row) =>
     ? "No applicable rubric weight"
     : row.coverage === null
       ? "Coverage unknown"
-      : `${number(row.coverage * 100)}% coverage of applicable rubric weight`;
+      : `${row.coverage < 1 ? "Incomplete assessment · " : ""}${number(row.coverage * 100)}% coverage of applicable rubric weight`;
 const inspectionArtifact = (artifact: InspectionArtifact) =>
   `${artifact.state === "available" ? artifactLink(artifact.path!, artifact.label) : `<span class="warning">${escape(artifact.label)} · ${escape(artifact.state)}</span>`}<span class="sub">${escape(artifact.reason ?? "Recorded bytes verified")}${artifact.path ? ` · <span class="mono">${escape(artifact.path)}</span>` : ""}</span>`;
 const inspectionGuide = (row: Row) =>

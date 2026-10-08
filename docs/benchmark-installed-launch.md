@@ -94,17 +94,30 @@ tested SELinux host, seccomp alone allowed namespace creation but still blocked
 the private devpts mount. A completed activation turn also needs the successful
 shell-command receipt before task work can start, including after resume.
 
-Calibrate the implementation allowance against the selected ticket before
-freezing a comparison. Use a separate calibration run, include startup and
-required implementation work, and record the measured basis for the common
-`implementationMinutes` value. The default 15 minutes is an admission limit,
-not evidence that a ticket fits. Declare `controls.knownBad` and
-`controls.knownGood` to prove that the protected check rejects a broken candidate
-and accepts a correction before measuring the arms.
+New runs have no individual implementation deadline by default. Omit
+`implementationMinutes` or set it to `null` to let each worker use the remaining
+`--max-minutes` budget, excluding reserves for candidate sealing, protected
+checks, judging and cleanup. The worker receives the effective UTC deadline in
+its task prompt. Earlier arms can consume the budget and leave later arms unrun;
+this mode does not promise equal implementation time or a complete comparison.
+
+To use an equal per-arm cap, set a positive integer `implementationMinutes`.
+Calibrate that allowance against the selected ticket in a separate run before
+freezing the comparison. Increasing only `--max-minutes` never overrides an
+explicit implementation cap. Existing frozen manifests retain their deadlines;
+changing this policy requires a new run, not a resume of the old one.
+
+Declare `controls.knownBad` and `controls.knownGood` to prove that the protected
+check rejects a broken candidate and accepts a correction before measuring the
+arms. Include every required suite in the frozen checker. Database tests must
+run against an owned disposable database and fail readiness when it is absent;
+a skipped PostgreSQL suite does not prove transaction correctness. Candidate-added
+tests are excluded from the protected checker, so freeze independent acceptance
+tests in the base before launching.
 
 `--max-minutes` bounds the whole run, including setup, checks, judging and
-cleanup. Admission reserves each phase's maximum, so an allowance smaller than
-those reservations can leave every slot unrun. `--max-new-slots` limits dispatch,
+cleanup. Admission reserves the verification phases and any explicit implementation cap,
+so an allowance smaller than those reservations can leave every slot unrun. `--max-new-slots` limits dispatch,
 not the frozen comparison denominator. The contract can bound implementation
 and judge minutes, independent `checksMinutes` (default five minutes), and total
 calls. A safely sealed timed-out candidate still runs the protected check within

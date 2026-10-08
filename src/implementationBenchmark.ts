@@ -585,7 +585,7 @@ export const runImplementationBenchmark = async (
     ledger.budget.cleanupReservedMs;
   const phase = async <T>(
     name: string,
-    limitMs: number,
+    limitMs: number | null,
     phases: Attempt["phases"],
     operation: (signal: AbortSignal, remainingMs: number) => Promise<T>,
     cleanup = false,
@@ -610,20 +610,39 @@ export const runImplementationBenchmark = async (
         ? allowances.checksMs
         : group(name) === "judge"
           ? allowances.judgeMs
-          : limitMs;
+          : (limitMs ?? Infinity);
     const spent = phases
       .filter((item) => group(item.name) === group(name))
       .reduce((total, item) => total + item.elapsedMs, 0);
+    // Leave enough of the run budget to seal, check and clean up this candidate.
+    // The judge and final cleanup already have separate ledger reservations.
+    const availableMs =
+      remaining() -
+      (name === "implementation"
+        ? allowances.sealMs + allowances.checksMs + allowances.cleanupMs
+        : 0);
     const admittedMs = Math.min(
       groupLimit - spent,
-      cleanup ? groupLimit - spent : remaining(),
+      cleanup ? groupLimit - spent : availableMs,
     );
+    const timeoutReason =
+      name === "implementation"
+        ? limitMs !== null && groupLimit - spent <= availableMs
+          ? `${limitMs / 60_000}-minute implementation deadline exceeded`
+          : "Overall run budget available for implementation exhausted; remaining time reserved for checks, judging and cleanup"
+        : `${name} deadline exceeded`;
+    const interruption = () =>
+      new PhaseFailure(
+        progress.signal.aborted && !cleanup ? "cancelled" : "timed-out",
+        progress.signal.aborted && !cleanup
+          ? `${name} cancelled`
+          : timeoutReason,
+      );
     if (admittedMs <= 0)
       throw new PhaseFailure("timed-out", `${name} has no remaining allowance`);
     const controller = new AbortController();
     const timer = setTimeout(
-      () =>
-        controller.abort(new PhaseFailure("timed-out", `${name} timed out`)),
+      () => controller.abort(new PhaseFailure("timed-out", timeoutReason)),
       admittedMs,
     );
     const signal = cleanup
@@ -636,25 +655,15 @@ export const runImplementationBenchmark = async (
     let pending: Promise<T> | undefined;
     try {
       await persist("phase-started", name);
-      if (signal.aborted)
-        throw new PhaseFailure(
-          progress.signal.aborted && !cleanup ? "cancelled" : "timed-out",
-          `${name} interrupted`,
-        );
+      if (signal.aborted) throw interruption();
       const interrupted = new Promise<never>((_, reject) => {
-        abort = () =>
-          reject(
-            new PhaseFailure(
-              progress.signal.aborted && !cleanup ? "cancelled" : "timed-out",
-              `${name} interrupted`,
-            ),
-          );
+        abort = () => reject(interruption());
         signal.addEventListener("abort", abort, { once: true });
       });
       pending = operation(signal, Math.max(0, admittedMs - (now() - begin)));
       const result = await Promise.race([pending, interrupted]);
       if (now() - begin > admittedMs)
-        throw new PhaseFailure("timed-out", `${name} exceeded its allowance`);
+        throw new PhaseFailure("timed-out", timeoutReason);
       return result;
     } catch (error) {
       if (pending && signal.aborted) {
@@ -1390,7 +1399,7 @@ export const runImplementationBenchmark = async (
         await runJudge(attempt);
     const attemptMs =
       allowances.setupMs +
-      allowances.implementationMs +
+      (allowances.implementationMs ?? 1) +
       allowances.sealMs +
       allowances.checksMs +
       allowances.cleanupMs +
@@ -1740,10 +1749,6 @@ export const runImplementationBenchmark = async (
               serviceTier: "default",
             });
             const prompt = `Implement exactly this frozen task in one invocation. Do not delegate or invoke another agent. Keep edits inside ${JSON.stringify(launch.allowedEdits)}. Candidate commits or completion messages do not establish acceptance.\n\n${plan.tickets[slot.ticket]!.text}\n\nFrozen governing instructions, available read-only:\n${JSON.stringify(instructionReferences)}\nRead root governing files before editing. Read nested governing files for each directory you edit and follow their reference loading conditions. Resolve linked reference paths against the frozen file's location. Review criteria are applied by the independent judge.`;
-            const built = provider.buildPrintCommand({
-              prompt,
-              dangerouslySkipPermissions: true,
-            });
             let stream = "";
             let usage: IterationUsage | null = null;
             let sessionId: string | null = null;
@@ -1774,8 +1779,18 @@ export const runImplementationBenchmark = async (
                 "implementation",
                 allowances.implementationMs,
                 attempt.phases,
-                (signal) =>
-                  runtime!.exec({ ...built, signal, onLine: observe }),
+                (signal, remainingMs) => {
+                  const deadline = new Date(now() + remainingMs).toISOString();
+                  const budget =
+                    allowances.implementationMs === null
+                      ? "There is no individual implementation time limit. You share the remaining overall run budget with later arms."
+                      : `Your configured implementation allowance is ${allowances.implementationMs / 60_000} minutes.`;
+                  const built = provider.buildPrintCommand({
+                    prompt: `${prompt}\n\n${budget} The controller will stop this invocation at ${deadline}. Time for protected checks, judging and cleanup is reserved separately. Finish and summarize your work before this deadline.`,
+                    dangerouslySkipPermissions: true,
+                  });
+                  return runtime!.exec({ ...built, signal, onLine: observe });
+                },
               );
               if (!stream)
                 for (const line of result.stdout.split("\n")) observe(line);

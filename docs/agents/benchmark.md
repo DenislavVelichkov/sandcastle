@@ -18,7 +18,7 @@ Use the [installed consumer guide](../benchmark-installed-launch.md) for readine
 - Use NUL-separated Git path discovery for frozen benchmark inputs; line-oriented Git output quotes Unicode filenames and can silently omit protected checks.
 - **CRITICAL**: Fixed benchmark task scopes must include `.changeset`; historical candidates follow this repository's changeset rule, and a `src`-only scope rejects them after reviews.
 - Freeze visual applicability per selected benchmark task; a scoped visual criterion must not waive another task's nonvisual requirements.
-- Calibrate a common implementation allowance for the selected ticket before comparison. Prove known-bad and known-good protected-check controls; reserve checks separately and preserve a timed-out implementation status when checking its safely sealed partial candidate.
+- New contracts default to no individual implementation cap; earlier arms can consume the overall budget. Frozen numeric caps remain binding, so change the contract and launch a fresh run to remove them. When equal time is required, calibrate a common implementation allowance for the selected ticket before comparison. Prove known-bad and known-good protected-check controls; reserve checks separately and preserve a timed-out implementation status when checking its safely sealed partial candidate.
 
 ## Evidence, reporting and accounting
 

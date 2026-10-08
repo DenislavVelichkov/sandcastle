@@ -392,6 +392,25 @@ it("binds frozen identity to task, rubric, judge, dependencies and base instruct
   expect(current.launch?.dependencies[0]?.text).toBe("Changed dependencies\n");
 });
 
+it.each([undefined, null])(
+  "freezes no individual implementation deadline for %s",
+  async (implementationMinutes) => {
+    const { repo } = await project();
+    await writeFile(
+      join(repo, "launch.json"),
+      JSON.stringify({ version: 1, implementationMinutes }),
+    );
+    const plan = await planTicketBenchmark({
+      cwd: repo,
+      tickets: ["task.md"],
+      contract: "launch.json",
+    });
+    expect(plan.launch!.allowances.implementationMs).toBeNull();
+    expect(plan.invocationLimitMs).toBeNull();
+    expect(invocationBudgetMs(100_000, null, 10_000)).toBe(90_000);
+  },
+);
+
 it("freezes linked governing references and separate phase allowances", async () => {
   const { repo, git } = await project();
   await mkdir(join(repo, "docs"));

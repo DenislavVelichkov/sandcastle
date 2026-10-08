@@ -77,7 +77,7 @@ export interface TicketBenchmarkPlan {
   readonly prepare: string | null;
   readonly check: string | null;
   readonly overallLimitMs: number;
-  readonly invocationLimitMs: number;
+  readonly invocationLimitMs: number | null;
   readonly output: string;
 }
 
@@ -126,9 +126,9 @@ const sha256 = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 export const invocationBudgetMs = (
   deadlineMs: number,
-  limitMs: number,
+  limitMs: number | null,
   nowMs = Date.now(),
-) => Math.max(0, Math.min(limitMs, deadlineMs - nowMs));
+) => Math.max(0, Math.min(limitMs ?? Infinity, deadlineMs - nowMs));
 const command = (cwd: string, name: string, args: readonly string[]) =>
   execFileSync(name, [...args], {
     cwd,

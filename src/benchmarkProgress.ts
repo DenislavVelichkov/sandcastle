@@ -33,6 +33,9 @@ import {
   type JudgeAssessment,
 } from "./benchmarkJudge.js";
 
+const scoreLabel = (score: JudgeAssessment["score"]) =>
+  `Score ${score.value}%${score.coverage < 1 ? ` (incomplete; ${Math.round(score.coverage * 100)}% coverage)` : ""}`;
+
 export type BenchmarkPhase =
   | "preflight"
   | "worktree-preparation"
@@ -250,7 +253,7 @@ const executionView = (
       reason: item.reason ?? null,
       scoreLabel:
         item.judge.assessments?.at(-1)?.score.value != null
-          ? `Score ${item.judge.assessments.at(-1)!.score.value}%`
+          ? scoreLabel(item.judge.assessments.at(-1)!.score)
           : saved.status === "running" &&
               (["pending", "running"].includes(item.judge.status) ||
                 item.status === "running")
@@ -669,7 +672,7 @@ export const readBenchmarkProgress = async (
     const score = attempt.assessment?.score.value;
     attempt.scoreLabel =
       score != null
-        ? `Score ${score}%`
+        ? scoreLabel(attempt.assessment!.score)
         : latest.snapshot.status === "running" &&
             (["pending", "running"].includes(attempt.judge) ||
               attempt.status === "running")

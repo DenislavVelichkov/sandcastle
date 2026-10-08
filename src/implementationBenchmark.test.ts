@@ -157,11 +157,10 @@ const fixture = async (
     await mkdir(dirname(join(repo, path)), { recursive: true });
     await writeFile(join(repo, path), file.text, { mode: file.mode });
   }
-  if (contract)
-    await writeFile(
-      join(repo, "launch.json"),
-      JSON.stringify({ version: 1, ...contract }),
-    );
+  await writeFile(
+    join(repo, "launch.json"),
+    JSON.stringify({ version: 1, implementationMinutes: 15, ...contract }),
+  );
   git(repo, "add", ".");
   git(repo, "commit", "-m", "Frozen base");
   if (contract?.controls?.knownGood) {
@@ -179,7 +178,7 @@ const fixture = async (
       check: "sh check.sh",
       output: join(root, "evidence"),
       preflight: true,
-      contract: contract ? "launch.json" : undefined,
+      contract: "launch.json",
       ...options,
     },
     {
@@ -1015,6 +1014,61 @@ const controlledJudge = (
   stop: async () => {},
 });
 
+it.each([false, true])(
+  "uses the overall implementation budget and preserves verification reserves (exhausted=%s)",
+  async (exhausted) => {
+    const { plan } = await fixture(
+      { arms: ["gpt-6-astra:medium"], maxMinutes: 100 },
+      { implementationMinutes: null },
+    );
+    let time = Date.now();
+    let prompt = "";
+    await runTicketBenchmark(plan, undefined, 1, {
+      now: () => time,
+      createRuntime: async (request) => {
+        const runtime = controlledJudge(request);
+        const execute = runtime.exec;
+        runtime.exec = async (input) => {
+          if (request.role === "implementation") {
+            prompt = input.stdin ?? input.command;
+            const result = await execute(input);
+            const { snapshot } = await readBenchmarkProgress(plan.output);
+            time += exhausted
+              ? snapshot.allowance.activeReservedMs + 1
+              : 46 * 60_000;
+            return result;
+          }
+          if (request.role === "checks")
+            return {
+              stdout: "protected checks passed",
+              stderr: "",
+              exitCode: 0,
+            };
+          return execute(input);
+        };
+        return runtime;
+      },
+    });
+    const { execution } = await readBenchmarkAssessments(plan.output);
+    expect(prompt).toContain("no individual implementation time limit");
+    expect(prompt).toContain("controller will stop this invocation at");
+    expect(execution.attempts[0]).toMatchObject({
+      status: exhausted ? "timed-out" : "completed",
+      check: { status: "passed" },
+      judge: { status: "complete" },
+    });
+    const attempt = execution.attempts[0]!;
+    expect(
+      attempt.phases.find((phase) => phase.name === "implementation")!.limitMs,
+    ).toBeGreaterThan(45 * 60_000);
+    if (exhausted)
+      expect(attempt.reason).toContain(
+        "Overall run budget available for implementation exhausted",
+      );
+    expect(execution.budget.elapsedMs).toBeLessThan(execution.budget.limitMs);
+  },
+);
+
 it("checks and grades a sealed timed-out candidate without changing its implementation outcome", async () => {
   const { plan } = await fixture({ arms: ["gpt-6-astra:medium"] });
   let time = Date.now();
@@ -1027,7 +1081,7 @@ it("checks and grades a sealed timed-out candidate without changing its implemen
       runtime.exec = async (input) => {
         if (request.role === "implementation") {
           const result = await execute(input);
-          time += plan.launch!.allowances.implementationMs + 1;
+          time += plan.launch!.allowances.implementationMs! + 1;
           return result;
         }
         if (request.role === "checks") {
@@ -1052,6 +1106,7 @@ it("checks and grades a sealed timed-out candidate without changing its implemen
   expect(checked).toBe(true);
   expect(execution.attempts[0]).toMatchObject({
     status: "timed-out",
+    reason: "15-minute implementation deadline exceeded",
     check: { status: "passed" },
     judge: { status: "complete" },
   });
@@ -1235,6 +1290,10 @@ it("computes weighted partial scores and leaves missing visuals outside assessed
     },
     usage: { inputTokens: 20, cacheReadInputTokens: 10, outputTokens: 12 },
   });
+  const progress = await readBenchmarkProgress(plan.output);
+  expect(progress.snapshot.attempts[0]!.scoreLabel).toBe(
+    "Score 62.5% (incomplete; 40% coverage)",
+  );
   expect(assessment.requirements[2]).toMatchObject({
     verdict: "not_assessed",
     gaps: ["visual"],
