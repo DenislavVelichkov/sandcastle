@@ -43,7 +43,7 @@ This comparison uses [upstream commit `e99f832`](https://github.com/mattpocock/s
 
 The task workflow remains opt-in. Projects own their tracker, prompts, checks, approval route, and Git target. Use the [workflow API reference](docs/workflow.md) and [daily operating guide](docs/workflow-user-guide.md) when you need those controls.
 
-For benchmarks, follow the [installed consumer launch guide](docs/benchmark-installed-launch.md) to verify the installed commands and worker sandbox, select a project/task with a calibrated allowance, observe or recover the run, and open its offline judge-score report. New benchmarks use the overall run budget without an individual implementation deadline unless the contract sets an explicit cap. Workers receive their effective deadline, with time reserved for verification. Protected checks can assess safely sealed timed-out candidates while preserving the timeout. Reproducible package and runtime fixtures prove orchestration without calling models or claiming model performance.
+For benchmarks, follow the [installed consumer launch guide](docs/benchmark-installed-launch.md) to verify the installed commands and worker sandbox, select a project/task with a calibrated allowance, observe or recover the run, and open its offline judge-score report. Criteria requiring runtime check evidence need mapped frozen check cases and case-specific good/bad controls before dispatch. Generic passing suites cannot satisfy those criteria. New benchmarks use the overall run budget without an individual implementation deadline unless the contract sets an explicit cap. Workers receive their effective deadline, with time reserved for verification. Protected checks can assess safely sealed timed-out candidates while preserving the timeout. Reproducible package and runtime fixtures prove orchestration without calling models or claiming model performance.
 
 The [routing decision](docs/workflow-user-guide.md#review-the-routing-decision) retains fixed Sol High. The completed three-model pilot validates one ticket; the incomplete historical studies establish no model ranking, adaptive activation, or subscription savings. The [capability evidence index](docs/workflow-evidence.md) records the tested limits. Owner answers use a project-authenticated host route; Codex Desktop chat answer delivery and automatic app-close shutdown remain disabled.
 
@@ -56,10 +56,10 @@ The [routing decision](docs/workflow-user-guide.md#review-the-routing-decision) 
 
 ## Quick start with Codex
 
-1. Install this fork's [release `0.12.0-dv8.31.0`](https://github.com/DenislavVelichkov/sandcastle/releases/tag/v0.12.0-dv8.31.0) and `tsx` in your project. See the [changelog](CHANGELOG.md#0120-dv8310) for this release's overall benchmark budget, explicit implementation caps and incomplete-score labels.
+1. Install this fork's [release `0.12.0-dv8.32.0`](https://github.com/DenislavVelichkov/sandcastle/releases/tag/v0.12.0-dv8.32.0) and `tsx` in your project. See the [changelog](CHANGELOG.md#0120-dv8320) for this release's mapped runtime checks, calibration controls and evidence-bound grading.
 
 ```bash
-pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.31.0/ai-hero-sandcastle-0.12.0-dv8.31.0.tgz tsx
+pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.32.0/ai-hero-sandcastle-0.12.0-dv8.32.0.tgz tsx
 ```
 
 The fork keeps the `@ai-hero/sandcastle` package name and import paths. Installing that name from the npm registry selects the upstream package. Use the fork archive and retain your lockfile to pin these changes.
@@ -113,7 +113,7 @@ The commands below update a manual installation. For registered installations, u
 2. Save the current `package.json` and lockfile, then replace the dependency with the versioned GitHub archive:
 
 ```bash
-pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.31.0/ai-hero-sandcastle-0.12.0-dv8.31.0.tgz
+pnpm add --save-dev https://github.com/DenislavVelichkov/sandcastle/releases/download/v0.12.0-dv8.32.0/ai-hero-sandcastle-0.12.0-dv8.32.0.tgz
 ```
 
 If Sandcastle is a production dependency in your project, omit `--save-dev`. Installing the package name from the npm registry selects upstream; the fork upgrade requires its archive.
@@ -125,7 +125,7 @@ pnpm exec sandcastle --version
 pnpm exec sandcastle benchmark --help
 ```
 
-The version must print `0.12.0-dv8.31.0`. Run your project's build and checks before starting new work. If a worker image installs Sandcastle separately, update its archive pin to the same version, rebuild that image with your existing Docker or Podman setup, and verify the worker's installed version too.
+The version must print `0.12.0-dv8.32.0`. Run your project's build and checks before starting new work. If a worker image installs Sandcastle separately, update its archive pin to the same version, rebuild that image with your existing Docker or Podman setup, and verify the worker's installed version too.
 
 4. Keep your existing `.sandcastle/` configuration, prompts, credentials and project scripts. The dependency upgrade does not regenerate them; initialization is for a new project. Commit the updated `package.json` and `pnpm-lock.yaml` so other installations can reproduce the upgrade with `pnpm install --frozen-lockfile`.
 

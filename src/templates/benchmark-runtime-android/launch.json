@@ -26,7 +26,19 @@
       "weight": 1,
       "partialCredit": 0.5,
       "applicability": "visual",
-      "evidence": ["check", "visual"]
+      "evidence": ["check", "visual"],
+      "checkCases": ["visible-label"]
+    }
+  ],
+  "checkCases": [
+    {
+      "id": "visible-label",
+      "command": "sh check.sh",
+      "files": ["check.sh"],
+      "controls": {
+        "knownBad": "benchmark-known-bad",
+        "knownGood": "main"
+      }
     }
   ]
 }

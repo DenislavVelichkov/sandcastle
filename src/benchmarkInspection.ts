@@ -209,6 +209,32 @@ export const benchmarkInspection = async (
       check?.outputSha256,
       boundCheck,
     ),
+    ...(await Promise.all(
+      [
+        ...new Set(
+          criteria
+            .filter((rule) => rule.applies)
+            .flatMap((rule) => rule.checkCases ?? []),
+        ),
+      ].map((id) => {
+        const result = check?.cases?.find((item) => item.id === id);
+        const definition = plan.launch!.checking.cases?.find(
+          (item) => item.id === id,
+        );
+        return artifact(
+          `check-case:${id}`,
+          `Check case: ${id}`,
+          result && evidenceId
+            ? join(plan.output, `${evidenceId}-check-case-${id}.log`)
+            : undefined,
+          result?.outputSha256,
+          boundCheck &&
+            !!definition &&
+            result?.commandSha256 === sha256(Buffer.from(definition.command)) &&
+            ["passed", "failed"].includes(check?.status ?? ""),
+        );
+      }),
+    )),
     await artifact(
       "assessment",
       "Sealed judge assessment",
@@ -274,9 +300,14 @@ export const benchmarkInspection = async (
     {
       id: "checks",
       title: "Inspect the required check output",
-      action: `Read the retained log for the frozen check: ${plan.check ?? "No configured check"}. Inspect failures and confirm the linked check requirements; a judge score cannot override a required failure.`,
+      action: `Read the retained log for the frozen check: ${plan.check ?? "No configured check"}, and every mapped case log. Inspect failures and confirm the linked check requirements; a judge score cannot override a required failure.`,
       criterionIds: ids("check"),
-      artifactIds: ["check"],
+      artifactIds: [
+        "check",
+        ...artifacts
+          .filter((item) => item.id.startsWith("check-case:"))
+          .map((item) => item.id),
+      ],
     },
     {
       id: "runtime",

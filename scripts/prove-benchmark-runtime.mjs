@@ -38,6 +38,18 @@ await git("config", "user.name", "Runtime fixture");
 await git("config", "user.email", "fixture@example.invalid");
 await git("add", ".");
 await git("commit", "-m", "Frozen runtime proof fixture");
+await git("checkout", "-b", "benchmark-known-bad");
+const candidateFile = kind === "browser" ? "index.html" : "MainActivity.java";
+await writeFile(
+  join(project, candidateFile),
+  (await readFile(join(project, candidateFile), "utf8")).replaceAll(
+    "Candidate ready",
+    "Candidate missing",
+  ),
+);
+await git("add", candidateFile);
+await git("commit", "-m", "Broken visible-label calibration");
+await git("checkout", "main");
 const plan = await planTicketBenchmark(
   {
     cwd: project,
@@ -119,7 +131,7 @@ const result = await runTicketBenchmark(plan, undefined, 1, {
             explanation:
               "The protected live check and candidate-bound screen support this controlled fixture requirement.",
             evidence: [
-              { kind: "check", id: "configured-check" },
+              { kind: "check", id: "check-case:visible-label" },
               {
                 kind: "visual",
                 id: kind === "android" ? "native-screen" : "browser-screen",

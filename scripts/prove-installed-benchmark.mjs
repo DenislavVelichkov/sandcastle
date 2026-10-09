@@ -199,6 +199,11 @@ try {
   await git("add", ".");
   await git("commit", "-m", "Frozen consumer fixture");
   const base = (await git("rev-parse", "HEAD")).stdout.trim();
+  await git("checkout", "-b", "correct");
+  await writeFile(join(project, "value.txt"), "correct\n");
+  await git("add", "value.txt");
+  await git("commit", "-m", "Working case calibration reference");
+  await git("checkout", "main");
   await writeFile(join(project, "value.txt"), "host working changes\n");
   await writeFile(
     join(project, "host-notes.txt"),
@@ -453,6 +458,76 @@ try {
     completionInstructionsOnStderr: true,
   };
   proof.usageRetained = true;
+  const caseContract = join(tools, "case-launch.json");
+  await save(caseContract, {
+    version: 1,
+    rubric: [
+      {
+        id: "value",
+        requirement: "value.txt contains correct",
+        weight: 1,
+        partialCredit: 0.5,
+        applicability: "nonvisual",
+        evidence: ["code", "check"],
+        checkCases: ["value"],
+      },
+    ],
+    checkCases: [
+      {
+        id: "value",
+        command: "sh check.sh",
+        files: ["check.sh"],
+        controls: { knownBad: "main", knownGood: "correct" },
+      },
+    ],
+  });
+  const caseRun = join(output, "criterion-cases");
+  await invoke([
+    "benchmark",
+    "--project",
+    project,
+    "--base",
+    base,
+    "--ticket",
+    "task.md",
+    "--contract",
+    caseContract,
+    "--check",
+    "sh check.sh",
+    "--arm",
+    "gpt-6-astra:medium",
+    "--max-minutes",
+    "90",
+    "--output",
+    caseRun,
+  ]);
+  const caseExecution = await read(join(caseRun, "execution.json"));
+  assert.equal(caseExecution.status, "complete");
+  assert.deepEqual(
+    caseExecution.controls.results.map((row) => [
+      row.kind,
+      row.checkCaseId,
+      row.exitCode,
+      row.status,
+    ]),
+    [
+      ["known-bad", "value", 1, "passed"],
+      ["known-good", "value", 0, "passed"],
+    ],
+  );
+  assert.equal(caseExecution.attempts[0].check.cases[0].id, "value");
+  const caseReport = await read(join(caseRun, "report.json"));
+  assert.equal(caseReport.rows[0].assessment.score.coverage, 1);
+  assert(
+    caseReport.rows[0].inspection.artifacts.some(
+      (item) => item.id === "check-case:value" && item.state === "available",
+    ),
+  );
+  proof.criterionChecks = {
+    calibratedBeforeMeasurement: true,
+    independentReceipt: true,
+    completeCoverage: true,
+  };
   proof.runtimes = [];
   for (const runtime of runtimes) {
     const runtimeProject = join(disposable, `runtime-${runtime}`);
@@ -474,6 +549,23 @@ try {
       ["commit", "-m", "Packaged runtime fixture"],
     ])
       await run("git", args, { cwd: runtimeProject });
+    await run("git", ["checkout", "-b", "benchmark-known-bad"], {
+      cwd: runtimeProject,
+    });
+    const candidateFile =
+      runtime === "browser" ? "index.html" : "MainActivity.java";
+    await writeFile(
+      join(runtimeProject, candidateFile),
+      (await readFile(join(runtimeProject, candidateFile), "utf8")).replaceAll(
+        "Candidate ready",
+        "Candidate missing",
+      ),
+    );
+    await run("git", ["add", candidateFile], { cwd: runtimeProject });
+    await run("git", ["commit", "-m", "Broken visible-label calibration"], {
+      cwd: runtimeProject,
+    });
+    await run("git", ["checkout", "main"], { cwd: runtimeProject });
     const directory = join(output, runtime);
     await run(
       cli,
@@ -573,6 +665,7 @@ try {
     complete,
     bad,
     cancelled,
+    caseRun,
     ...runtimes.map((kind) => join(output, kind)),
   ]) {
     const final = await read(join(directory, "execution.json"));

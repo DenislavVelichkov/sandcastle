@@ -107,13 +107,66 @@ freezing the comparison. Increasing only `--max-minutes` never overrides an
 explicit implementation cap. Existing frozen manifests retain their deadlines;
 changing this policy requires a new run, not a resume of the old one.
 
-Declare `controls.knownBad` and `controls.knownGood` to prove that the protected
-check rejects a broken candidate and accepts a correction before measuring the
-arms. Include every required suite in the frozen checker. Database tests must
+Every applicable rubric criterion requiring `check` evidence must list its
+required `checkCases`. Define each case with a unique ID, a command, frozen
+test files and its own `controls.knownBad` and `controls.knownGood` Git refs.
+Admission blocks missing mappings and controls even when worker preflight passes.
+The controller executes each case against both calibration commits before any
+implementation or judge call. A broken reference must fail; a working reference
+must pass. These controls consume the overall budget without model calls.
+
+```json
+{
+  "version": 1,
+  "checkCases": [
+    {
+      "id": "employee-csv",
+      "command": "pnpm exec vitest run tests/acceptance/employee-csv.test.ts",
+      "files": ["tests/acceptance/employee-csv.test.ts"],
+      "controls": {
+        "knownBad": "csv-broken-reference",
+        "knownGood": "employee-working-reference"
+      }
+    }
+  ],
+  "rubric": [
+    {
+      "id": "csv",
+      "requirement": "Employee CSV imports preserve valid records and reject invalid rows",
+      "weight": 1,
+      "partialCredit": 0.5,
+      "applicability": "always",
+      "evidence": ["code", "check"],
+      "checkCases": ["employee-csv"]
+    }
+  ]
+}
+```
+
+The project owns the criterion-to-case mapping and the assertions. Choose a
+targeted broken implementation for each behavior, not an unrelated regression.
+List every grading dependency in case `files` or `protectedFiles`. A case
+command must reject skipped, deselected or zero executed acceptance tests.
+Database tests must
 run against an owned disposable database and fail readiness when it is absent;
 a skipped PostgreSQL suite does not prove transaction correctness. Candidate-added
 tests are excluded from the protected checker, so freeze independent acceptance
 tests in the base before launching.
+
+The controller runs the generic `--check` and each applicable case separately
+within `checksMinutes`, retaining candidate-bound commands, exit codes and
+hashed logs. Judges must cite every required `check-case:<id>` receipt for a
+criterion. A generic `configured-check` citation or another criterion's case
+cannot supply that coverage. Failed cases remain evidence for negative findings
+and fail mandatory checks; missing receipts leave the criterion unassessed.
+Declare code-only criteria explicitly when runtime evidence is not required.
+The generated default rubric requires check evidence and remains blocked until
+an explicit contract supplies mappings. Global `controls` still calibrate the
+generic check and do not replace case controls.
+
+Historical reports and sealed candidates retain their original protocol.
+Changing tests or rubric mappings requires a new evaluation identity; upgrading
+the runner or resuming a completed run cannot repair its historical grades.
 
 `--max-minutes` bounds the whole run, including setup, checks, judging and
 cleanup. Admission reserves the verification phases and any explicit implementation cap,

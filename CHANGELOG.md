@@ -1,5 +1,13 @@
 # @ai-hero/sandcastle
 
+## 0.12.0-dv8.32.0
+
+### Patch Changes
+
+- Require applicable benchmark runtime criteria to map to frozen check cases with case-specific known-good and known-bad controls before implementation dispatch.
+- Execute mapped cases independently and bind their commands, exit codes and logs to the checked candidate. Require mapped case citations during grading so generic or unrelated passing checks cannot increase runtime coverage.
+- Include case evidence in offline inspection reports and update browser and Android launch templates. Preserve historical benchmark evidence and saved assessments.
+
 ## 0.12.0-dv8.31.0
 
 ### Minor Changes

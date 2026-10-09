@@ -159,11 +159,28 @@ const fixture = async (
   }
   await writeFile(
     join(repo, "launch.json"),
-    JSON.stringify({ version: 1, implementationMinutes: 15, ...contract }),
+    JSON.stringify({
+      version: 1,
+      implementationMinutes: 15,
+      rubric: [
+        {
+          id: "task-1-criterion-1",
+          requirement: "Implement the value",
+          weight: 1,
+          partialCredit: 0.5,
+          applicability: "always",
+          evidence: ["code"],
+        },
+      ],
+      ...contract,
+    }),
   );
   git(repo, "add", ".");
   git(repo, "commit", "-m", "Frozen base");
-  if (contract?.controls?.knownGood) {
+  if (
+    contract?.controls?.knownGood ||
+    contract?.checkCases?.some((item) => item.controls.knownGood === "correct")
+  ) {
     git(repo, "checkout", "-b", "correct");
     await writeFile(join(repo, "value.txt"), "correct\n");
     git(repo, "add", ".");
@@ -1014,6 +1031,325 @@ const controlledJudge = (
   stop: async () => {},
 });
 
+const runtimeRubric = ["records", "csv"].map((id) => ({
+  id,
+  requirement: `${id} works in the candidate`,
+  weight: 1,
+  partialCredit: 0.5,
+  applicability: "always" as const,
+  evidence: ["code", "check"] as ("code" | "check")[],
+  checkCases: [id],
+}));
+const runtimeCases = ["records", "csv"].map((id) => ({
+  id,
+  command: `sh ${id}.sh`,
+  files: [`${id}.sh`],
+  controls: { knownBad: "main", knownGood: "correct" },
+}));
+const runtimeFiles = {
+  "records.sh": 'test "$(cat value.txt)" = correct\n',
+  "csv.sh": 'test "$(cat value.txt)" = correct\n',
+};
+const calibratedJudge = (
+  request: BenchmarkRuntimeRequest,
+): BenchmarkRuntime => {
+  const runtime = controlledJudge(request, (output) => {
+    for (const row of output.requirements)
+      row.evidence = [
+        { kind: "code", path: "value.txt", startLine: 1, endLine: 1 },
+        { kind: "check", id: `check-case:${row.id}` },
+      ];
+  });
+  const execute = runtime.exec;
+  runtime.exec = async (input) => {
+    if (input.command.startsWith("sh ")) {
+      try {
+        return {
+          stdout: execFileSync("sh", ["-c", input.command], {
+            cwd: request.worktree,
+            encoding: "utf8",
+          }),
+          stderr: "",
+          exitCode: 0,
+        };
+      } catch {
+        return { stdout: "Required case failed", stderr: "", exitCode: 1 };
+      }
+    }
+    return execute(input);
+  };
+  return runtime;
+};
+
+it("blocks an unmapped runtime rubric before any model or runtime call", async () => {
+  const { plan } = await fixture(
+    {},
+    { rubric: runtimeRubric.map(({ checkCases: _cases, ...rule }) => rule) },
+  );
+  expect(plan.readiness).toMatchObject({
+    workerStatus: "ready",
+    executionReady: false,
+    implementationReady: false,
+    status: "blocked",
+  });
+  expect(plan.readiness!.executionBlockers.join(" ")).toContain(
+    "records requires mapped checkCases",
+  );
+  const createRuntime = vi.fn();
+  expect(
+    await runTicketBenchmark(plan, undefined, 1, { createRuntime }),
+  ).toMatchObject({ status: "assessment-unavailable", completed: 0 });
+  expect(createRuntime).not.toHaveBeenCalled();
+  const { execution } = await readBenchmarkAssessments(plan.output);
+  expect(execution.budget).toMatchObject({
+    implementationCalls: 0,
+    judgeCalls: 0,
+  });
+});
+
+it("calibrates each mapped case and keeps generic or unrelated citations outside runtime coverage", async () => {
+  const { plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"], maxMinutes: 100 },
+    { rubric: runtimeRubric, checkCases: runtimeCases },
+    runtimeFiles,
+  );
+  expect(plan.readiness!.executionReady).toBe(true);
+  expect(plan.launch!.checking.files.map((file) => file.path)).toEqual(
+    expect.arrayContaining(["records.sh", "csv.sh"]),
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => calibratedJudge(request),
+  });
+  const { execution, assessments } = await readBenchmarkAssessments(
+    plan.output,
+  );
+  expect(
+    execution.controls.results.map((row) => [
+      row.kind,
+      row.checkCaseId,
+      row.exitCode,
+      row.status,
+    ]),
+  ).toEqual([
+    ["known-bad", "records", 1, "passed"],
+    ["known-good", "records", 0, "passed"],
+    ["known-bad", "csv", 1, "passed"],
+    ["known-good", "csv", 0, "passed"],
+  ]);
+  const attempt = execution.attempts[0]!;
+  expect(attempt.check!.cases).toHaveLength(2);
+  expect(assessments[0]!.assessment.score.coverage).toBe(1);
+  const report = JSON.parse(
+    await readFile(join(plan.output, "report.json"), "utf8"),
+  );
+  expect(
+    report.rows[0].inspection.artifacts.filter((item: { id: string }) =>
+      item.id.startsWith("check-case:"),
+    ),
+  ).toMatchObject([
+    { id: "check-case:records", state: "available" },
+    { id: "check-case:csv", state: "available" },
+  ]);
+  const assessment = structuredClone(assessments[0]!.assessment);
+  const output = {
+    candidateId: assessment.candidateId,
+    requirements: runtimeRubric.map((rule) => ({
+      id: rule.id,
+      verdict: "met",
+      observation: "Code and baseline suites pass",
+      explanation: "Attempt to reuse generic evidence",
+      evidence: [
+        { kind: "code", path: "value.txt", startLine: 1, endLine: 1 },
+        { kind: "check", id: "configured-check" },
+        { kind: "check", id: "check-case:records" },
+      ],
+    })),
+    deviations: [],
+    disclosures: [],
+  };
+  await assessJudgeOutput(
+    plan,
+    attempt,
+    assessment,
+    JSON.stringify(output),
+    AbortSignal.timeout(5000),
+  );
+  expect(assessment.score.coverage).toBe(0.5);
+  expect(assessment.requirements[1]).toMatchObject({
+    verdict: "not_assessed",
+    gaps: ["check-case:csv"],
+  });
+  // Repeating generic citations does not raise coverage or create execution receipts.
+  output.requirements[1]!.evidence.push({
+    kind: "check",
+    id: "configured-check",
+  });
+  await assessJudgeOutput(
+    plan,
+    attempt,
+    assessment,
+    JSON.stringify(output),
+    AbortSignal.timeout(5000),
+  );
+  expect(assessment.score.coverage).toBe(0.5);
+  const missing = structuredClone(attempt);
+  missing.check!.cases = missing.check!.cases!.filter(
+    (item) => item.id !== "csv",
+  );
+  output.requirements[1]!.evidence = [{ kind: "check", id: "check-case:csv" }];
+  await expect(
+    assessJudgeOutput(
+      plan,
+      missing,
+      assessment,
+      JSON.stringify(output),
+      AbortSignal.timeout(5000),
+    ),
+  ).rejects.toThrow("unavailable evidence");
+  const changed = structuredClone(attempt);
+  changed.check!.cases![0]!.commandSha256 = "wrong";
+  await expect(
+    assessJudgeOutput(
+      plan,
+      changed,
+      assessment,
+      JSON.stringify(output),
+      AbortSignal.timeout(5000),
+    ),
+  ).rejects.toThrow("frozen command");
+  await writeFile(
+    join(plan.output, `${attempt.slotId}-check-case-records.log`),
+    "changed",
+  );
+  await expect(
+    assessJudgeOutput(
+      plan,
+      attempt,
+      assessment,
+      JSON.stringify(output),
+      AbortSignal.timeout(5000),
+    ),
+  ).rejects.toThrow("Check case evidence changed");
+});
+
+it("rejects a passing case on its known-bad control before spending model calls", async () => {
+  const { plan } = await fixture(
+    { maxMinutes: 100 },
+    { rubric: runtimeRubric, checkCases: runtimeCases },
+    runtimeFiles,
+  );
+  const result = await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => controlledJudge(request),
+  });
+  expect(result).toMatchObject({ status: "control-failed", completed: 0 });
+  const { execution } = await readBenchmarkAssessments(plan.output);
+  expect(execution.budget).toMatchObject({
+    implementationCalls: 0,
+    judgeCalls: 0,
+  });
+  expect(execution.controls.results[0]).toMatchObject({
+    checkCaseId: "records",
+    exitCode: 0,
+    status: "failed",
+  });
+});
+
+it("retains a failed mapped case as negative evidence even when the generic check passes", async () => {
+  const { plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"], maxMinutes: 100 },
+    { rubric: runtimeRubric, checkCases: runtimeCases },
+    runtimeFiles,
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => {
+      const runtime = calibratedJudge(request);
+      const execute = runtime.exec;
+      runtime.exec = async (input) => {
+        if (request.role === "checks" && input.command === "sh csv.sh")
+          return { stdout: "CSV acceptance failed", stderr: "", exitCode: 1 };
+        return execute(input);
+      };
+      return runtime;
+    },
+  });
+  const { execution, assessments } = await readBenchmarkAssessments(
+    plan.output,
+  );
+  const attempt = execution.attempts[0]!;
+  expect(attempt.check).toMatchObject({
+    status: "failed",
+    exitCode: 0,
+    cases: [
+      { id: "records", exitCode: 0 },
+      { id: "csv", exitCode: 1 },
+    ],
+  });
+  const assessment = structuredClone(assessments[0]!.assessment);
+  const output = {
+    candidateId: assessment.candidateId,
+    requirements: runtimeRubric.map((rule) => ({
+      id: rule.id,
+      verdict: rule.id === "csv" ? "not_met" : "met",
+      observation: "Read the bound case exit status",
+      explanation: "The CSV case failed",
+      evidence: [
+        { kind: "code", path: "value.txt", startLine: 1, endLine: 1 },
+        { kind: "check", id: `check-case:${rule.id}` },
+      ],
+    })),
+    deviations: [],
+    disclosures: [],
+  };
+  await assessJudgeOutput(
+    plan,
+    attempt,
+    assessment,
+    JSON.stringify(output),
+    AbortSignal.timeout(5000),
+  );
+  expect(assessment.score).toMatchObject({ value: 50, coverage: 1 });
+  expect(assessment.requirements[1]!.evidence[1]).toMatchObject({
+    checkCaseId: "csv",
+    exitCode: 1,
+  });
+});
+
+it("forwards mapped case commands through the owned project adapter", async () => {
+  const { plan } = await fixture(
+    { arms: ["gpt-6-astra:medium"], maxMinutes: 100 },
+    {
+      rubric: [runtimeRubric[0]!],
+      checkCases: [runtimeCases[0]!],
+      adapter: {
+        id: "case-command-fixture",
+        readiness: "true",
+        module: "adapter.mjs",
+      },
+    },
+    {
+      ...runtimeFiles,
+      "adapter.mjs": ownedProjectAdapter.replace(
+        "{stdout:value,",
+        "{stdout:c.check + ':' + value,",
+      ),
+    },
+  );
+  await runTicketBenchmark(plan, undefined, 1, {
+    createRuntime: async (request) => calibratedJudge(request),
+  });
+  const { execution, assessments } = await readBenchmarkAssessments(
+    plan.output,
+  );
+  expect(execution.controls.status).toBe("passed");
+  expect(assessments[0]!.assessment.score.coverage).toBe(1);
+  expect(
+    await readFile(
+      join(plan.output, `${plan.slots[0]!.id}-check-case-records.log`),
+      "utf8",
+    ),
+  ).toContain("sh records.sh:correct");
+});
+
 it.each([false, true])(
   "uses the overall implementation budget and preserves verification reserves (exhausted=%s)",
   async (exhausted) => {
@@ -1149,9 +1485,7 @@ it.each(["passed", "not-run", "unavailable"] as const)(
       [],
     );
     const example = JSON.parse(prompt.split("using this shape:\n")[1]!);
-    expect(example.requirements[0].evidence).toEqual(
-      status === "passed" ? [{ kind: "check", id: "configured-check" }] : [],
-    );
+    expect(example.requirements[0].evidence).toEqual([]);
     const invented = {
       candidateId: assessment.candidateId,
       requirements: [

@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { benchmarkDockerSecurityOptions } from "./benchmarkSandbox.js";
+import { benchmarkCheckCoverage } from "./benchmarkChecks.js";
 import type { Arm, Ticket } from "./ticketBenchmark.js";
 import type { ModelCatalogPage } from "./workflowUsage.js";
 import { discoverConfiguredModels } from "./workflowUsage.js";
@@ -69,6 +70,10 @@ const criterion = z
     applicability: z.enum(["always", "visual", "nonvisual"]),
     partialCredit: z.number().min(0).max(1),
     evidence: z.array(z.enum(["code", "check", "visual"])).min(1),
+    checkCases: z
+      .array(z.string().regex(/^[a-zA-Z0-9_-]+$/))
+      .min(1)
+      .optional(),
     task: z.number().int().positive().optional(),
   })
   .strict();
@@ -90,6 +95,23 @@ const contractSchema = z
       )
       .optional(),
     rubric: z.array(criterion).min(1).optional(),
+    checkCases: z
+      .array(
+        z
+          .object({
+            id: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+            command: z.string().min(1),
+            files: z.array(z.string().min(1)).min(1),
+            controls: z
+              .object({
+                knownBad: z.string().min(1),
+                knownGood: z.string().min(1),
+              })
+              .strict(),
+          })
+          .strict(),
+      )
+      .optional(),
     visualRequired: z.boolean().optional(),
     references: z.array(z.string().min(1)).optional(),
     rateCard: z
@@ -217,9 +239,15 @@ export interface FrozenLaunch {
   };
   readonly checking: {
     readonly files: readonly FrozenFile[];
+    readonly cases?: readonly {
+      readonly id: string;
+      readonly command: string;
+      readonly files: readonly string[];
+    }[];
     readonly controls: readonly {
       readonly kind: "known-bad" | "known-good";
       readonly commit: string;
+      readonly checkCaseId?: string;
     }[];
     readonly policy: string;
   };
@@ -608,6 +636,22 @@ export const readLaunchContract = async (cwd: string, path?: string) => {
       config.environments.length
   )
     throw new Error("Environment names must be distinct");
+  if (
+    config.checkCases &&
+    new Set(config.checkCases.map((row) => row.id)).size !==
+      config.checkCases.length
+  )
+    throw new Error("Check case IDs must be distinct");
+  for (const rule of config.rubric ?? []) {
+    if (
+      rule.checkCases &&
+      (!rule.evidence.includes("check") ||
+        new Set(rule.checkCases).size !== rule.checkCases.length)
+    )
+      throw new Error(
+        "Criterion checkCases must be distinct and require check evidence",
+      );
+  }
   return { config, frozen: { source, text, sha256: launchHash(text) } };
 };
 
@@ -766,7 +810,7 @@ export const freezeLaunch = async (input: {
       sha256: launchHash(await readFile(path)),
     })),
   );
-  const rubric =
+  const rubric: FrozenLaunch["grading"]["rubric"] =
     config.rubric ??
     tickets.flatMap((ticket, index) => {
       const section =
@@ -850,6 +894,7 @@ export const freezeLaunch = async (input: {
   for (const path of [
     ...new Set([
       ...(config.protectedFiles ?? []),
+      ...(config.checkCases ?? []).flatMap((item) => item.files),
       ...(config.adapter?.module ? [config.adapter.module] : []),
     ]),
   ]) {
@@ -861,11 +906,33 @@ export const freezeLaunch = async (input: {
   }
   const checking = {
     files: files([...new Set(protectedPaths)]),
-    controls: Object.entries(config.controls ?? {}).map(([kind, ref]) => ({
-      kind:
-        kind === "knownBad" ? ("known-bad" as const) : ("known-good" as const),
-      commit: git(cwd, "rev-parse", "--verify", `${ref}^{commit}`),
-    })),
+    cases: (config.checkCases ?? []).map(({ id, command, files: paths }) => {
+      for (const path of paths)
+        if (!["100644", "100755"].includes(modes.get(path) ?? ""))
+          throw new Error(
+            `Check case file must be a frozen regular file: ${path}`,
+          );
+      return { id, command, files: paths };
+    }),
+    controls: [
+      ...Object.entries(config.controls ?? {}).map(([kind, ref]) => ({
+        kind:
+          kind === "knownBad"
+            ? ("known-bad" as const)
+            : ("known-good" as const),
+        commit: git(cwd, "rev-parse", "--verify", `${ref}^{commit}`),
+      })),
+      ...(config.checkCases ?? []).flatMap((item) =>
+        Object.entries(item.controls).map(([kind, ref]) => ({
+          kind:
+            kind === "knownBad"
+              ? ("known-bad" as const)
+              : ("known-good" as const),
+          commit: git(cwd, "rev-parse", "--verify", `${ref}^{commit}`),
+          checkCaseId: item.id,
+        })),
+      ),
+    ],
     policy:
       "Restore frozen grading files in a separate checker. Candidate identity includes tracked files and untracked files not ignored by the frozen base; runtime Git, ignored installations and build outputs are excluded. Declare every additional grading dependency with protectedFiles.",
   };
@@ -1108,10 +1175,12 @@ export const freezeLaunch = async (input: {
     },
     capabilities,
   };
-  const executionBlockers =
-    launch.grading.visualRequired && !adapter.module
+  const executionBlockers = [
+    ...benchmarkCheckCoverage(rubric, checking, visualRequiredByTask),
+    ...(launch.grading.visualRequired && !adapter.module
       ? ["Required visuals need a frozen owned project runtime adapter module"]
-      : [];
+      : []),
+  ];
   return {
     launch,
     runnerCommit: runnerCommit ?? "unknown",
@@ -1121,7 +1190,10 @@ export const freezeLaunch = async (input: {
         input.preflight &&
         blockers.length === 0 &&
         executionBlockers.length === 0,
-      implementationReady: input.preflight && blockers.length === 0,
+      implementationReady:
+        input.preflight &&
+        blockers.length === 0 &&
+        executionBlockers.length === 0,
       workerStatus: blockers.length
         ? "blocked"
         : input.preflight

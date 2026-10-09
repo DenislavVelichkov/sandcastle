@@ -84,6 +84,24 @@ describe("sandcastle CLI", () => {
     await writeFile(join(project, "check.sh"), "exit 0\n");
     await commitFile(
       project,
+      "launch.json",
+      JSON.stringify({
+        version: 1,
+        rubric: [
+          {
+            id: "progress",
+            requirement: "Preserve durable progress",
+            weight: 1,
+            partialCredit: 0.5,
+            applicability: "always",
+            evidence: ["code"],
+          },
+        ],
+      }),
+      "Freeze code inspection for the progress fixture",
+    );
+    await commitFile(
+      project,
       "task.md",
       "# Preserve durable progress\n",
       "Frozen task",
@@ -100,6 +118,7 @@ describe("sandcastle CLI", () => {
         tickets: ["task.md"],
         arms: ["gpt-6-astra:high"],
         check: "sh check.sh",
+        contract: "launch.json",
         output,
         preflight: true,
       },

@@ -36,6 +36,7 @@ report's candidate links supply the exact recorded paths and availability.
 | `candidates/<candidate-key>/candidate.patch` | Binary-capable changes against the frozen starting commit.                                   |
 | `assessments/<assessment-id>.json`           | Sealed judge findings and evidence citations.                                                |
 | `<candidate-key>-check.log`                  | Configured check output, including failed checks.                                            |
+| `<candidate-key>-check-case-<case-id>.log`   | Independent mapped case output; command hashes and exit codes are in the execution ledger.   |
 | `visuals/<runtime-id>/`                      | Runtime captures, live-inspection records and evidence receipts when supplied by an adapter. |
 
 For an original attempt, `<candidate-key>` is its slot ID, such as
@@ -55,6 +56,9 @@ the judge cited that artifact. The generator checks added artifact links against
 recorded bytes and bindings. Missing, changed and unrecorded artifacts have
 explicit states without an available-file link. The original check result stays
 visible separately from the log's present availability.
+Mapped case logs appear in the check inspection action, including cases the
+judge did not cite. Generic check output does not establish criterion coverage;
+each runtime criterion needs every required `check-case:<id>` receipt.
 Availability describes the snapshot at report generation. Regenerate after
 evidence changes; opening an existing HTML file does not revalidate the disk.
 

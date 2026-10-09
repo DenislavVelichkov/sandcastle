@@ -13,6 +13,8 @@ Use the [installed consumer guide](../benchmark-installed-launch.md) for readine
 
 ## Frozen benchmark inputs
 
+- Runtime rubric criteria require mapped frozen `checkCases` and case-specific known-bad/known-good controls. Worker readiness and generic checker controls cannot establish ticket coverage. The controller must retain each executed case receipt; generic or unrelated citations cannot satisfy runtime evidence. Project-owned case commands must reject skipped or empty acceptance suites.
+
 - Codex model IDs can contain dots, such as `gpt-6.1-sol`; retain dotted identifiers in benchmark arm validation.
 - Benchmark reasoning efforts are open-ended worker catalog strings. Validate capabilities against model/list, including hidden entries, instead of a fixed effort allowlist.
 - Use NUL-separated Git path discovery for frozen benchmark inputs; line-oriented Git output quotes Unicode filenames and can silently omit protected checks.

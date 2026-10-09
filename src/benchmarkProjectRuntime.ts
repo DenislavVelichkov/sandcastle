@@ -266,9 +266,16 @@ export const createBenchmarkProjectRuntime = async (input: {
       report.status = "ready";
       await receipt();
     },
-    check: async (signal: AbortSignal, remainingMs: number) => {
+    check: async (
+      signal: AbortSignal,
+      remainingMs: number,
+      command = plan.check!,
+    ) => {
       await verify(signal);
-      const output = await adapter!.check(context(signal, remainingMs));
+      const output = await adapter!.check({
+        ...context(signal, remainingMs),
+        check: command,
+      });
       const result = z
         .object({
           stdout: z.string(),

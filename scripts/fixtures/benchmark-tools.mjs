@@ -174,7 +174,7 @@ if (tool === "gh") {
                 "Deterministic fixture judgment, not measured model quality.",
               evidence: socket
                 ? [
-                    { kind: "check", id: "configured-check" },
+                    { kind: "check", id: "check-case:visible-label" },
                     { kind: "visual", id: inspection.evidenceId },
                   ]
                 : [
@@ -192,6 +192,17 @@ if (tool === "gh") {
             "Fixture data, not model-performance measurements or human acceptance.",
           ],
         };
+        const rubric = JSON.parse(/Frozen rubric:\n([^\n]+)/.exec(prompt)[1]);
+        for (const id of rubric[0].checkCases ?? [])
+          if (
+            !output.requirements[0].evidence.some(
+              (item) => item.kind === "check" && item.id === `check-case:${id}`,
+            )
+          )
+            output.requirements[0].evidence.push({
+              kind: "check",
+              id: `check-case:${id}`,
+            });
         json({
           type: "item.completed",
           item: { type: "agent_message", text: JSON.stringify(output) },

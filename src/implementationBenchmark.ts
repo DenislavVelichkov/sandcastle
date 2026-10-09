@@ -27,6 +27,10 @@ import type { ExecResult } from "./SandboxProvider.js";
 import type { TicketBenchmarkPlan } from "./ticketBenchmark.js";
 import { protectedBenchmarkPath } from "./benchmarkLaunch.js";
 import {
+  benchmarkCheckCoverage,
+  benchmarkControlId,
+} from "./benchmarkChecks.js";
+import {
   privateWorktree,
   seal,
   workspaceFiles,
@@ -152,6 +156,12 @@ export interface ImplementationAttempt {
     candidateTree?: string;
     frozenInputsSha256?: string;
     failure?: string;
+    cases?: {
+      id: string;
+      commandSha256: string;
+      exitCode: number;
+      outputSha256: string;
+    }[];
   };
   candidate?: Candidate;
   project?: BenchmarkProjectEvidence;
@@ -181,6 +191,7 @@ export interface ImplementationExecution {
     status: string;
     results: {
       kind: string;
+      checkCaseId?: string;
       commit: string;
       exitCode: number | null;
       status: string;
@@ -465,7 +476,14 @@ export const runImplementationBenchmark = async (
     resources: [],
     cleanup: { status: "passed", resources: [] as string[] },
     reason: null as string | null,
-    blockers: plan.readiness?.blockers ?? [],
+    blockers: [
+      ...(plan.readiness?.blockers ?? []),
+      ...benchmarkCheckCoverage(
+        launch.grading.rubric,
+        launch.checking,
+        launch.grading.visualRequiredByTask,
+      ),
+    ],
   };
   if (dependencies.retryAttemptId && !dependencies.resume)
     throw new Error(
@@ -1134,6 +1152,33 @@ export const runImplementationBenchmark = async (
         location: join(root, "judge", "references", String(index)),
       }));
       if (
+        attempt.check &&
+        ["passed", "failed"].includes(attempt.check.status)
+      ) {
+        for (const item of attempt.check.cases ?? []) {
+          const bytes = await readFile(
+            join(
+              plan.output,
+              `${attempt.retryOf ? attempt.id : attempt.slotId}-check-case-${item.id}.log`,
+            ),
+          );
+          if (hash(bytes) !== item.outputSha256)
+            throw new Error("Check case evidence changed");
+          const location = join(
+            root,
+            "judge",
+            "references",
+            `check-case-${item.id}.log`,
+          );
+          await writeFile(location, bytes, { mode: 0o400 });
+          references.push({
+            path: `check-case:${item.id}`,
+            sha256: item.outputSha256,
+            location,
+          });
+        }
+      }
+      if (
         attempt.check?.outputSha256 &&
         ["passed", "failed"].includes(attempt.check.status)
       )
@@ -1441,6 +1486,14 @@ export const runImplementationBenchmark = async (
       ledger.status = "budget-exhausted";
     else if (!plan.check) ledger.status = "missing-checks";
     else if (
+      benchmarkCheckCoverage(
+        launch.grading.rubric,
+        launch.checking,
+        launch.grading.visualRequiredByTask,
+      ).length
+    )
+      ledger.status = "assessment-unavailable";
+    else if (
       plan.readiness?.workerStatus !== "ready" ||
       plan.readiness.blockers.length
     )
@@ -1469,10 +1522,19 @@ export const runImplementationBenchmark = async (
         (control) =>
           !ledger.controls.results.some(
             (result) =>
-              result.kind === control.kind && result.status === "passed",
+              result.kind === control.kind &&
+              result.checkCaseId === control.checkCaseId &&
+              result.commit === control.commit &&
+              result.status === "passed",
           ),
       )) {
-        const root = join(plan.output, "runtime", `control-${control.kind}`);
+        const controlId = benchmarkControlId(control);
+        const controlCommand = control.checkCaseId
+          ? launch.checking.cases!.find(
+              (item) => item.id === control.checkCaseId,
+            )!.command
+          : plan.check!;
+        const root = join(plan.output, "runtime", `control-${controlId}`);
         await progress.ownResource({
           id: root,
           kind: "directory",
@@ -1527,7 +1589,7 @@ export const runImplementationBenchmark = async (
               (signal) =>
                 seal(
                   plan,
-                  `control-${control.kind}`,
+                  `control-${controlId}`,
                   source.worktree,
                   protectedBase!.storage,
                   (text) => text,
@@ -1537,7 +1599,7 @@ export const runImplementationBenchmark = async (
             if (!candidate)
               throw new Error("Control candidate could not be sealed");
             controlAttempt = {
-              id: `control-${control.kind}`,
+              id: `control-${controlId}`,
               slotId: plan.slots[0]!.id,
               armId: "control",
               status: "running",
@@ -1579,13 +1641,15 @@ export const runImplementationBenchmark = async (
             controlPhases,
             (signal, remainingMs) =>
               controlAttempt
-                ? projects.get(controlAttempt.id)!.check(signal, remainingMs)
-                : runtime!.exec({ command: plan.check!, signal }),
+                ? projects
+                    .get(controlAttempt.id)!
+                    .check(signal, remainingMs, controlCommand)
+                : runtime!.exec({ command: controlCommand, signal }),
           );
           const output =
             runtime?.redact?.(`${checked.stdout}\n${checked.stderr}`) ??
             `${checked.stdout}\n${checked.stderr}`;
-          await writeFile(join(plan.output, `${control.kind}.log`), output, {
+          await writeFile(join(plan.output, `${controlId}.log`), output, {
             mode: 0o600,
           });
           Object.assign(result, {
@@ -1977,14 +2041,65 @@ export const runImplementationBenchmark = async (
                       expected,
                     ),
                 );
+                const caseResults: NonNullable<
+                  NonNullable<Attempt["check"]>["cases"]
+                > = [];
                 const checked = await phase(
                   "checks",
                   allowances.checksMs,
                   attempt.phases,
-                  (signal, remainingMs) =>
-                    projects.has(attempt.id)
-                      ? projects.get(attempt.id)!.check(signal, remainingMs)
-                      : checker!.exec({ command: plan.check!, signal }),
+                  async (signal, remainingMs) => {
+                    const deadline = now() + remainingMs;
+                    const execute = (command: string) =>
+                      projects.has(attempt.id)
+                        ? projects
+                            .get(attempt.id)!
+                            .check(
+                              signal,
+                              Math.max(0, deadline - now()),
+                              command,
+                            )
+                        : checker!.exec({ command, signal });
+                    const checked = await execute(plan.check!);
+                    const ticket = plan.slots.find(
+                      (item) => item.id === attempt.slotId,
+                    )!.ticket;
+                    const visual = launch.grading.visualRequiredByTask[ticket]!;
+                    const requiredIds = new Set(
+                      launch.grading.rubric
+                        .filter(
+                          (rule) =>
+                            (rule.task === undefined ||
+                              rule.task === ticket + 1) &&
+                            (rule.applicability !== "visual" || visual) &&
+                            (rule.applicability !== "nonvisual" || !visual),
+                        )
+                        .flatMap((rule) => rule.checkCases ?? []),
+                    );
+                    for (const item of launch.checking.cases ?? []) {
+                      if (!requiredIds.has(item.id)) continue;
+                      signal.throwIfAborted();
+                      const result = await execute(item.command);
+                      const output = redact(
+                        `${result.stdout}\n${result.stderr}`,
+                      );
+                      await writeFile(
+                        join(
+                          plan.output,
+                          `${evidenceId}-check-case-${item.id}.log`,
+                        ),
+                        output,
+                        { mode: 0o600 },
+                      );
+                      caseResults.push({
+                        id: item.id,
+                        commandSha256: hash(item.command),
+                        exitCode: result.exitCode,
+                        outputSha256: hash(output),
+                      });
+                    }
+                    return checked;
+                  },
                 );
                 const output = redact(`${checked.stdout}\n${checked.stderr}`);
                 await writeFile(
@@ -1999,6 +2114,7 @@ export const runImplementationBenchmark = async (
                   candidateHead: attempt.candidate.head,
                   candidateTree: attempt.candidate.tree,
                   frozenInputsSha256: hash(JSON.stringify(launch.checking)),
+                  cases: caseResults,
                 };
                 await phase(
                   "checker-result-integrity",
@@ -2013,12 +2129,11 @@ export const runImplementationBenchmark = async (
                       expected,
                     ),
                 );
-                attempt.check.status =
-                  checked.exitCode === 0 ? "passed" : "failed";
-                if (
-                  attempt.status === "judge-pending" &&
-                  checked.exitCode !== 0
-                )
+                const passed =
+                  checked.exitCode === 0 &&
+                  caseResults.every((item) => item.exitCode === 0);
+                attempt.check.status = passed ? "passed" : "failed";
+                if (attempt.status === "judge-pending" && !passed)
                   attempt.status = "check-failed";
                 if (projects.has(attempt.id))
                   await phase(

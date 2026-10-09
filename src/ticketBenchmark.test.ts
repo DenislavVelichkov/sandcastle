@@ -216,10 +216,13 @@ it("checks the actual worker catalog for both roles and preserves execution gaps
   expect(plan.readiness).toMatchObject({
     mode: "preflight",
     workerStatus: "ready",
-    status: "ready",
-    executionReady: true,
+    status: "blocked",
+    executionReady: false,
   });
   expect(plan.launch?.modelCatalog).toHaveLength(2);
+  expect(plan.readiness?.executionBlockers.join(" ")).toContain(
+    "requires mapped checkCases",
+  );
   expect(plan.launch?.identities.judge).toMatchObject({
     requested: "gpt-6.1-sol:xhigh",
     observed: null,
@@ -556,6 +559,75 @@ it("freezes explicit rubric rules and declared satisfied prerequisites before wo
   ).rejects.toThrow("max-new-slots");
 });
 
+it.each([
+  "missing-case",
+  "unfrozen-file",
+  "duplicate-case",
+  "duplicate-mapping",
+  "unsafe-id",
+  "missing-controls",
+])(
+  "rejects or blocks a %s check contract before inference",
+  async (failure) => {
+    const { repo } = await project();
+    const config: any = {
+      version: 1,
+      rubric: [
+        {
+          id: "runtime",
+          requirement: "Run the required acceptance case",
+          weight: 1,
+          partialCredit: 0.5,
+          applicability: "always",
+          evidence: ["check"],
+          checkCases: ["runtime"],
+        },
+      ],
+      checkCases: [
+        {
+          id: "runtime",
+          command: "pnpm test",
+          files: ["AGENTS.md"],
+          controls: { knownBad: "HEAD", knownGood: "HEAD" },
+        },
+      ],
+    };
+    if (failure === "missing-case") config.checkCases = [];
+    if (failure === "unfrozen-file")
+      config.checkCases[0].files = ["untracked.test.ts"];
+    if (failure === "duplicate-case")
+      config.checkCases.push(config.checkCases[0]);
+    if (failure === "duplicate-mapping")
+      config.rubric[0].checkCases.push("runtime");
+    if (failure === "unsafe-id") config.checkCases[0].id = "../runtime";
+    if (failure === "missing-controls") delete config.checkCases[0].controls;
+    await writeFile(join(repo, "launch.json"), JSON.stringify(config));
+    const inspectWorker = vi.fn(async (request: WorkerRequest) =>
+      worker(request),
+    );
+    const planned = planTicketBenchmark(
+      {
+        cwd: repo,
+        tickets: ["task.md"],
+        contract: "launch.json",
+        check: "pnpm test",
+        preflight: true,
+      },
+      { inspectWorker },
+    );
+    if (failure === "missing-case") {
+      const plan = await planned;
+      expect(plan.readiness?.executionReady).toBe(false);
+      expect(plan.readiness?.executionBlockers.join(" ")).toContain(
+        "missing check case runtime",
+      );
+    } else {
+      await expect(planned).rejects.toThrow();
+      expect(inspectWorker).not.toHaveBeenCalled();
+    }
+  },
+);
+
 it.each(["unknown-task", "empty-task", "overflowing-total"] as const)(
   "rejects %s rubric contracts before declaring a plan ready",
   async (problem) => {
@@ -637,7 +709,7 @@ it("freezes explicit input and the four Astra arms with an independent judge", a
     expect(plan.judge).toMatchObject({ model: "gpt-6.1-sol", effort: "xhigh" });
     expect(plan.readiness).toMatchObject({
       mode: "scheduling",
-      status: "unchecked",
+      status: "blocked",
     });
     await expect(runTicketBenchmark(plan)).rejects.toThrow("execution");
     // The version-one runner remains available for retained historical plans.
